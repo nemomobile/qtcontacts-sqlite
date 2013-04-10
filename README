@@ -1,0 +1,2 @@
+This repository contains a backend for the QtContacts API.
+It stores contact information to a local SQLite database.
