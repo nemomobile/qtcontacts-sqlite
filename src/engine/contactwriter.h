@@ -69,7 +69,7 @@ public:
             QList<QContact> *contacts,
             const QStringList &definitionMask,
             QMap<int, QContactManager::Error> *errorMap);
-    QContactManager::Error remove(const QList<QContactLocalId> &contactIds);
+    QContactManager::Error remove(const QList<QContactLocalId> &contactIds, QMap<int, QContactManager::Error> *errorMap);
 
     QContactManager::Error setIdentity(ContactsDatabase::Identity identity, QContactLocalId contactId);
 
@@ -120,9 +120,12 @@ private:
 
     QSqlDatabase m_database;
     QSqlQuery m_checkContactExists;
+    QSqlQuery m_existingContactIds;
+    QSqlQuery m_selfContactId;
     QSqlQuery m_insertContact;
     QSqlQuery m_updateContact;
     QSqlQuery m_removeContact;
+    QSqlQuery m_existingRelationships;
     QSqlQuery m_insertRelationship;
     QSqlQuery m_removeRelationship;
     QSqlQuery m_insertAddress;

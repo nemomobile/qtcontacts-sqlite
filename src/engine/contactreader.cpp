@@ -31,7 +31,6 @@
 
 #include "contactreader.h"
 
-
 #include <QContactAddress>
 #include <QContactAnniversary>
 #include <QContactAvatar>
@@ -60,6 +59,8 @@
 #include <QContactLocalIdFilter>
 #include <QContactUnionFilter>
 #include <QContactIntersectionFilter>
+
+#include <QContactManagerEngine>
 
 #include <QSqlError>
 #include <QVector>
@@ -756,6 +757,18 @@ QContactManager::Error ContactReader::readContacts(
         return QContactManager::UnspecifiedError;
     }
 
+    QVector<QContactLocalId> existingIds;
+    QSqlQuery queryExistingIds(m_database);
+    if (!queryExistingIds.exec("SELECT DISTINCT contactId FROM Contacts")) {
+        qWarning() << "Failed to query existing contacts";
+        qWarning() << queryExistingIds.lastError();
+        m_database.rollback();
+        return QContactManager::UnspecifiedError;
+    }
+    while (queryExistingIds.next()) {
+        existingIds.append(queryExistingIds.value(0).toUInt() + 1);
+    }
+
     QSqlQuery insertQuery(m_database);
     insertQuery.prepare(QString(QLatin1String(
         "\n INSERT INTO %1 ("
@@ -763,9 +776,16 @@ QContactManager::Error ContactReader::readContacts(
         "\n VALUES("
         "\n  :contactId);")).arg(table));
 
+    QList<int> zeroIndices;
     QVariantList boundIds;
-    foreach (const QContactLocalId &contactId, contactIds)
-        boundIds.append(contactId - 1);
+    for (int i = 0; i < contactIds.size(); ++i) {
+        QContactLocalId currLId = contactIds.at(i);
+        if (currLId == 0 || !existingIds.contains(currLId)) {
+            zeroIndices.append(i);
+        } else {
+            boundIds.append(currLId - 1);
+        }
+    }
 
     insertQuery.bindValue(0, boundIds);
 
@@ -780,6 +800,10 @@ QContactManager::Error ContactReader::readContacts(
         return error;
     } else {
         error = queryContacts(table, contacts, details);
+        for (int i = 0; i < zeroIndices.size(); ++i) {
+            contacts->insert(zeroIndices.at(i), QContact());
+            error = QContactManager::DoesNotExistError;
+        }
         if (contacts && (contacts->size() != contactIds.size())) {
             error = QContactManager::DoesNotExistError;
         }
@@ -868,6 +892,10 @@ QContactManager::Error ContactReader::queryContacts(
             id.setManagerUri(QLatin1String("org.nemomobile.contacts.sqlite"));
             contact.setId(id);
 
+            QString persistedDL = query.value(1).toString();
+            if (!persistedDL.isEmpty())
+                QContactManagerEngine::setContactDisplayLabel(&contact, persistedDL);
+
             QContactName name;
             setValue(&name, QContactName::FieldFirstName  , query.value(2));
             setValue(&name, QContactName::FieldLastName   , query.value(3));
@@ -900,6 +928,15 @@ QContactManager::Error ContactReader::queryContacts(
                 if (table.query.isValid() && table.currentId == contactId)
                     table.read(contactId, &contact, &table.query, table.currentId);
             }
+
+            QList<QContactRelationship> currContactRelationships;
+            QList<QContactRelationship> ccfrels;
+            QList<QContactRelationship> ccsrels;
+            readRelationships(&ccfrels, QString(), id, QContactId());
+            readRelationships(&ccsrels, QString(), QContactId(), id);
+            currContactRelationships << ccfrels << ccsrels;
+            QContactManagerEngine::setContactRelationships(&contact, currContactRelationships);
+
             contacts->append(contact);
         }
         contactsAvailable(*contacts);
@@ -1005,10 +1042,10 @@ QContactManager::Error ContactReader::readRelationships(
 
     QString statement = QLatin1String(
             "\n SELECT type, firstId, secondId"
-            "\n FROM Relationships") + where;
+            "\n FROM Relationships") + where + QLatin1String(";");
 
     QSqlQuery query(m_database);
-    if (query.prepare(statement)) {
+    if (!query.prepare(statement)) {
         qWarning() << "Failed to prepare relationships query";
         qWarning() << query.lastError();
         qWarning() << statement;
@@ -1029,12 +1066,14 @@ QContactManager::Error ContactReader::readRelationships(
         relationship.setRelationshipType(query.value(0).toString());
 
         QContactId firstId;
+        firstId.setManagerUri(QLatin1String("org.nemomobile.contacts.sqlite"));
         firstId.setLocalId(query.value(1).toUInt() + 1);
         relationship.setFirst(firstId);
 
         QContactId secondId;
+        secondId.setManagerUri(QLatin1String("org.nemomobile.contacts.sqlite"));
         secondId.setLocalId(query.value(2).toUInt() + 1);
-        relationship.setFirst(secondId);
+        relationship.setSecond(secondId);
 
         relationships->append(relationship);
     }

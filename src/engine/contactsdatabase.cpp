@@ -234,9 +234,10 @@ static const char *createIdentitiesTable =
 
 static const char *createRelationshipsTable =
         "\n CREATE Table Relationships ("
-        "\n firstId INTEGER KEY,"
-        "\n secondId INTEGER KEY,"
-        "\n type TEXT KEY);";
+        "\n firstId INTEGER NOT NULL,"
+        "\n secondId INTEGER NOT NULL,"
+        "\n type TEXT,"
+        "\n PRIMARY KEY (firstId, secondId, type));";
 
 static const char *createRemoveTrigger =
         "\n CREATE TRIGGER RemoveContactDetails"

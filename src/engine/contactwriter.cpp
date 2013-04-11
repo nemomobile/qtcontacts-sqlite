@@ -47,6 +47,12 @@
 static const char *checkContactExists =
         "\n SELECT COUNT(contactId) FROM Contacts WHERE contactId = :contactId;";
 
+static const char *existingContactIds =
+        "\n SELECT DISTINCT contactId FROM Contacts;";
+
+static const char *selfContactId =
+        "\n SELECT DISTINCT contactId FROM Identities WHERE identity = :identity;";
+
 static const char *insertContact =
         "\n INSERT INTO Contacts ("
         "\n  displayLabel,"
@@ -90,6 +96,9 @@ static const char *updateContact =
 
 static const char *removeContact =
         "\n DELETE FROM Contacts WHERE contactId = :contactId;";
+
+static const char *existingRelationships =
+        "\n SELECT firstId, secondId, type FROM Relationships;";
 
 static const char *insertRelationship =
         "\n INSERT INTO Relationships ("
@@ -357,9 +366,12 @@ static QSqlQuery prepare(const char *statement, const QSqlDatabase &database)
 ContactWriter::ContactWriter(const QSqlDatabase &database)
     : m_database(database)
     , m_checkContactExists(prepare(checkContactExists, database))
+    , m_existingContactIds(prepare(existingContactIds, database))
+    , m_selfContactId(prepare(selfContactId, database))
     , m_insertContact(prepare(insertContact, database))
     , m_updateContact(prepare(updateContact, database))
     , m_removeContact(prepare(removeContact, database))
+    , m_existingRelationships(prepare(existingRelationships, database))
     , m_insertRelationship(prepare(insertRelationship, database))
     , m_removeRelationship(prepare(removeRelationship, database))
     , m_insertAddress(prepare(insertAddress, database))
@@ -437,11 +449,14 @@ static QContactManager::Error bindRelationships(
         QSqlQuery *query,
         const QList<QContactRelationship> &relationships,
         QMap<int, QContactManager::Error> *errorMap,
-        QSet<QContactLocalId> *contactIds)
+        QSet<QContactLocalId> *contactIds,
+        QMultiMap<QContactLocalId, QPair<QString, QContactLocalId> > *bucketedRelationships,
+        int *removedDuplicatesCount)
 {
     QVariantList firstIds;
     QVariantList secondIds;
     QVariantList types;
+    *removedDuplicatesCount = 0;
 
     for (int i = 0; i < relationships.count(); ++i) {
         const QContactRelationship &relationship = relationships.at(i);
@@ -449,28 +464,48 @@ static QContactManager::Error bindRelationships(
         const QContactLocalId secondId = relationship.second().localId();
         const QString &type = relationship.relationshipType();
 
-        if (firstId != 0 || secondId != 0) {
+        if (firstId == 0 || secondId == 0) {
             if (errorMap)
                 errorMap->insert(i, QContactManager::UnspecifiedError);
         } else if (type.isEmpty()) {
             if (errorMap)
                 errorMap->insert(i, QContactManager::UnspecifiedError);
         } else {
-            firstIds.append(firstId - 1);
-            secondIds.append(secondId - 1);
-            types.append(type);
+            if (bucketedRelationships->find(firstId, QPair<QString, QContactLocalId>(type, secondId)) != bucketedRelationships->end()) {
+                // this relationship is already represented in our database.
+                // according to the semantics defined in tst_qcontactmanager,
+                // we allow saving duplicates by "overwriting" (with identical values)
+                // which means that we simply "drop" this one from the list
+                // of relationships to add to the database.
+                *removedDuplicatesCount += 1;
+            } else {
+                // this relationships has not yet been represented in our database.
+                firstIds.append(firstId - 1);
+                secondIds.append(secondId - 1);
+                types.append(type);
 
-            contactIds->insert(firstId);
-            contactIds->insert(secondId);
+                contactIds->insert(firstId);
+                contactIds->insert(secondId);
+
+                bucketedRelationships->insert(firstId, QPair<QString, QContactLocalId>(type, secondId));
+            }
         }
     }
 
-    if (firstIds.isEmpty())
+    if (firstIds.isEmpty() && *removedDuplicatesCount == 0) {
+        // if we "successfully overwrote" some duplicates, it's not an error.
         return QContactManager::UnspecifiedError;
+    }
 
-    query->bindValue(0, firstIds);
-    query->bindValue(1, secondIds);
-    query->bindValue(2, types);
+    if (firstIds.size() == 1) {
+        query->bindValue(0, firstIds.at(0).toUInt());
+        query->bindValue(1, secondIds.at(0).toUInt());
+        query->bindValue(2, types.at(0).toString());
+    } else if (firstIds.size() > 1) {
+        query->bindValue(0, firstIds);
+        query->bindValue(1, secondIds);
+        query->bindValue(2, types);
+    }
 
     return QContactManager::NoError;
 }
@@ -481,19 +516,109 @@ QContactManager::Error ContactWriter::save(
     if (relationships.isEmpty())
         return QContactManager::NoError;
 
-    QSet<QContactLocalId> contactIds;
-    QContactManager::Error error = bindRelationships(
-            &m_insertRelationship, relationships, errorMap, &contactIds);
-    if (error != QContactManager::NoError)
-        return error;
+    // in order to perform duplicate detection we build up the following datastructure.
+    QMultiMap<QContactLocalId, QPair<QString, QContactLocalId> > bucketedRelationships; // first id to <type, second id>.
+    {
+        if (!m_existingRelationships.exec()) {
+            qWarning() << "Failed to fetch existing relationships for duplicate detection during insert:";
+            qWarning() << m_existingRelationships.lastError();
+            return QContactManager::UnspecifiedError;
+        }
 
-    if (!m_insertRelationship.exec()) {
+        while (m_existingRelationships.next()) {
+            QContactLocalId fid = (m_existingRelationships.value(0).toUInt() + 1);
+            QContactLocalId sid = (m_existingRelationships.value(1).toUInt() + 1);
+            QString rt = m_existingRelationships.value(2).toString();
+            bucketedRelationships.insert(fid, QPair<QString, QContactLocalId>(rt, sid));
+        }
+    }
+
+    // in order to perform validity detection we build up the following set.
+    // XXX TODO: use foreign key constraint or similar in Relationships table?
+    QSet<QContactLocalId> validContactIds;
+    {
+        if (!m_existingContactIds.exec()) {
+            qWarning() << "Failed to fetch existing contacts for validity detection during insert:";
+            qWarning() << m_existingContactIds.lastError();
+            return QContactManager::UnspecifiedError;
+        }
+
+        while (m_existingContactIds.next()) {
+            validContactIds.insert(m_existingContactIds.value(0).toUInt() + 1);
+        }
+    }
+
+    QList<QContactLocalId> firstIdsToBind;
+    QList<QContactLocalId> secondIdsToBind;
+    QList<QString> typesToBind;
+
+    QSqlQuery multiInsertQuery(m_database);
+    QString queryString = QLatin1String("INSERT INTO Relationships");
+    int realInsertions = 0;
+    int invalidInsertions = 0;
+    for (int i = 0; i < relationships.size(); ++i) {
+        const QContactRelationship &relationship = relationships.at(i);
+        const QContactLocalId firstId = relationship.first().localId();
+        const QContactLocalId secondId = relationship.second().localId();
+        const QString &type = relationship.relationshipType();
+
+        if ((firstId == secondId)
+                || (!relationship.first().managerUri().isEmpty()
+                    && relationship.first().managerUri() != QLatin1String("org.nemomobile.contacts.sqlite"))
+                || (!relationship.second().managerUri().isEmpty()
+                    && relationship.second().managerUri() != QLatin1String("org.nemomobile.contacts.sqlite"))
+                || (!validContactIds.contains(firstId) || !validContactIds.contains(secondId))) {
+            // invalid contact specified in relationship, don't insert.
+            invalidInsertions += 1;
+            if (errorMap)
+                errorMap->insert(i, QContactManager::InvalidRelationshipError);
+            continue;
+        }
+
+        if (bucketedRelationships.find(firstId, QPair<QString, QContactLocalId>(type, secondId)) != bucketedRelationships.end()) {
+            // duplicate, don't insert.
+            continue;
+        } else {
+            if (realInsertions == 0) {
+                queryString += QString(QLatin1String("\n SELECT :firstId%1 as firstId, :secondId%1 as secondId, :type%1 as type"))
+                                      .arg(QString::number(realInsertions));
+            } else {
+                queryString += QString(QLatin1String("\n UNION SELECT :firstId%1, :secondId%1, :type%1"))
+                                      .arg(QString::number(realInsertions));
+            }
+            firstIdsToBind.append(firstId);
+            secondIdsToBind.append(secondId);
+            typesToBind.append(type);
+            bucketedRelationships.insert(firstId, QPair<QString, QContactLocalId>(type, secondId));
+            realInsertions += 1;
+        }
+    }
+
+    if (realInsertions > 0 && !multiInsertQuery.prepare(queryString)) {
+        qWarning() << "Failed to prepare multiple insert relationships query";
+        qWarning() << multiInsertQuery.lastError();
+        qWarning() << "Query:\n" << queryString;
+        return QContactManager::UnspecifiedError;
+    }
+
+    for (int i = 0; i < realInsertions; ++i) {
+        multiInsertQuery.bindValue(QString(QLatin1String(":firstId%1")).arg(QString::number(i)), (firstIdsToBind.at(i) - 1));
+        multiInsertQuery.bindValue(QString(QLatin1String(":secondId%1")).arg(QString::number(i)), (secondIdsToBind.at(i) - 1));
+        multiInsertQuery.bindValue(QString(QLatin1String(":type%1")).arg(QString::number(i)), typesToBind.at(i));
+    }
+
+    if (realInsertions > 0 && !multiInsertQuery.exec()) {
         qWarning() << "Failed to insert relationships";
-        qWarning() << m_insertRelationship.lastError();
+        qWarning() << multiInsertQuery.lastError();
+        qWarning() << "Query:\n" << queryString;
         return QContactManager::UnspecifiedError;
     }
 
     // Notify
+
+    if (invalidInsertions > 0) {
+        return QContactManager::InvalidRelationshipError;
+    }
 
     return QContactManager::NoError;
 }
@@ -504,42 +629,133 @@ QContactManager::Error ContactWriter::remove(
     if (relationships.isEmpty())
         return QContactManager::NoError;
 
-    QSet<QContactLocalId> contactIds;
-    QContactManager::Error error = bindRelationships(
-            &m_removeRelationship, relationships, errorMap, &contactIds);
-    if (error != QContactManager::NoError)
-        return error;
+    // in order to perform existence detection we build up the following datastructure.
+    QMultiMap<QContactLocalId, QPair<QString, QContactLocalId> > bucketedRelationships; // first id to <type, second id>.
+    {
+        if (!m_existingRelationships.exec()) {
+            qWarning() << "Failed to fetch existing relationships for duplicate detection during insert:";
+            qWarning() << m_existingRelationships.lastError();
+            return QContactManager::UnspecifiedError;
+        }
 
-    if (!m_removeRelationship.exec()) {
-        qWarning() << "Failed to remove relationships";
-        qWarning() << m_removeRelationship.lastError();
-        return QContactManager::UnspecifiedError;
+        while (m_existingRelationships.next()) {
+            QContactLocalId fid = (m_existingRelationships.value(0).toUInt() + 1);
+            QContactLocalId sid = (m_existingRelationships.value(1).toUInt() + 1);
+            QString rt = m_existingRelationships.value(2).toString();
+            bucketedRelationships.insert(fid, QPair<QString, QContactLocalId>(rt, sid));
+        }
+    }
+
+    QContactManager::Error worstError = QContactManager::NoError;
+    QSet<QContactRelationship> alreadyRemoved;
+    bool removeInvalid = false;
+    for (int i = 0; i < relationships.size(); ++i) {
+        QContactRelationship curr = relationships.at(i);
+        if (alreadyRemoved.contains(curr)) {
+            continue;
+        }
+
+        if (bucketedRelationships.find(curr.first().localId(), QPair<QString, QContactLocalId>(curr.relationshipType(), curr.second().localId())) == bucketedRelationships.end()) {
+            removeInvalid = true;
+            if (errorMap)
+                errorMap->insert(i, QContactManager::DoesNotExistError);
+            continue;
+        }
+
+        QSqlQuery removeRelationship(m_database);
+        if (!removeRelationship.prepare("DELETE FROM Relationships WHERE firstId = :firstId AND secondId = :secondId AND type = :type;")) {
+            qWarning() << "Failed to prepare remove relationship";
+            qWarning() << removeRelationship.lastError();
+            worstError = QContactManager::UnspecifiedError;
+            if (errorMap)
+                errorMap->insert(i, worstError);
+            continue;
+        }
+
+        removeRelationship.bindValue(":firstId", curr.first().localId() - 1);
+        removeRelationship.bindValue(":secondId", curr.second().localId() - 1);
+        removeRelationship.bindValue(":type", curr.relationshipType());
+
+        if (!removeRelationship.exec()) {
+            qWarning() << "Failed to remove relationship";
+            qWarning() << removeRelationship.lastError();
+            worstError = QContactManager::UnspecifiedError;
+            if (errorMap)
+                errorMap->insert(i, worstError);
+            continue;
+        }
+
+        alreadyRemoved.insert(curr);
     }
 
     // Notify
 
+    if (removeInvalid) {
+        return QContactManager::DoesNotExistError;
+    }
+
     return QContactManager::NoError;
 }
 
-QContactManager::Error ContactWriter::remove(const QList<QContactLocalId> &contactIds)
+QContactManager::Error ContactWriter::remove(const QList<QContactLocalId> &contactIds, QMap<int, QContactManager::Error> *errorMap)
 {
     if (contactIds.isEmpty())
         return QContactManager::NoError;
 
-    QVariantList boundValues;
-    foreach (const QContactLocalId contactId, contactIds)
-        boundValues.append(contactId - 1);
-
-    m_removeContact.bindValue(QLatin1String(":contactId"), boundValues);
-    if (m_removeContact.execBatch()) {
-        ContactNotifier::contactsRemoved(contactIds);
-
-        return QContactManager::NoError;
-    } else {
-        qWarning() << "Failed to removed contacts";
-        qWarning() << m_removeContact.lastError();
+    QContactLocalId selfContactId = 0;
+    m_selfContactId.bindValue(":identity", ContactsDatabase::SelfContactId);
+    if (!m_selfContactId.exec()) {
+        qWarning() << "Failed to fetch self contact id during remove";
+        qWarning() << m_selfContactId.lastError();
         return QContactManager::UnspecifiedError;
     }
+
+    if (m_selfContactId.next()) {
+        selfContactId = m_selfContactId.value(0).toUInt() + 1;
+    }
+
+    QSet<QContactLocalId> existingContactIds;
+    if (!m_existingContactIds.exec()) {
+        qWarning() << "Failed to fetch existing contact ids during remove";
+        qWarning() << m_existingContactIds.lastError();
+        return QContactManager::UnspecifiedError;
+    }
+
+    while (m_existingContactIds.next()) {
+        existingContactIds.insert(m_existingContactIds.value(0).toUInt() + 1);
+    }
+
+    QContactManager::Error error = QContactManager::NoError;
+    QVariantList boundValues;
+    QList<QContactLocalId> realRemoveIds;
+    for (int i = 0; i < contactIds.size(); ++i) {
+        QContactLocalId currLId = contactIds.at(i);
+        if (selfContactId > 0 && currLId == selfContactId) {
+            if (errorMap)
+                errorMap->insert(i, QContactManager::BadArgumentError);
+            error = QContactManager::BadArgumentError;
+        } else if (existingContactIds.contains(currLId)) {
+            boundValues.append(currLId - 1);
+            realRemoveIds.append(currLId);
+        } else {
+            if (errorMap)
+                errorMap->insert(i, QContactManager::DoesNotExistError);
+            error = QContactManager::DoesNotExistError;
+        }
+    }
+
+    m_removeContact.bindValue(QLatin1String(":contactId"), boundValues);
+    if (realRemoveIds.size() > 0) {
+        if (!m_removeContact.execBatch()) {
+            qWarning() << "Failed to removed contacts";
+            qWarning() << m_removeContact.lastError();
+            return QContactManager::UnspecifiedError;
+        }
+
+        ContactNotifier::contactsRemoved(realRemoveIds);
+    }
+
+    return error;
 }
 
 template <typename T> bool ContactWriter::removeCommonDetails(
@@ -724,9 +940,10 @@ QContactManager::Error ContactWriter::save(
     QVector<QContactLocalId> createdContactIds;
     QVector<QContactLocalId> updatedContactIds;
 
+    QContactManager::Error worstError = QContactManager::NoError;
+    QContactManager::Error err = QContactManager::NoError;
     for (int i = 0; i < contacts->count(); ++i) {
         QContact &contact = (*contacts)[i];
-        QContactManager::Error err;
         const QContactLocalId contactId = contact.localId();
         if (contactId == 0) {
             err = create(&contact, definitionMask);
@@ -736,10 +953,10 @@ QContactManager::Error ContactWriter::save(
             updatedContactIds.append(contactId);
         }
         if (err != QContactManager::NoError) {
-            if (errorMap)
+            worstError = err;
+            if (errorMap) {
                 errorMap->insert(i, err);
-            m_database.rollback();
-            return err;
+            }
         }
     }
 
@@ -754,7 +971,7 @@ QContactManager::Error ContactWriter::save(
     if (!updatedContactIds.isEmpty())
         ContactNotifier::contactsChanged(updatedContactIds);
 
-    return QContactManager::NoError;
+    return worstError;
 }
 
 QContactManager::Error ContactWriter::create(QContact *contact, const QStringList &definitionMask)
@@ -766,11 +983,23 @@ QContactManager::Error ContactWriter::create(QContact *contact, const QStringLis
         return QContactManager::UnspecifiedError;
     } else {
         QContactLocalId contactId = m_insertContact.lastInsertId().toUInt();
-        QContactId id;
-        id.setLocalId(contactId + 1);
-        id.setManagerUri(QLatin1String("org.nemomobile.contacts.sqlite"));
-        contact->setId(id);
-        return write(contactId, contact, definitionMask);
+        QContactManager::Error writeErr = write(contactId, contact, definitionMask);
+        if (writeErr == QContactManager::NoError) {
+            // successfully saved all data.  Update id.
+            QContactId id;
+            id.setLocalId(contactId + 1);
+            id.setManagerUri(QLatin1String("org.nemomobile.contacts.sqlite"));
+            contact->setId(id);
+        } else {
+            // error occurred.  Remove the failed entry.
+            m_removeContact.bindValue(":contactId", contactId);
+            if (!m_removeContact.exec()) {
+                qWarning() << "Unable to remove stale contact after failed save";
+                qWarning() << m_removeContact.lastError().text();
+            }
+        }
+
+        return writeErr;
     }
 }
 
@@ -806,6 +1035,40 @@ QContactManager::Error ContactWriter::update(QContact *contact, const QStringLis
 QContactManager::Error ContactWriter::write(QContactLocalId contactId, QContact *contact, const QStringList &definitionMask)
 {
     QContactManager::Error error = QContactManager::NoError;
+
+    // look for unsupported detail data.  XXX TODO: this is really slow, due to string comparison.
+    // We could simply ignore all unsupported data during save, which would save quite some time.
+    QList<QContactDetail> allDets = contact->details();
+    foreach (const QContactDetail &det, allDets) {
+        if (det.definitionName() != QContactType::DefinitionName
+                && det.definitionName() != QContactDisplayLabel::DefinitionName
+                && det.definitionName() != QContactName::DefinitionName
+                && det.definitionName() != QContactSyncTarget::DefinitionName
+                && det.definitionName() != QContactGuid::DefinitionName
+                && det.definitionName() != QContactNickname::DefinitionName
+                && det.definitionName() != QContactFavorite::DefinitionName
+                && det.definitionName() != QContactGender::DefinitionName
+                && det.definitionName() != QContactTimestamp::DefinitionName
+                && det.definitionName() != QContactPhoneNumber::DefinitionName
+                && det.definitionName() != QContactEmailAddress::DefinitionName
+                && det.definitionName() != QContactBirthday::DefinitionName
+                && det.definitionName() != QContactAvatar::DefinitionName
+                && det.definitionName() != QContactOnlineAccount::DefinitionName
+                && det.definitionName() != QContactPresence::DefinitionName
+                && det.definitionName() != QContactGlobalPresence::DefinitionName
+                && det.definitionName() != QContactTpMetadata::DefinitionName
+                && det.definitionName() != QContactAddress::DefinitionName
+                && det.definitionName() != QContactTag::DefinitionName
+                && det.definitionName() != QContactUrl::DefinitionName
+                && det.definitionName() != QContactAnniversary::DefinitionName
+                && det.definitionName() != QContactHobby::DefinitionName
+                && det.definitionName() != QContactNote::DefinitionName
+                && det.definitionName() != QContactOrganization::DefinitionName
+                && det.definitionName() != QContactRingtone::DefinitionName) {
+            return QContactManager::InvalidDetailError;
+        }
+    }
+
     if (writeDetails<QContactAddress>(contactId, contact, m_removeAddress, definitionMask, &error)
             && writeDetails<QContactAnniversary>(contactId, contact, m_removeAnniversary, definitionMask, &error)
             && writeDetails<QContactAvatar>(contactId, contact, m_removeAvatar, definitionMask, &error)

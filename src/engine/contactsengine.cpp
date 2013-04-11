@@ -274,7 +274,8 @@ public:
     {
         if (!writer)
             writer = new ContactWriter(database);
-        m_error = writer->remove(m_contactIds);
+        m_errorMap.clear();
+        m_error = writer->remove(m_contactIds, &m_errorMap);
     }
 
     void updateState(QContactAbstractRequest::State state)
@@ -282,12 +283,13 @@ public:
         QContactManagerEngine::updateContactRemoveRequest(
                 m_request,
                 m_error,
-                QMap<int, QContactManager::Error>(),
+                m_errorMap,
                 state);
     }
 
 private:
     QList<QContactLocalId> m_contactIds;
+    QMap<int, QContactManager::Error> m_errorMap;
 };
 
 class ContactFetchJob : public TemplateJob<QContactFetchRequest>
@@ -973,12 +975,12 @@ bool ContactsEngine::removeContact(const QContactLocalId &contactId, QContactMan
 
 bool ContactsEngine::removeContacts(
             const QList<QContactLocalId> &contactIds,
-            QMap<int, QContactManager::Error> *,
+            QMap<int, QContactManager::Error> *errorMap,
             QContactManager::Error* error)
 {
     if (!m_synchronousWriter)
         m_synchronousWriter = new ContactWriter(m_database);
-    QContactManager::Error err = m_synchronousWriter->remove(contactIds);
+    QContactManager::Error err = m_synchronousWriter->remove(contactIds, errorMap);
     if (error)
         *error = err;
     return err == QContactManager::NoError;
@@ -1055,7 +1057,28 @@ bool ContactsEngine::saveRelationships(
     QContactManager::Error err = m_synchronousWriter->save(*relationships, errorMap);
     if (error)
         *error = err;
-    return err == QContactManager::NoError;
+
+    if (err == QContactManager::NoError) {
+        // update id of relationships to include the manager uri where applicable.
+        for (int i = 0; relationships && i < relationships->size(); ++i) {
+            QContactRelationship curr = relationships->at(i);
+            if (curr.first().managerUri().isEmpty()) {
+                QContactId firstId = curr.first();
+                firstId.setManagerUri(QLatin1String("org.nemomobile.contacts.sqlite"));
+                curr.setFirst(firstId);
+            }
+            if (curr.second().managerUri().isEmpty()) {
+                QContactId secondId = curr.second();
+                secondId.setManagerUri(QLatin1String("org.nemomobile.contacts.sqlite"));
+                curr.setSecond(secondId);
+            }
+            relationships->replace(i, curr);
+        }
+
+        return true;
+    }
+
+    return false;
 }
 
 bool ContactsEngine::removeRelationships(
