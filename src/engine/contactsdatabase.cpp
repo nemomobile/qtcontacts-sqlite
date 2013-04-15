@@ -80,8 +80,8 @@ static const char *createAnniversariesTable =
         "\n CREATE TABLE Anniversaries ("
         "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
         "\n contactId INTEGER KEY,"
-        "\n calendarId TEXT,"
         "\n originalDateTime DATETIME,"
+        "\n calendarId TEXT,"
         "\n subType INTEGER);";
 
 static const char *createAvatarsTable =
@@ -95,8 +95,8 @@ static const char *createBirthdaysTable =
         "\n CREATE TABLE Birthdays ("
         "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
         "\n contactId INTEGER KEY,"
-        "\n calendarId TEXT,"
-        "\n birthday DATETIME);";
+        "\n birthday DATETIME,"
+        "\n calendarId TEXT);";
 
 static const char *createEmailAddressesTable =
         "\n CREATE TABLE EmailAddresses ("

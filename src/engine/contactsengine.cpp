@@ -960,6 +960,17 @@ bool ContactsEngine::saveContacts(
 {
     if (!m_synchronousWriter)
         m_synchronousWriter = new ContactWriter(m_database);
+
+    // for each contact, if it doesn't have a display label, synthesise one for it.
+    for (int i = 0; contacts && i < contacts->size(); ++i) {
+        QContact curr = contacts->at(i);
+        if (curr.displayLabel().isEmpty()) {
+            QContactManager::Error displayLabelError = QContactManager::NoError;
+            setContactDisplayLabel(&curr, synthesizedDisplayLabel(curr, &displayLabelError));
+            contacts->replace(i, curr);
+        }
+    }
+
     QContactManager::Error err = m_synchronousWriter->save(contacts, definitionMask, errorMap);
     if (error)
         *error = err;

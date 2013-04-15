@@ -135,13 +135,13 @@ static const char *insertAddress =
 static const char *insertAnniversary =
         "\n INSERT INTO Anniversaries ("
         "\n  contactId,"
-        "\n  calendarId,"
         "\n  originalDateTime,"
+        "\n  calendarId,"
         "\n  subType)"
         "\n VALUES ("
         "\n  :contactId,"
-        "\n  :calendarId,"
         "\n  :originalDateTime,"
+        "\n  :calendarId,"
         "\n  :subType)";
 
 static const char *insertAvatar =
@@ -157,12 +157,12 @@ static const char *insertAvatar =
 static const char *insertBirthday =
         "\n INSERT INTO Birthdays ("
         "\n  contactId,"
-        "\n  calendarId,"
-        "\n  birthday)"
+        "\n  birthday,"
+        "\n  calendarId)"
         "\n VALUES ("
         "\n  :contactId,"
-        "\n  :calendarId,"
-        "\n  :birthday)";
+        "\n  :birthday,"
+        "\n  :calendarId)";
 
 static const char *insertEmailAddress =
         "\n INSERT INTO EmailAddresses ("
@@ -1132,8 +1132,8 @@ QSqlQuery &ContactWriter::bindDetail(QContactLocalId contactId, const QContactAn
 {
     typedef QContactAnniversary T;
     m_insertAnniversary.bindValue(0, contactId);
-    m_insertAnniversary.bindValue(1, detail.variantValue(T::FieldCalendarId));
-    m_insertAnniversary.bindValue(2, detail.variantValue(T::FieldOriginalDate));
+    m_insertAnniversary.bindValue(1, detail.variantValue(T::FieldOriginalDate));
+    m_insertAnniversary.bindValue(2, detail.variantValue(T::FieldCalendarId));
     m_insertAnniversary.bindValue(3, detail.variantValue(T::FieldSubType));
     return m_insertAnniversary;
 }
@@ -1152,8 +1152,8 @@ QSqlQuery &ContactWriter::bindDetail(QContactLocalId contactId, const QContactBi
 {
     typedef QContactBirthday T;
     m_insertBirthday.bindValue(0, contactId);
-    m_insertBirthday.bindValue(1, detail.variantValue(T::FieldCalendarId));
-    m_insertBirthday.bindValue(2, detail.variantValue(T::FieldBirthday));
+    m_insertBirthday.bindValue(1, detail.variantValue(T::FieldBirthday));
+    m_insertBirthday.bindValue(2, detail.variantValue(T::FieldCalendarId));
     return m_insertBirthday;
 }
 
