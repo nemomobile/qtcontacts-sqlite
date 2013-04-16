@@ -48,7 +48,6 @@
 #include <QContactPhoneNumber>
 #include <QContactPresence>
 #include <QContactRingtone>
-#include <QContactSyncTarget>
 #include <QContactTag>
 #include <QContactUrl>
 
@@ -58,18 +57,22 @@
 
 QTM_USE_NAMESPACE
 
-
+class ContactReader;
 class ContactWriter
 {
 public:
-    ContactWriter(const QSqlDatabase &database);
+    ContactWriter(const QSqlDatabase &database, ContactReader *reader);
     ~ContactWriter();
 
     QContactManager::Error save(
             QList<QContact> *contacts,
             const QStringList &definitionMask,
-            QMap<int, QContactManager::Error> *errorMap);
-    QContactManager::Error remove(const QList<QContactLocalId> &contactIds, QMap<int, QContactManager::Error> *errorMap);
+            QMap<int, QContactManager::Error> *errorMap,
+            bool withinTransaction,
+            bool withinAggregateUpdate);
+    QContactManager::Error remove(const QList<QContactLocalId> &contactIds,
+                                  QMap<int, QContactManager::Error> *errorMap,
+                                  bool withinTransaction);
 
     QContactManager::Error setIdentity(ContactsDatabase::Identity identity, QContactLocalId contactId);
 
@@ -81,10 +84,14 @@ public:
             QMap<int, QContactManager::Error> *errorMap);
 
 private:
-    QContactManager::Error create(QContact *contact, const QStringList &definitionMask);
-    QContactManager::Error update(QContact *contact, const QStringList &definitionMask);
-    QContactManager::Error write(
-            QContactLocalId contactId, QContact *contact, const QStringList &definitionMask);
+    QContactManager::Error create(QContact *contact, const QStringList &definitionMask, bool withinTransaction);
+    QContactManager::Error update(QContact *contact, const QStringList &definitionMask, bool withinTransaction, bool withinAggregateUpdate);
+    QContactManager::Error write(QContactLocalId contactId, QContact *contact, const QStringList &definitionMask);
+
+    QContactManager::Error updateOrCreateAggregate(QContact *contact, const QStringList &definitionMask, bool withinTransaction);
+    QContactManager::Error updateLocalAndAggregate(QContact *contact, const QStringList &definitionMask, bool withinTransaction);
+    void regenerateAggregates(const QList<QContactLocalId> &aggregateIds, bool withinTransaction);
+
     void bindContactDetails(const QContact &contact, QSqlQuery &query);
 
     template <typename T> bool writeDetails(
@@ -113,12 +120,16 @@ private:
     QSqlQuery &bindDetail(QContactLocalId contactId, const QContactPhoneNumber &detail);
     QSqlQuery &bindDetail(QContactLocalId contactId, const QContactPresence &detail);
     QSqlQuery &bindDetail(QContactLocalId contactId, const QContactRingtone &detail);
-    QSqlQuery &bindDetail(QContactLocalId contactId, const QContactSyncTarget &detail);
     QSqlQuery &bindDetail(QContactLocalId contactId, const QContactTag &detail);
     QSqlQuery &bindDetail(QContactLocalId contactId, const QContactUrl &detail);
     QSqlQuery &bindDetail(QContactLocalId contactId, const QContactTpMetadata &detail);
 
     QSqlDatabase m_database;
+    QSqlQuery m_findRelatedForAggregate;
+    QSqlQuery m_findLocalForAggregate;
+    QSqlQuery m_findAggregateForLocal;
+    QSqlQuery m_selectAggregateContactIds;
+    QSqlQuery m_orphanAggregateIds;
     QSqlQuery m_checkContactExists;
     QSqlQuery m_existingContactIds;
     QSqlQuery m_selfContactId;
@@ -143,7 +154,6 @@ private:
     QSqlQuery m_insertPhoneNumber;
     QSqlQuery m_insertPresence;
     QSqlQuery m_insertRingtone;
-    QSqlQuery m_insertSyncTarget;
     QSqlQuery m_insertTag;
     QSqlQuery m_insertUrl;
     QSqlQuery m_insertTpMetadata;
@@ -164,12 +174,12 @@ private:
     QSqlQuery m_removePhoneNumber;
     QSqlQuery m_removePresence;
     QSqlQuery m_removeRingtone;
-    QSqlQuery m_removeSyncTarget;
     QSqlQuery m_removeTag;
     QSqlQuery m_removeUrl;
     QSqlQuery m_removeTpMetadata;
     QSqlQuery m_removeDetail;
     QSqlQuery m_removeIdentity;
+    ContactReader *m_reader;
 };
 
 

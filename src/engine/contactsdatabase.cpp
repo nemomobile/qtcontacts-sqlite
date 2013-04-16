@@ -60,6 +60,7 @@ static const char *createContactsTable =
         "\n prefix TEXT,"
         "\n suffix TEXT,"
         "\n customLabel TEXT,"
+        "\n syncTarget TEXT NOT NULL,"
         "\n created DATETIME,"
         "\n modified DATETIME,"
         "\n gender TEXT,"
@@ -185,12 +186,6 @@ static const char *createRingtonesTable =
         "\n audioRingtone TEXT,"
         "\n videoRingtone TEXT);";
 
-static const char *createSyncTargetsTable =
-        "\n CREATE TABLE SyncTargets ("
-        "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
-        "\n contactId INTEGER KEY,"
-        "\n syncTarget TEXT);";
-
 static const char *createTagsTable =
         "\n CREATE TABLE Tags ("
         "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
@@ -259,7 +254,6 @@ static const char *createRemoveTrigger =
         "\n  DELETE FROM PhoneNumbers WHERE contactId = old.contactId;"
         "\n  DELETE FROM Presences WHERE contactId = old.contactId;"
         "\n  DELETE FROM Ringtones WHERE contactId = old.contactId;"
-        "\n  DELETE FROM SyncTargets WHERE contactId = old.contactId;"
         "\n  DELETE FROM Tags WHERE contactId = old.contactId;"
         "\n  DELETE FROM Urls WHERE contactId = old.contactId;"
         "\n  DELETE FROM TpMetadata WHERE contactId = old.contactId;"
@@ -286,7 +280,6 @@ static const char *createTables[] =
     createPhoneNumbersTable,
     createPresencesTable,
     createRingtonesTable,
-    createSyncTargetsTable,
     createTagsTable,
     createUrlsTable,
     createTpMetadataTable,

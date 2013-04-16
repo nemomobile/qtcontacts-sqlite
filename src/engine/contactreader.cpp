@@ -112,6 +112,11 @@ static const FieldInfo nameFields[] =
     { QContactName::FieldCustomLabel, "customLabel", StringField }
 };
 
+static const FieldInfo syncTargetFields[] =
+{
+    { QContactSyncTarget::FieldSyncTarget, "syncTarget", StringField }
+};
+
 static const FieldInfo timestampFields[] =
 {
     { QContactTimestamp::FieldCreationTimestamp, "created", DateField },
@@ -364,18 +369,6 @@ static void setValues(QContactRingtone *detail, QSqlQuery *query, const int offs
     setValue(detail, T::FieldVideoRingtoneUrl, QUrl(query->value(offset + 1).toString()));
 }
 
-static const FieldInfo syncTargetFields[] =
-{
-    { QContactSyncTarget::FieldSyncTarget, "syncTarget", StringField }
-};
-
-static void setValues(QContactSyncTarget *detail, QSqlQuery *query, const int offset)
-{
-    typedef QContactSyncTarget T;
-
-    setValue(detail, T::FieldSyncTarget, query->value(offset + 0));
-}
-
 static const FieldInfo tagFields[] =
 {
     { QContactTag::FieldTag, "tag", StringField }
@@ -461,7 +454,7 @@ struct DetailInfo
     QString where() const
     {
         return table
-                ? QString(QLatin1String("contactId IN (SELECT contactId FROM %1 WHERE %2)")).arg(QLatin1String(table))
+                ? QString(QLatin1String("Contacts.contactId IN (SELECT contactId FROM %1 WHERE %2)")).arg(QLatin1String(table))
                 : QLatin1String("%2");
     }
 };
@@ -478,6 +471,7 @@ static const DetailInfo detailInfo[] =
 {
     DEFINE_DETAIL_PRIMARY_TABLE(QContactDisplayLabel, displayLabelFields),
     DEFINE_DETAIL_PRIMARY_TABLE(QContactName,         nameFields),
+    DEFINE_DETAIL_PRIMARY_TABLE(QContactSyncTarget,   syncTargetFields),
     DEFINE_DETAIL_PRIMARY_TABLE(QContactTimestamp,    timestampFields),
     DEFINE_DETAIL_PRIMARY_TABLE(QContactGender,       genderFields),
     DEFINE_DETAIL_PRIMARY_TABLE(QContactFavorite,     favoriteFields),
@@ -495,7 +489,6 @@ static const DetailInfo detailInfo[] =
     DEFINE_DETAIL(QContactPhoneNumber   , PhoneNumbers   , phoneNumberFields  , true),
     DEFINE_DETAIL(QContactPresence      , Presences      , presenceFields     , false),
     DEFINE_DETAIL(QContactRingtone      , Ringtones      , ringtoneFields     , false),
-    DEFINE_DETAIL(QContactSyncTarget    , SyncTargets    , syncTargetFields   , false),
     DEFINE_DETAIL(QContactTag           , Tags           , tagFields          , true),
     DEFINE_DETAIL(QContactUrl           , Urls           , urlFields          , true),
     DEFINE_DETAIL(QContactTpMetadata    , TpMetadata     , tpMetadataFields   , false),
@@ -521,7 +514,10 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
                 continue;
 
             if (filter.detailFieldName().isEmpty()   // "match if detail exists, don't care about field or value" filter
-                    || !filter.value().isValid()) {  // "match if detail and field exists, don't care about value" filter
+                    || !filter.value().isValid()     // "match if detail and field exists, don't care about value" filter
+                    || (filter.detailDefinitionName() == QContactSyncTarget::DefinitionName
+                            && filter.detailFieldName() == QContactSyncTarget::FieldSyncTarget
+                            && filter.value().toString().isEmpty())) { // match all sync targets if empty sync target filter
                 const QString comparison(QLatin1String("%1 IS NOT NULL"));
                 return detail.where().arg(comparison.arg(field.column));
             }
@@ -647,7 +643,7 @@ static QString buildWhere(const QContactLocalIdFilter &filter, QVariantList *bin
         return QLatin1String("FALSE");
     }
 
-    QString statement = QLatin1String("contactId IN (?");
+    QString statement = QLatin1String("Contacts.contactId IN (?");
     bindings->append(contactIds.first() - 1);
 
     for (int i = 1; i < contactIds.count(); ++i) {
@@ -671,7 +667,7 @@ static QString buildWhere(const QContactRelationshipFilter &filter, QVariantList
 
     bool needsId = rclid != 0;
     bool needsType = !rt.isEmpty();
-    QString statement = QLatin1String("contactId IN (\n");
+    QString statement = QLatin1String("Contacts.contactId IN (\n");
     if (!needsId && !needsType) {
         // return the id of every contact who is in a relationship
         if (rcr == QContactRelationship::First) { // where the other contact is the First
@@ -831,7 +827,7 @@ static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins)
                         .arg(QLatin1String(field.column))
                         .arg(collate).arg(direction);
             } else {
-                qWarning() << "INTERNAL ERROR: no join and not primary table for ORDER BY in query with:"
+                qWarning() << "UNSUPPORTED SORTING: no join and not primary table for ORDER BY in query with:"
                            << order.detailDefinitionName() << order.detailFieldName();
             }
         }
@@ -873,6 +869,124 @@ struct Table
     QContactLocalId currentId;
 };
 
+static QContactManager::Error createTemporaryContactIdsTable(
+        QSqlDatabase *db, const QString &table, bool filter, // required for both "filter" and "by id"
+        const QVariantList &boundIds,                        // for "read contacts by id" only
+        const QString &join, const QString &where, const QString &orderBy, const QVariantList boundValues)
+{
+    // Create the temporary table (if we haven't already).
+    QSqlQuery tableQuery(*db);
+    const QString createStatement = QString(QLatin1String(
+            "\n CREATE TABLE IF NOT EXISTS temp.%1 ("
+            "\n contactId INTEGER);")).arg(table);
+    if (!tableQuery.prepare(createStatement)) {
+        qWarning() << "Failed to prepare temporary table query";
+        qWarning() << tableQuery.lastError();
+        qWarning() << createStatement;
+        return QContactManager::UnspecifiedError;
+    }
+    if (!tableQuery.exec()) {
+        qWarning() << "Failed to create temporary table";
+        qWarning() << tableQuery.lastError();
+        qWarning() << createStatement;
+        return QContactManager::UnspecifiedError;
+    }
+    tableQuery.finish();
+
+    // Delete all existing records.  This is just in case the
+    // previous clearTemporaryContactIdsTable function failed.
+    // XXX TODO: for performance reasons, should remove this query.
+    QSqlQuery deleteRecordsQuery(*db);
+    const QString deleteRecordsStatement = QString(QLatin1String(
+            "\n DELETE FROM temp.%1")).arg(table);
+    if (!deleteRecordsQuery.prepare(deleteRecordsStatement)) {
+        qWarning() << "Failed to prepare delete records query";
+        qWarning() << deleteRecordsQuery.lastError();
+        qWarning() << deleteRecordsStatement;
+        return QContactManager::UnspecifiedError;
+    }
+    if (!deleteRecordsQuery.exec()) {
+        qWarning() << "Failed to delete temporary records";
+        qWarning() << deleteRecordsQuery.lastError();
+        qWarning() << deleteRecordsStatement;
+        return QContactManager::UnspecifiedError;
+    }
+    deleteRecordsQuery.finish();
+
+    // insert into the temporary table, all of the ids
+    // which will be specified either by id list, or by filter.
+    QSqlQuery insertQuery(*db);
+    if (filter) {
+        // specified by filter
+        const QString insertStatement = QString(QLatin1String(
+                "\n INSERT INTO temp.%1 (contactId)"
+                "\n SELECT Contacts.contactId"
+                "\n FROM Contacts %2"
+                "\n %3"
+                "\n ORDER BY %4;"))
+                .arg(table).arg(join).arg(where).arg(orderBy);
+        if (!insertQuery.prepare(insertStatement)) {
+            qWarning() << "Failed to prepare temporary contact ids";
+            qWarning() << insertQuery.lastError();
+            qWarning() << insertStatement;
+            return QContactManager::UnspecifiedError;
+        }
+        for (int i = 0; i < boundValues.count(); ++i) {
+            insertQuery.bindValue(i, boundValues.at(i));
+        }
+        if (!insertQuery.exec()) {
+            qWarning() << "Failed to insert temporary contact ids";
+            qWarning() << insertQuery.lastError();
+            qWarning() << insertStatement;
+            return QContactManager::UnspecifiedError;
+        }
+    } else {
+        // specified by id list
+        const QString insertStatement = QString(QLatin1String(
+                "\n INSERT INTO temp.%1 (contactId)"
+                "\n VALUES(:contactId);"))
+                .arg(table);
+        if (!insertQuery.prepare(insertStatement)) {
+            qWarning() << "Failed to prepare temporary contact ids";
+            qWarning() << insertQuery.lastError();
+            qWarning() << insertStatement;
+            return QContactManager::UnspecifiedError;
+        }
+        insertQuery.bindValue(0, boundIds);
+        if (!insertQuery.execBatch()) {
+            qWarning() << "Failed to insert temporary contact ids";
+            qWarning() << insertQuery.lastError();
+            qWarning() << insertStatement;
+            return QContactManager::UnspecifiedError;
+        }
+    }
+    insertQuery.finish();
+    return QContactManager::NoError;
+}
+
+static void clearTemporaryContactIdsTable(QSqlDatabase *db, const QString &table)
+{
+    QSqlQuery dropTableQuery(*db);
+    const QString dropTableStatement = QString(QLatin1String(
+            "\n DROP TABLE temp.%1")).arg(table);
+    if (!dropTableQuery.prepare(dropTableStatement) || !dropTableQuery.exec()) {
+        // couldn't drop the table, just delete all entries instead.
+        QSqlQuery deleteRecordsQuery(*db);
+        const QString deleteRecordsStatement = QString(QLatin1String(
+                "\n DELETE FROM temp.%1")).arg(table);
+        if (!deleteRecordsQuery.prepare(deleteRecordsStatement)) {
+            qWarning() << "FATAL ERROR: Failed to prepare delete records query - the next query may return spurious results";
+            qWarning() << deleteRecordsQuery.lastError();
+            qWarning() << deleteRecordsStatement;
+        }
+        if (!deleteRecordsQuery.exec()) {
+            qWarning() << "FATAL ERROR: Failed to delete temporary records - the next query may return spurious results";
+            qWarning() << deleteRecordsQuery.lastError();
+            qWarning() << deleteRecordsStatement;
+        }
+    }
+}
+
 QContactManager::Error ContactReader::readContacts(
         const QString &table,
         QList<QContact> *contacts,
@@ -880,74 +994,40 @@ QContactManager::Error ContactReader::readContacts(
         const QList<QContactSortOrder> &order,
         const QStringList &details)
 {
-    if (!m_database.transaction()) {
-        return QContactManager::UnspecifiedError;
-    }
-
     QString join;
-
-    bool failed = false;
-    QVariantList bindings;
-    QString where = buildWhere(filter, &bindings, &failed);
-
-    if (failed) {
-        qWarning() << "Failed to create WHERE expression: invalid filter specification";
-        m_database.rollback();
-        return QContactManager::UnspecifiedError;
-    }
-
-    if (!where.isEmpty())
-        where = QLatin1String("WHERE ") + where;
     const QString orderBy = buildOrderBy(order, &join);
-
-    const QString queryString = QString(QLatin1String(
-                "\n CREATE TABLE temp.%1 AS"
-                "\n SELECT Contacts.contactId"
-                "\n FROM Contacts %2"
-                "\n %3"
-                "\n ORDER BY %4;")).arg(table).arg(join).arg(where).arg(orderBy);
-
-    QSqlQuery query(m_database);
-    if (!query.prepare(queryString)) {
-        qWarning() << "Failed to prepare contacts";
-        qWarning() << query.lastError();
-        qWarning() << queryString;
-        m_database.rollback();
+    bool whereFailed = false;
+    QVariantList bindings;
+    QString where = buildWhere(filter, &bindings, &whereFailed);
+    if (whereFailed) {
+        qWarning() << "Failed to create WHERE expression: invalid filter specification";
         return QContactManager::UnspecifiedError;
     }
 
-    for (int i = 0; i < bindings.count(); ++i)
-        query.bindValue(i, bindings.at(i));
-
-    if (!query.exec()) {
-        qWarning() << "Failed to query contacts";
-        qWarning() << query.lastError();
-        qWarning() << queryString;
-        m_database.rollback();
-        return QContactManager::UnspecifiedError;
+#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
+    // by default, we only return "aggregate" contacts.
+    if (where.isEmpty()) {
+        where = QLatin1String("WHERE Contacts.syncTarget = 'aggregate'");
+    } else if (!where.contains("syncTarget")) {
+        where = QLatin1String("WHERE Contacts.syncTarget = 'aggregate' AND ") + where;
+    } else { // Unless they explicitly specify a syncTarget criterium
+        where = QLatin1String("WHERE ") + where;
     }
-
-    const QContactManager::Error error = queryContacts(table, contacts, details);
-
-    QSqlQuery dropQuery(m_database);
-    const QString dropQueryString = QString(QLatin1String("DROP TABLE temp.%1;")).arg(table);
-    if (!dropQuery.prepare(dropQueryString)) {
-        qWarning() << "Failed to prepare drop temporary table" << table << "query";
-        qWarning() << dropQuery.lastError();
-        qWarning() << dropQueryString;
-    } else {
-        if (!dropQuery.exec()) {
-            qWarning() << "Failed to drop temporary table" << table;
-            qWarning() << dropQuery.lastError();
-            qWarning() << dropQueryString;
-        } else {
-            // success.
-            m_database.commit();
-            return error;
-        }
+#else
+    if (!where.isEmpty()) {
+        where = QLatin1String("WHERE ") + where;
     }
+#endif
 
-    m_database.rollback();
+    QContactManager::Error createTempError = createTemporaryContactIdsTable(
+            &m_database, table, true, QVariantList(), join, where, orderBy, bindings);
+
+    QContactManager::Error error = (createTempError == QContactManager::NoError)
+            ? queryContacts(table, contacts, details)
+            : createTempError;
+
+    clearTemporaryContactIdsTable(&m_database, table);
+
     return error;
 }
 
@@ -957,49 +1037,19 @@ QContactManager::Error ContactReader::readContacts(
         const QList<QContactLocalId> &contactIds,
         const QStringList &details)
 {
-    if (!m_database.transaction()) {
-        return QContactManager::UnspecifiedError;
-    }
-
-    const QString createStatement = QString(QLatin1String(
-            "\n CREATE TABLE temp.%1 ("
-            "\n contactId INTEGER);")).arg(table);
-
-    QSqlQuery tableQuery(m_database);
-    if (!tableQuery.prepare(createStatement)) {
-        qWarning() << "Failed to prepare contacts";
-        qWarning() << tableQuery.lastError();
-        qWarning() << createStatement;
-        m_database.rollback();
-        return QContactManager::UnspecifiedError;
-    }
-
-    if (!tableQuery.exec()) {
-        qWarning() << "Failed to query contacts";
-        qWarning() << tableQuery.lastError();
-        qWarning() << createStatement;
-        m_database.rollback();
-        return QContactManager::UnspecifiedError;
-    }
-
+    // XXX TODO: get rid of this query, just iterate over the returned results in memory
+    // and if the id doesn't match, insert an empty contact (and error) for that index.
     QVector<QContactLocalId> existingIds;
     QSqlQuery queryExistingIds(m_database);
     if (!queryExistingIds.exec("SELECT DISTINCT contactId FROM Contacts")) {
         qWarning() << "Failed to query existing contacts";
         qWarning() << queryExistingIds.lastError();
-        m_database.rollback();
         return QContactManager::UnspecifiedError;
     }
     while (queryExistingIds.next()) {
         existingIds.append(queryExistingIds.value(0).toUInt() + 1);
     }
-
-    QSqlQuery insertQuery(m_database);
-    insertQuery.prepare(QString(QLatin1String(
-        "\n INSERT INTO %1 ("
-        "\n  contactId)"
-        "\n VALUES("
-        "\n  :contactId);")).arg(table));
+    queryExistingIds.finish();
 
     QList<int> zeroIndices;
     QVariantList boundIds;
@@ -1012,46 +1062,23 @@ QContactManager::Error ContactReader::readContacts(
         }
     }
 
-    insertQuery.bindValue(0, boundIds);
+    QContactManager::Error createTempError = createTemporaryContactIdsTable(
+            &m_database, table, false, boundIds, QString(), QString(), QString(), QVariantList());
 
-    QContactManager::Error error = insertQuery.execBatch()
-            ? QContactManager::NoError
-            : QContactManager::UnspecifiedError;
+    QContactManager::Error error = (createTempError == QContactManager::NoError)
+            ? queryContacts(table, contacts, details)
+            : createTempError;
 
-    if (error != QContactManager::NoError) {
-        qWarning() << "Failed to cache contact IDs";
-        qWarning() << insertQuery.lastError();
-        m_database.rollback();
-        return error;
-    } else {
-        error = queryContacts(table, contacts, details);
-        for (int i = 0; i < zeroIndices.size(); ++i) {
-            contacts->insert(zeroIndices.at(i), QContact());
-            error = QContactManager::DoesNotExistError;
-        }
-        if (contacts && (contacts->size() != contactIds.size())) {
-            error = QContactManager::DoesNotExistError;
-        }
+    clearTemporaryContactIdsTable(&m_database, table);
+
+    for (int i = 0; i < zeroIndices.size(); ++i) {
+        contacts->insert(zeroIndices.at(i), QContact());
+        error = QContactManager::DoesNotExistError;
+    }
+    if (contacts && (contacts->size() != contactIds.size())) {
+        error = QContactManager::DoesNotExistError;
     }
 
-    QSqlQuery dropQuery(m_database);
-    const QString dropQueryString = QString(QLatin1String("DROP TABLE temp.%1;")).arg(table);
-    if (!dropQuery.prepare(dropQueryString)) {
-        qWarning() << "Failed to prepare drop temporary table" << table << "query";
-        qWarning() << dropQuery.lastError();
-        qWarning() << dropQueryString;
-    } else {
-        if (!dropQuery.exec()) {
-            qWarning() << "Failed to drop temporary table" << table;
-            qWarning() << dropQuery.lastError();
-            qWarning() << dropQueryString;
-        } else {
-            m_database.commit();
-            return error;
-        }
-    }
-
-    m_database.rollback();
     return error;
 }
 
@@ -1061,7 +1088,7 @@ QContactManager::Error ContactReader::queryContacts(
     QSqlQuery query(m_database);
     if (!query.exec(QString(QLatin1String(
             "\n SELECT Contacts.*"
-            "\n FROM %1 INNER JOIN Contacts ON %1.contactId = Contacts.contactId;")).arg(table))) {
+            "\n FROM temp.%1 INNER JOIN Contacts ON temp.%1.contactId = Contacts.contactId;")).arg(table))) {
         qWarning() << "Failed to query from" << table;
         qWarning() << query.lastError();
         return QContactManager::UnspecifiedError;
@@ -1073,8 +1100,8 @@ QContactManager::Error ContactReader::queryContacts(
             "\n  Details.linkedDetailUris,"
             "\n  Details.contexts,"
             "\n  %2.*"
-            "\n FROM %1"
-            "\n  INNER JOIN %2 ON %1.contactId = %2.contactId"
+            "\n FROM temp.%1"
+            "\n  INNER JOIN %2 ON temp.%1.contactId = %2.contactId"
             "\n  LEFT JOIN Details ON %2.detailId = Details.detailId AND Details.detail = :detail;")).arg(table);
 
     QVector<Table> tables;
@@ -1090,12 +1117,13 @@ QContactManager::Error ContactReader::queryContacts(
                 0
             };
 
-            if (!table.query.prepare(tableTemplate.arg(QLatin1String(detail.table)))) {
+            const QString tableQueryStatement(tableTemplate.arg(QLatin1String(detail.table)));
+            if (!table.query.prepare(tableQueryStatement)) {
                 qWarning() << "Failed to prepare table" << detail.table;
+                qWarning() << tableQueryStatement;
                 qWarning() << table.query.lastError();
             } else {
                 table.query.bindValue(0, detail.detail);
-
                 if (!table.query.exec()) {
                     qWarning() << "Failed to query table" << detail.table;
                     qWarning() << table.query.lastError();
@@ -1131,27 +1159,32 @@ QContactManager::Error ContactReader::queryContacts(
             if (!name.isEmpty())
                 contact.saveDetail(&name);
 
+            QContactSyncTarget starget;
+            setValue(&starget, QContactSyncTarget::FieldSyncTarget, query.value(8));
+            if (!starget.isEmpty())
+                contact.saveDetail(&starget);
+
             QContactTimestamp timestamp;
-            setValue(&timestamp, QContactTimestamp::FieldCreationTimestamp    , query.value(8));
-            setValue(&timestamp, QContactTimestamp::FieldModificationTimestamp, query.value(9));
+            setValue(&timestamp, QContactTimestamp::FieldCreationTimestamp    , query.value(9));
+            setValue(&timestamp, QContactTimestamp::FieldModificationTimestamp, query.value(10));
             if (!timestamp.isEmpty())
                 contact.saveDetail(&timestamp);
 
             QContactGender gender;
-            setValue(&gender, QContactGender::FieldGender, query.value(10));
+            setValue(&gender, QContactGender::FieldGender, query.value(11));
             if (!gender.isEmpty())
                 contact.saveDetail(&gender);
 
             QContactFavorite favorite;
-            setValue(&favorite, QContactFavorite::FieldFavorite, query.value(11));
+            setValue(&favorite, QContactFavorite::FieldFavorite, query.value(12));
             if (!favorite.isEmpty())
                 contact.saveDetail(&favorite);
 
             for (int j = 0; j < tables.count(); ++j) {
                 Table &table = tables[j];
-
-                if (table.query.isValid() && table.currentId == contactId)
+                if (table.query.isValid() && table.currentId == contactId) {
                     table.read(contactId, &contact, &table.query, table.currentId);
+                }
             }
 
             QList<QContactRelationship> currContactRelationships;
@@ -1167,6 +1200,12 @@ QContactManager::Error ContactReader::queryContacts(
         contactsAvailable(*contacts);
     } while (query.isValid());
 
+    query.finish();
+    for (int k = 0; k < tables.count(); ++k) {
+        Table &table = tables[k];
+        table.query.finish();
+    }
+
     return QContactManager::NoError;
 }
 
@@ -1176,20 +1215,30 @@ QContactManager::Error ContactReader::readContactIds(
         const QList<QContactSortOrder> &order)
 {
     QString join;
-
+    const QString orderBy = buildOrderBy(order, &join);
     bool failed = false;
     QVariantList bindings;
     QString where = buildWhere(filter, &bindings, &failed);
 
     if (failed) {
         qWarning() << "Failed to create WHERE expression: invalid filter specification";
-        m_database.rollback();
         return QContactManager::UnspecifiedError;
     }
 
-    if (!where.isEmpty())
+#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
+    // by default, we only return "aggregate" contacts.
+    if (where.isEmpty()) {
+        where = QLatin1String("WHERE Contacts.syncTarget = 'aggregate'");
+    } else if (!where.contains("syncTarget")) {
+        where = QLatin1String("WHERE Contacts.syncTarget = 'aggregate' AND ") + where;
+    } else { // Unless they explicitly specify a syncTarget criterium
         where = QLatin1String("WHERE ") + where;
-    const QString orderBy = buildOrderBy(order, &join);
+    }
+#else
+    if (!where.isEmpty()) {
+        where = QLatin1String("WHERE ") + where;
+    }
+#endif
 
     const QString queryString = QString(QLatin1String(
                 "\n SELECT Contacts.contactId"
@@ -1310,6 +1359,7 @@ QContactManager::Error ContactReader::readRelationships(
 
         relationships->append(relationship);
     }
+    query.finish();
 
     return QContactManager::NoError;
 }

@@ -1,3 +1,4 @@
+include(../../aggregate.pri)
 TEMPLATE = lib
 
 QT += sql dbus
