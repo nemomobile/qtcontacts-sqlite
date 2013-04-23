@@ -1395,6 +1395,7 @@ static void promoteDetailsToAggregate(const QContact &c, QContact *aggregate)
 
         // promote this detail to the aggregate.  Depending on uniqueness,
         // this consists either of composition or duplication.
+        // Note: Composed (unique) details won't have any detailUri!
         if (currDet.definitionName() == QContactName::DefinitionName) {
             // name involves composition
             QContactName cname(currDet);
@@ -1440,8 +1441,28 @@ static void promoteDetailsToAggregate(const QContact &c, QContact *aggregate)
                 aggregate->saveDetail(&af);
             }
         } else {
-            // all other details involve duplication.
-            // only duplicate from c to a if an identical detail doesn't already exist in a.
+            // All other details involve duplication.
+            // Only duplicate from c to a if an identical detail doesn't already exist in a.
+            // We also modify any detail uris by prepending "aggregate:" to the start,
+            // to ensure uniqueness.
+            if (!currDet.detailUri().isEmpty()) {
+                currDet.setDetailUri(QLatin1String("aggregate:") + currDet.detailUri());
+            }
+
+            bool needsLinkedDUs = false;
+            QStringList linkedDUs = currDet.linkedDetailUris();
+            for (int i = 0; i < linkedDUs.size(); ++i) {
+                QString currLDU = linkedDUs.at(i);
+                if (!currLDU.isEmpty()) {
+                    currLDU = QLatin1String("aggregate:") + currLDU;
+                    linkedDUs.replace(i, currLDU);
+                    needsLinkedDUs = true;
+                }
+            }
+            if (needsLinkedDUs) {
+                currDet.setLinkedDetailUris(linkedDUs);
+            }
+
             // This is a pretty crude heuristic.  The detail equality
             // algorithm only attempts to match values, not key/value pairs.
             // XXX TODO: use a better heuristic to minimise duplicates.

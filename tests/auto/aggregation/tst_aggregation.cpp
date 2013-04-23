@@ -138,6 +138,8 @@ private slots:
 
     void regenerateAggregate();
 
+    void detailUris();
+
     void correctDetails();
 
 private:
@@ -1025,7 +1027,7 @@ void tst_Aggregation::regenerateAggregate()
     alice.saveDetail(&aph);
 
     QContactEmailAddress aem;
-    aem.setEmailAddress("alice@test.com");
+    aem.setEmailAddress("alice8@test.com");
     alice.saveDetail(&aem);
 
     m_addAccumulatedIds.clear();
@@ -1055,7 +1057,7 @@ void tst_Aggregation::regenerateAggregate()
                 && currName.middleName() == QLatin1String("In")
                 && currName.lastName() == QLatin1String("Wonderland")
                 && currPhn.number() == QLatin1String("88888")
-                && currEm.emailAddress() == QLatin1String("alice@test.com")) {
+                && currEm.emailAddress() == QLatin1String("alice8@test.com")) {
             if (currSt.syncTarget() == QLatin1String("local")) {
                 localAlice = curr;
                 foundLocalAlice = true;
@@ -1129,7 +1131,7 @@ void tst_Aggregation::regenerateAggregate()
                 && currName.middleName() == QLatin1String("In")
                 && currName.lastName() == QLatin1String("Wonderland")
                 && currPhn.number() == QLatin1String("88888")
-                && currEm.emailAddress() == QLatin1String("alice@test.com")) {
+                && currEm.emailAddress() == QLatin1String("alice8@test.com")) {
             if (currSt.syncTarget() == QLatin1String("local")) {
                 QCOMPARE(curr.detail<QContactHobby>().value(QContactHobby::FieldHobby), QString()); // local shouldn't get it
                 localAlice = curr;
@@ -1174,7 +1176,7 @@ void tst_Aggregation::regenerateAggregate()
                 && currName.middleName() == QLatin1String("In")
                 && currName.lastName() == QLatin1String("Wonderland")
                 && currPhn.number() == QLatin1String("88888")
-                && currEm.emailAddress() == QLatin1String("alice@test.com")) {
+                && currEm.emailAddress() == QLatin1String("alice8@test.com")) {
             if (currSt.syncTarget() == QLatin1String("local")) {
                 QCOMPARE(curr.detail<QContactHobby>().value(QContactHobby::FieldHobby), QString());
                 localAlice = curr;
@@ -1190,6 +1192,70 @@ void tst_Aggregation::regenerateAggregate()
 
     QList<QContactLocalId> removeList;
     removeList << localAlice.id().localId() << syncAlice.id().localId() << aggregateAlice.id().localId();
+    m_cm->removeContacts(removeList);
+    QTest::qWait(500); // coalesced signals
+}
+
+void tst_Aggregation::detailUris()
+{
+    QContactDetailFilter allSyncTargets;
+    allSyncTargets.setDetailDefinitionName(QContactSyncTarget::DefinitionName, QContactSyncTarget::FieldSyncTarget);
+
+    // save alice.  Some details will have a detailUri or linkedDetailUris
+    QContact alice;
+    QContactName an;
+    an.setFirstName("Alice9");
+    an.setMiddleName("In");
+    an.setLastName("Wonderland");
+    alice.saveDetail(&an);
+    QContactPhoneNumber aph;
+    aph.setNumber("99999");
+    aph.setDetailUri("alice9PhoneNumberDetailUri");
+    alice.saveDetail(&aph);
+    QContactEmailAddress aem;
+    aem.setEmailAddress("alice9@test.com");
+    aem.setLinkedDetailUris("alice9PhoneNumberDetailUri");
+    alice.saveDetail(&aem);
+    QVERIFY(m_cm->saveContact(&alice));
+
+    QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
+    QContact localAlice;
+    QContact aggregateAlice;
+    bool foundLocalAlice = false;
+    bool foundAggregateAlice = false;
+    foreach (const QContact &curr, allContacts) {
+        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
+        QContactEmailAddress currEm = curr.detail<QContactEmailAddress>();
+        QContactPhoneNumber currPhn = curr.detail<QContactPhoneNumber>();
+        QContactName currName = curr.detail<QContactName>();
+        if (currName.firstName() == QLatin1String("Alice9")
+                && currName.middleName() == QLatin1String("In")
+                && currName.lastName() == QLatin1String("Wonderland")
+                && currPhn.number() == QLatin1String("99999")
+                && currEm.emailAddress() == QLatin1String("alice9@test.com")) {
+            if (currSt.syncTarget() == QLatin1String("local")) {
+                localAlice = curr;
+                foundLocalAlice = true;
+            } else {
+                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                aggregateAlice = curr;
+                foundAggregateAlice = true;
+            }
+        }
+    }
+
+    QVERIFY(foundLocalAlice);
+    QVERIFY(foundAggregateAlice);
+
+    // now check to ensure that the detail uris and links were updated correctly
+    // in the aggregate.  Those uris need to be unique in the database.
+    QCOMPARE(localAlice.detail<QContactPhoneNumber>().detailUri(), QLatin1String("alice9PhoneNumberDetailUri"));
+    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().detailUri(), QLatin1String("aggregate:alice9PhoneNumberDetailUri"));
+    QCOMPARE(localAlice.detail<QContactEmailAddress>().linkedDetailUris(), QStringList() << QLatin1String("alice9PhoneNumberDetailUri"));
+    QCOMPARE(aggregateAlice.detail<QContactEmailAddress>().linkedDetailUris(), QStringList() << QLatin1String("aggregate:alice9PhoneNumberDetailUri"));
+
+    QList<QContactLocalId> removeList;
+    removeList << localAlice.id().localId() << aggregateAlice.id().localId();
     m_cm->removeContacts(removeList);
     QTest::qWait(500); // coalesced signals
 }
@@ -1280,7 +1346,9 @@ void tst_Aggregation::correctDetails()
     }
 
     QList<QContactLocalId> removeList;
-    removeList << a.id().localId() << b.id().localId() << c.id().localId() << d.id().localId();
+    foreach (const QContact &doomed, allContacts) {
+        removeList.append(doomed.id().localId());
+    }
     m_cm->removeContacts(removeList);
     QTest::qWait(500); // coalesced signals
 }
