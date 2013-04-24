@@ -2391,6 +2391,7 @@ void tst_QContactManager::signalEmission()
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     QTest::qWait(500); // wait for signal coalescing.
     QTRY_VERIFY(spyCA.count() >= addSigCount);
+    addSigCount = spyCA.count();
 #else
     QTRY_COMPARE(spyCA.count(), addSigCount);
     args = spyCA.takeFirst();
@@ -2409,13 +2410,22 @@ void tst_QContactManager::signalEmission()
     saveContactName(&c, nameDef, &nc, "Citizen Sigem");
     QVERIFY(m1->saveContact(&c));
     modSigCount = 1;
-    QTRY_COMPARE(spyCM.count(), modSigCount);
+    QTRY_VERIFY(spyCM.count() >= modSigCount);
+    modSigCount = spyCM.count();
     QTRY_COMPARE(spyCOM1->count(), 1);
     args = spyCM.takeFirst();
     modSigCount -= 1;
     arg = args.first().value<QList<quint32> >();
+#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
+    while (spyCM.count()) {
+        arg.append(spyCM.takeFirst().first().value<QList<quint32> >());
+    }
+    modSigCount = spyCM.count();
+    QVERIFY(arg.contains(cid));
+#else
     QVERIFY(arg.count() == 1);
     QCOMPARE(QContactLocalId(arg.at(0)), cid);
+#endif
 
     // verify remove emits signal removed
     m1->removeContact(c.id().localId());
@@ -2426,6 +2436,10 @@ void tst_QContactManager::signalEmission()
     remSigCount -= 1;
     arg = args.first().value<QList<quint32> >();
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
+    while (spyCR.count()) {
+        arg.append(spyCM.takeFirst().first().value<QList<quint32> >());
+    }
+    remSigCount = spyCR.count();
     QVERIFY(arg.contains(cid));
 #else
     QVERIFY(arg.count() == 1);
@@ -2627,13 +2641,14 @@ void tst_QContactManager::signalEmission()
         QVERIFY(m2->saveContact(&c));
         saveContactName(&c, nameDef, &ncs, "Test2");
         QVERIFY(m2->saveContact(&c));
-        QTRY_COMPARE(spyCA.count(), 1); // check that we received the update signals.
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
+        QTRY_VERIFY(spyCA.count() >= 1); // check that we received the update signals.
         QTRY_VERIFY(spyCM.count() >= 1); // check that we received the update signals.
         m2->removeContact(c.localId());
         QTRY_VERIFY(spyCR.count() >= 1); // check that we received the remove signal.
 #else
-        QTRY_COMPARE(spyCM.count(), 1); // check that we received the update signals.
+        QTRY_COMPARE(spyCA.count(), 1); // check that we received the update signal.
+        QTRY_COMPARE(spyCM.count(), 1); // check that we received the update signal.
         m2->removeContact(c.localId());
         QTRY_COMPARE(spyCR.count(), 1); // check that we received the remove signal.
 #endif

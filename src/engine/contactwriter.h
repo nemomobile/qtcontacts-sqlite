@@ -90,7 +90,7 @@ private:
 
     QContactManager::Error updateOrCreateAggregate(QContact *contact, const QStringList &definitionMask, bool withinTransaction);
     QContactManager::Error updateLocalAndAggregate(QContact *contact, const QStringList &definitionMask, bool withinTransaction);
-    void regenerateAggregates(const QList<QContactLocalId> &aggregateIds, bool withinTransaction);
+    void regenerateAggregates(const QList<QContactLocalId> &aggregateIds, const QStringList &definitionMask, bool withinTransaction);
 
     void bindContactDetails(const QContact &contact, QSqlQuery &query);
 

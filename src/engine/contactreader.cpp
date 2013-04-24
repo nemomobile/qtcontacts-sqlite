@@ -398,7 +398,7 @@ static void setValues(QContactUrl *detail, QSqlQuery *query, const int offset)
 static const FieldInfo tpMetadataFields[] =
 {
     { QLatin1String("ContactId"), "telepathyId", StringField },
-    { QLatin1String("AccountId"), "accountId", IntegerField },
+    { QLatin1String("AccountId"), "accountId", StringField },
     { QLatin1String("AccountEnabled"), "accountEnabled", BooleanField }
 };
 
@@ -741,7 +741,8 @@ static QString buildWhere(const QContactUnionFilter &filter, QVariantList *bindi
         }
     }
 
-    return fragments.join(QLatin1String(" OR "));
+    //return fragments.join(QLatin1String(" OR "));
+    return QString::fromLatin1("( %1 )").arg(fragments.join(QLatin1String(" OR ")));
 }
 
 static QString buildWhere(const QContactIntersectionFilter &filter, QVariantList *bindings, bool *failed)
@@ -1241,7 +1242,7 @@ QContactManager::Error ContactReader::readContactIds(
 #endif
 
     const QString queryString = QString(QLatin1String(
-                "\n SELECT Contacts.contactId"
+                "\n SELECT DISTINCT Contacts.contactId"
                 "\n FROM Contacts %1"
                 "\n %2"
                 "\n ORDER BY %3;")).arg(join).arg(where).arg(orderBy);

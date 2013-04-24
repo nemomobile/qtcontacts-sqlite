@@ -616,22 +616,40 @@ void tst_Aggregation::updateSingleLocal()
     QVERIFY(localAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::First).contains(aggregateAlice.id()));
     QVERIFY(aggregateAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::Second).contains(localAlice.id()));
 
-    // now update alice.  We don't expect the aggregate to get updated unless the aggregate itself is modified.
+    // now update alice.  The aggregate should get updated also.
     QContactEmailAddress ae;
     ae.setEmailAddress("alice4@test.com");
-    alice.saveDetail(&ae);
+    QVERIFY(localAlice.saveDetail(&ae));
     chgSpyCount = chgSpy.count();
     m_chgAccumulatedIds.clear();
-    QVERIFY(m_cm->saveContact(&alice));
+    QVERIFY(m_cm->saveContact(&localAlice));
     QTRY_VERIFY(chgSpy.count() > chgSpyCount);
     QTRY_VERIFY(m_chgAccumulatedIds.contains(localAlice.id().localId()));
-    QVERIFY(!m_chgAccumulatedIds.contains(aggregateAlice.id().localId()));
+    QTRY_VERIFY(m_chgAccumulatedIds.contains(aggregateAlice.id().localId()));
 
     // reload them, and compare.
     localAlice = m_cm->contact(localAlice.id().localId());
     aggregateAlice = m_cm->contact(aggregateAlice.id().localId());
-    QVERIFY(localAlice.detail<QContactEmailAddress>().value(QContactEmailAddress::FieldEmailAddress) == QLatin1String("alice4@test.com"));
-    QVERIFY(aggregateAlice.detail<QContactEmailAddress>().value(QContactEmailAddress::FieldEmailAddress).isEmpty());
+    QCOMPARE(localAlice.detail<QContactEmailAddress>().value(QContactEmailAddress::FieldEmailAddress), QLatin1String("alice4@test.com"));
+    QCOMPARE(aggregateAlice.detail<QContactEmailAddress>().value(QContactEmailAddress::FieldEmailAddress), QLatin1String("alice4@test.com"));
+    QCOMPARE(localAlice.detail<QContactPhoneNumber>().value(QContactPhoneNumber::FieldNumber), QLatin1String("4567"));
+    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().value(QContactPhoneNumber::FieldNumber), QLatin1String("4567"));
+
+    // now do an update with a definition mask.  We need to be certain that no details were lost.
+    ae = localAlice.detail<QContactEmailAddress>();
+    ae.setEmailAddress("alice4@test4.com");
+    QVERIFY(localAlice.saveDetail(&ae));
+    QList<QContact> saveList;
+    saveList << localAlice;
+    QVERIFY(m_cm->saveContacts(&saveList, QStringList() << QContactEmailAddress::DefinitionName));
+
+    // reload them, and compare.
+    localAlice = m_cm->contact(localAlice.id().localId());
+    aggregateAlice = m_cm->contact(aggregateAlice.id().localId());
+    QCOMPARE(localAlice.detail<QContactEmailAddress>().value(QContactEmailAddress::FieldEmailAddress), QLatin1String("alice4@test4.com"));
+    QCOMPARE(aggregateAlice.detail<QContactEmailAddress>().value(QContactEmailAddress::FieldEmailAddress), QLatin1String("alice4@test4.com"));
+    QCOMPARE(localAlice.detail<QContactPhoneNumber>().value(QContactPhoneNumber::FieldNumber), QLatin1String("4567"));
+    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().value(QContactPhoneNumber::FieldNumber), QLatin1String("4567"));
 
     QList<QContactLocalId> removeList;
     removeList << localAlice.id().localId() << aggregateAlice.id().localId();
@@ -1253,6 +1271,50 @@ void tst_Aggregation::detailUris()
     QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().detailUri(), QLatin1String("aggregate:alice9PhoneNumberDetailUri"));
     QCOMPARE(localAlice.detail<QContactEmailAddress>().linkedDetailUris(), QStringList() << QLatin1String("alice9PhoneNumberDetailUri"));
     QCOMPARE(aggregateAlice.detail<QContactEmailAddress>().linkedDetailUris(), QStringList() << QLatin1String("aggregate:alice9PhoneNumberDetailUri"));
+
+    // now perform an update of the local contact.  This should also trigger regeneration of the aggregate.
+    QContactHobby ah;
+    ah.setHobby("tennis");
+    ah.setDetailUri("alice9HobbyDetailUri");
+    localAlice.saveDetail(&ah);
+    QVERIFY(m_cm->saveContact(&localAlice));
+
+    // reload them both
+    allContacts = m_cm->contacts(allSyncTargets);
+    foundLocalAlice = false;
+    foundAggregateAlice = false;
+    foreach (const QContact &curr, allContacts) {
+        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
+        QContactEmailAddress currEm = curr.detail<QContactEmailAddress>();
+        QContactPhoneNumber currPhn = curr.detail<QContactPhoneNumber>();
+        QContactName currName = curr.detail<QContactName>();
+        if (currName.firstName() == QLatin1String("Alice9")
+                && currName.middleName() == QLatin1String("In")
+                && currName.lastName() == QLatin1String("Wonderland")
+                && currPhn.number() == QLatin1String("99999")
+                && currEm.emailAddress() == QLatin1String("alice9@test.com")) {
+            if (currSt.syncTarget() == QLatin1String("local")) {
+                localAlice = curr;
+                foundLocalAlice = true;
+            } else {
+                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                aggregateAlice = curr;
+                foundAggregateAlice = true;
+            }
+        }
+    }
+
+    QVERIFY(foundLocalAlice);
+    QVERIFY(foundAggregateAlice);
+
+    // now check to ensure that the detail uris and links were updated correctly
+    // in the aggregate.  Those uris need to be unique in the database.
+    QCOMPARE(localAlice.detail<QContactPhoneNumber>().detailUri(), QLatin1String("alice9PhoneNumberDetailUri"));
+    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().detailUri(), QLatin1String("aggregate:alice9PhoneNumberDetailUri"));
+    QCOMPARE(localAlice.detail<QContactEmailAddress>().linkedDetailUris(), QStringList() << QLatin1String("alice9PhoneNumberDetailUri"));
+    QCOMPARE(aggregateAlice.detail<QContactEmailAddress>().linkedDetailUris(), QStringList() << QLatin1String("aggregate:alice9PhoneNumberDetailUri"));
+    QCOMPARE(localAlice.detail<QContactHobby>().detailUri(), QLatin1String("alice9HobbyDetailUri"));
+    QCOMPARE(aggregateAlice.detail<QContactHobby>().detailUri(), QLatin1String("aggregate:alice9HobbyDetailUri"));
 
     QList<QContactLocalId> removeList;
     removeList << localAlice.id().localId() << aggregateAlice.id().localId();
