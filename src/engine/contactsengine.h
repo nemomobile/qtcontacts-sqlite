@@ -32,18 +32,32 @@
 #ifndef QTCONTACTSSQLITE_CONTACTSENGINE
 #define QTCONTACTSSQLITE_CONTACTSENGINE
 
-#include <QContactManagerEngineV2>
-
 #include <QSqlDatabase>
 
+#if (QT_VERSION < QT_VERSION_CHECK(5, 0, 0))
+#include <QContactManagerEngineV2>
+#else
+#include <QContactManagerEngine>
+#include <QContactType>
+#endif
+
+#include "contactidimpl.h"
 #include "contactreader.h"
 #include "contactwriter.h"
 
+#if (QT_VERSION < QT_VERSION_CHECK(5, 0, 0))
 QTM_USE_NAMESPACE
+#else
+QTCONTACTS_USE_NAMESPACE
+#endif
 
 class JobThread;
 
+#if (QT_VERSION < QT_VERSION_CHECK(5, 0, 0))
 class ContactsEngine : public QContactManagerEngineV2
+#else
+class ContactsEngine : public QContactManagerEngine
+#endif
 {
     Q_OBJECT
 public:
@@ -55,17 +69,17 @@ public:
     QString managerName() const;
     int managerVersion() const;
 
-    QList<QContactLocalId> contactIds(
+    QList<QContactIdClassName> contactIds(
                 const QContactFilter &filter,
                 const QList<QContactSortOrder> &sortOrders,
                 QContactManager::Error* error) const;
     QList<QContact> contacts(
-                const QList<QContactLocalId> &localIds,
+                const QList<QContactIdClassName> &localIds,
                 const QContactFetchHint &fetchHint,
                 QMap<int, QContactManager::Error> *errorMap,
                 QContactManager::Error *error) const;
     QContact contact(
-            const QContactLocalId &contactId,
+            const QContactIdClassName &contactId,
             const QContactFetchHint &fetchHint,
             QContactManager::Error* error) const;
 
@@ -86,21 +100,29 @@ public:
                 QContactManager::Error *error);
     bool saveContacts(
                 QList<QContact> *contacts,
+#if (QT_VERSION < QT_VERSION_CHECK(5, 0, 0))
                 const QStringList &definitionMask,
+#else
+                const QList<QContactDetail::DetailType> &typeMask,
+#endif
                 QMap<int, QContactManager::Error> *errorMap,
                 QContactManager::Error *error);
-    bool removeContact(const QContactLocalId& contactId, QContactManager::Error* error);
+    bool removeContact(const QContactIdClassName& contactId, QContactManager::Error* error);
     bool removeContacts(
-                const QList<QContactLocalId> &contactIds,
+                const QList<QContactIdClassName> &contactIds,
                 QMap<int, QContactManager::Error> *errorMap,
                 QContactManager::Error* error);
 
-    QContactLocalId selfContactId(QContactManager::Error* error) const;
-    bool setSelfContactId(const QContactLocalId& contactId, QContactManager::Error* error);
+    QContactIdClassName selfContactId(QContactManager::Error* error) const;
+    bool setSelfContactId(const QContactIdClassName& contactId, QContactManager::Error* error);
 
     QList<QContactRelationship> relationships(
             const QString &relationshipType,
+#if (QT_VERSION < QT_VERSION_CHECK(5, 0, 0))
             const QContactId &participantId,
+#else
+            const QContact &participant,
+#endif
             QContactRelationship::Role role,
             QContactManager::Error *error) const;
     bool saveRelationships(
@@ -117,15 +139,20 @@ public:
     bool cancelRequest(QContactAbstractRequest* req);
     bool waitForRequestFinished(QContactAbstractRequest* req, int msecs);
 
+#if (QT_VERSION < QT_VERSION_CHECK(5, 0, 0))
     QMap<QString, QContactDetailDefinition> detailDefinitions(const QString& contactType, QContactManager::Error* error) const;
     bool hasFeature(QContactManager::ManagerFeature feature, const QString& contactType) const;
     bool isRelationshipTypeSupported(const QString& relationshipType, const QString& contactType) const;
     QStringList supportedContactTypes() const;
+#else
+    bool isRelationshipTypeSupported(const QString& relationshipType, const QString& contactType) const;
+    QList<QContactType::TypeValues> supportedContactTypes() const;
+#endif
 
 private slots:
-    void _q_contactsChanged(const QList<QContactLocalId> &contacts);
-    void _q_contactsAdded(const QList<QContactLocalId> &contacts);
-    void _q_contactsRemoved(const QList<QContactLocalId> &contacts);
+    void _q_contactsChanged(const QList<QContactIdClassName> &contacts);
+    void _q_contactsAdded(const QList<QContactIdClassName> &contacts);
+    void _q_contactsRemoved(const QList<QContactIdClassName> &contacts);
     void _q_selfContactIdChanged(quint32,quint32);
 
 private:

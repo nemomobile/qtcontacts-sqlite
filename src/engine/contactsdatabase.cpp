@@ -39,7 +39,11 @@
 
 #include <QtDebug>
 
+#if (QT_VERSION < QT_VERSION_CHECK(5, 0, 0))
 QTM_USE_NAMESPACE
+#else
+QTCONTACTS_USE_NAMESPACE
+#endif
 
 static const char *setupEncoding =
         "\n PRAGMA encoding = \"UTF-16\";";
@@ -357,8 +361,12 @@ static bool prepareDatabase(QSqlDatabase &database)
 
 QSqlDatabase ContactsDatabase::open(const QString &databaseName)
 {
-    QDir databaseDir(QDesktopServices::storageLocation(QDesktopServices::DataLocation)
-            + QLatin1String("qtcontacts-sqlite/"));
+#if (QT_VERSION < QT_VERSION_CHECK(5, 0, 0))
+    QString baseLocation = QDesktopServices::storageLocation(QDesktopServices::GenericDataLocation);
+#else
+    QString baseLocation = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
+#endif
+    QDir databaseDir(baseLocation + QLatin1String("qtcontacts-sqlite/"));
     if (!databaseDir.exists())
         databaseDir.mkpath(QLatin1String("."));
 
@@ -401,4 +409,6 @@ QSqlQuery ContactsDatabase::prepare(const char *statement, const QSqlDatabase &d
     return query;
 }
 
+#if (QT_VERSION < QT_VERSION_CHECK(5, 0, 0))
 Q_IMPLEMENT_CUSTOM_CONTACT_DETAIL(QContactTpMetadata, "TpMetadata");
+#endif

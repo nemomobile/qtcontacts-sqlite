@@ -53,9 +53,14 @@
 
 #include <QContactManager>
 
+#include "contactidimpl.h"
 #include "contactsdatabase.h"
 
+#if (QT_VERSION < QT_VERSION_CHECK(5, 0, 0))
 QTM_USE_NAMESPACE
+#else
+QTCONTACTS_USE_NAMESPACE
+#endif
 
 class ContactReader;
 class ContactWriter
@@ -66,15 +71,19 @@ public:
 
     QContactManager::Error save(
             QList<QContact> *contacts,
+#if (QT_VERSION < QT_VERSION_CHECK(5, 0, 0))
             const QStringList &definitionMask,
+#else
+            const QList<QContactDetail::DetailType> &definitionMask,
+#endif
             QMap<int, QContactManager::Error> *errorMap,
             bool withinTransaction,
             bool withinAggregateUpdate);
-    QContactManager::Error remove(const QList<QContactLocalId> &contactIds,
+    QContactManager::Error remove(const QList<QContactIdClassName> &contactIds,
                                   QMap<int, QContactManager::Error> *errorMap,
                                   bool withinTransaction);
 
-    QContactManager::Error setIdentity(ContactsDatabase::Identity identity, QContactLocalId contactId);
+    QContactManager::Error setIdentity(ContactsDatabase::Identity identity, QContactIdClassName contactId);
 
     QContactManager::Error save(
             const QList<QContactRelationship> &relationships,
@@ -86,43 +95,43 @@ public:
 private:
     QContactManager::Error create(QContact *contact, const QStringList &definitionMask, bool withinTransaction);
     QContactManager::Error update(QContact *contact, const QStringList &definitionMask, bool withinTransaction, bool withinAggregateUpdate);
-    QContactManager::Error write(QContactLocalId contactId, QContact *contact, const QStringList &definitionMask);
+    QContactManager::Error write(QContactIdClassName contactId, QContact *contact, const QStringList &definitionMask);
 
     QContactManager::Error updateOrCreateAggregate(QContact *contact, const QStringList &definitionMask, bool withinTransaction);
     QContactManager::Error updateLocalAndAggregate(QContact *contact, const QStringList &definitionMask, bool withinTransaction);
-    void regenerateAggregates(const QList<QContactLocalId> &aggregateIds, const QStringList &definitionMask, bool withinTransaction);
+    void regenerateAggregates(const QList<QContactIdClassName> &aggregateIds, const QStringList &definitionMask, bool withinTransaction);
 
     void bindContactDetails(const QContact &contact, QSqlQuery &query);
 
     template <typename T> bool writeDetails(
-            QContactLocalId contactId,
+            QContactIdClassName contactId,
             QContact *contact,
             QSqlQuery &removeQuery,
             const QStringList &definitionMask,
             QContactManager::Error *error);
 
     template <typename T> bool writeCommonDetails(
-                QContactLocalId contactId, const QSqlQuery &query, const T &detail, QContactManager::Error *error);
+                QContactIdClassName contactId, const QSqlQuery &query, const T &detail, QContactManager::Error *error);
     template <typename T> bool removeCommonDetails(
-                QContactLocalId contactId, QContactManager::Error *error);
+                QContactIdClassName contactId, QContactManager::Error *error);
 
-    QSqlQuery &bindDetail(QContactLocalId contactId, const QContactAddress &detail);
-    QSqlQuery &bindDetail(QContactLocalId contactId, const QContactAnniversary &detail);
-    QSqlQuery &bindDetail(QContactLocalId contactId, const QContactAvatar &detail);
-    QSqlQuery &bindDetail(QContactLocalId contactId, const QContactBirthday &detail);
-    QSqlQuery &bindDetail(QContactLocalId contactId, const QContactEmailAddress &detail);
-    QSqlQuery &bindDetail(QContactLocalId contactId, const QContactGuid &detail);
-    QSqlQuery &bindDetail(QContactLocalId contactId, const QContactHobby &detail);
-    QSqlQuery &bindDetail(QContactLocalId contactId, const QContactNickname &detail);
-    QSqlQuery &bindDetail(QContactLocalId contactId, const QContactNote &detail);
-    QSqlQuery &bindDetail(QContactLocalId contactId, const QContactOnlineAccount &detail);
-    QSqlQuery &bindDetail(QContactLocalId contactId, const QContactOrganization &detail);
-    QSqlQuery &bindDetail(QContactLocalId contactId, const QContactPhoneNumber &detail);
-    QSqlQuery &bindDetail(QContactLocalId contactId, const QContactPresence &detail);
-    QSqlQuery &bindDetail(QContactLocalId contactId, const QContactRingtone &detail);
-    QSqlQuery &bindDetail(QContactLocalId contactId, const QContactTag &detail);
-    QSqlQuery &bindDetail(QContactLocalId contactId, const QContactUrl &detail);
-    QSqlQuery &bindDetail(QContactLocalId contactId, const QContactTpMetadata &detail);
+    QSqlQuery &bindDetail(QContactIdClassName contactId, const QContactAddress &detail);
+    QSqlQuery &bindDetail(QContactIdClassName contactId, const QContactAnniversary &detail);
+    QSqlQuery &bindDetail(QContactIdClassName contactId, const QContactAvatar &detail);
+    QSqlQuery &bindDetail(QContactIdClassName contactId, const QContactBirthday &detail);
+    QSqlQuery &bindDetail(QContactIdClassName contactId, const QContactEmailAddress &detail);
+    QSqlQuery &bindDetail(QContactIdClassName contactId, const QContactGuid &detail);
+    QSqlQuery &bindDetail(QContactIdClassName contactId, const QContactHobby &detail);
+    QSqlQuery &bindDetail(QContactIdClassName contactId, const QContactNickname &detail);
+    QSqlQuery &bindDetail(QContactIdClassName contactId, const QContactNote &detail);
+    QSqlQuery &bindDetail(QContactIdClassName contactId, const QContactOnlineAccount &detail);
+    QSqlQuery &bindDetail(QContactIdClassName contactId, const QContactOrganization &detail);
+    QSqlQuery &bindDetail(QContactIdClassName contactId, const QContactPhoneNumber &detail);
+    QSqlQuery &bindDetail(QContactIdClassName contactId, const QContactPresence &detail);
+    QSqlQuery &bindDetail(QContactIdClassName contactId, const QContactRingtone &detail);
+    QSqlQuery &bindDetail(QContactIdClassName contactId, const QContactTag &detail);
+    QSqlQuery &bindDetail(QContactIdClassName contactId, const QContactUrl &detail);
+    QSqlQuery &bindDetail(QContactIdClassName contactId, const QContactTpMetadata &detail);
 
     QSqlDatabase m_database;
     QSqlQuery m_findRelatedForAggregate;

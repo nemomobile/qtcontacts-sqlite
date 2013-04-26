@@ -29,63 +29,53 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
  */
 
-#include "contactsengine.h"
-#include <QContactManagerEngineFactory>
+#ifndef QTCONTACTSSQLITE_CONTACTIDIMPL
+#define QTCONTACTSSQLITE_CONTACTIDIMPL
 
-#include <QtDebug>
+#include <qglobal.h>
 
 #if (QT_VERSION < QT_VERSION_CHECK(5, 0, 0))
+
+#define QContactIdClassName QContactLocalId
 QTM_USE_NAMESPACE
-#else
-QTCONTACTS_USE_NAMESPACE
-#endif
-
-class ContactsFactory : public QObject, public QContactManagerEngineFactory
+class ContactIdImpl
 {
-    Q_OBJECT
-    Q_INTERFACES(QtMobility::QContactManagerEngineFactory)
-public:
-    ContactsFactory();
-
-    QContactManagerEngine *engine(
-            const QMap<QString, QString> &parameters, QContactManager::Error* error);
-    QString managerName() const;
-    QList<int> supportedImplementationVersions() const;
+    static quint32 databaseId(QContactLocalId apiId);
+    static QContactLocalId apiId(quint32 databaseId);
 };
 
+#else // QT_VERSION
 
-ContactsFactory::ContactsFactory()
+#define QContactIdClassName QContactId
+#include <QContactId>
+#include <QContactEngineId>
+QTCONTACTS_USE_NAMESPACE
+class ContactIdImpl : public QContactEngineId
 {
-}
+public:
+    static quint32 databaseId(const QContactId &apiId);
+    static QContactId apiId(quint32 databaseId);
 
-QContactManagerEngine *ContactsFactory::engine(
-        const QMap<QString, QString> &parameters, QContactManager::Error* error)
-{
-    Q_UNUSED(parameters);
+    ContactIdImpl(quint32 databaseId);
 
-    ContactsEngine *engine = new ContactsEngine(QLatin1String("org.nemomobile.contacts.sqlite"));
-    QContactManager::Error err = engine->open();
-    if (error)
-        *error = err;
-    if (err != QContactManager::NoError) {
-        delete engine;
-        return 0;
-    } else {
-        return engine;
-    }
-}
+    // implementing QContactEngineId:
+    bool isEqualTo(const QContactEngineId *other) const;
+    bool isLessThan(const QContactEngineId *other) const;
+    QString managerUri() const;
+    QContactEngineId* clone() const;
+    QString toString() const;
 
-QString ContactsFactory::managerName() const
-{
-    return QLatin1String("org.nemomobile.contacts.sqlite");
-}
+#ifndef QT_NO_DEBUG_STREAM
+    QDebug& debugStreamOut(QDebug &dbg) const;
+#endif
 
-QList<int> ContactsFactory::supportedImplementationVersions() const
-{
-    return QList<int>() << 1 << 2;
-}
+    uint hash() const;
 
-Q_EXPORT_PLUGIN2(qtcontacts_sqlite, ContactsFactory);
+private:
+    quint32 m_databaseId;
+};
 
+#endif // QT_VERSION
 
-#include "contactsplugin.moc"
+#endif // QTCONTACTSSQLITE_CONTACTIDIMPL
+

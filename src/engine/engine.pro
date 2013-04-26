@@ -5,11 +5,17 @@ QT += sql dbus
 
 TARGET = qtcontacts_sqlite
 
-CONFIG += mobility plugin
-MOBILITY += contacts
-PLUGIN_TYPE=contacts
+lessThan(QT_MAJOR_VERSION, 5) {
+    CONFIG += mobility plugin
+    MOBILITY += contacts
+    PLUGIN_TYPE=contacts
+} else {
+    QT += contacts
+    PLUGIN_TYPE=contacts
+}
 
 HEADERS += \
+        contactidimpl.h \
         contactsdatabase.h \
         contactsengine.h \
         contactnotifier.h \
@@ -17,6 +23,7 @@ HEADERS += \
         contactwriter.h
 
 SOURCES += \
+        contactidimpl.cpp \
         contactsdatabase.cpp \
         contactsengine.cpp \
         contactsplugin.cpp \

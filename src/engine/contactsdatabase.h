@@ -48,7 +48,7 @@ public:
 private:
 };
 
-
+#if (QT_VERSION < QT_VERSION_CHECK(5, 0, 0))
 QTM_BEGIN_NAMESPACE
 class QContactTpMetadata : public QContactDetail
 {
@@ -56,6 +56,16 @@ public:
     Q_DECLARE_CUSTOM_CONTACT_DETAIL(QContactTpMetadata, "TpMetadata")
 };
 QTM_END_NAMESPACE
+#else
+QT_BEGIN_NAMESPACE_CONTACTS
+class QContactTpMetadata : public QContactDetail
+{
+public:
+    Q_DECLARE_CUSTOM_CONTACT_DETAIL(QContactTpMetadata)
+};
+const QContactDetail::DetailType QContactTpMetadata::Type(static_cast<QContactDetail::DetailType>(QContactDetail::TypeVersion+100));
+QT_END_NAMESPACE_CONTACTS
+#endif
 
 
 #endif

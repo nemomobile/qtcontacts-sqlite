@@ -36,17 +36,23 @@
 #include <QObject>
 #include <QSet>
 
+#include "contactidimpl.h"
+
+#if (QT_VERSION < QT_VERSION_CHECK(5, 0, 0))
 QTM_USE_NAMESPACE
+#else
+QTCONTACTS_USE_NAMESPACE
+#endif
 
 namespace ContactNotifier
 {
     void initialize();
-    void contactsAdded(const QVector<QContactLocalId> &contactIds);
-    void contactsChanged(const QVector<QContactLocalId> &contactIds);
-    void contactsRemoved(const QList<QContactLocalId> &contactIds);
-    void selfContactIdChanged(QContactLocalId oldId, QContactLocalId newId);
-    void relationshipsAdded(const QSet<QContactLocalId> &contactIds);
-    void relationshipsRemoved(const QSet<QContactLocalId> &contactIds);
+    void contactsAdded(const QVector<QContactIdClassName> &contactIds);
+    void contactsChanged(const QVector<QContactIdClassName> &contactIds);
+    void contactsRemoved(const QList<QContactIdClassName> &contactIds);
+    void selfContactIdChanged(QContactIdClassName oldId, QContactIdClassName newId);
+    void relationshipsAdded(const QSet<QContactIdClassName> &contactIds);
+    void relationshipsRemoved(const QSet<QContactIdClassName> &contactIds);
 
     bool connect(const char *name, const char *signature, QObject *receiver, const char *slot);
 }

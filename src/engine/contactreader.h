@@ -37,10 +37,14 @@
 #include <QContact>
 #include <QContactManager>
 
-
+#include "contactidimpl.h"
 #include "contactsdatabase.h"
 
+#if (QT_VERSION < QT_VERSION_CHECK(5, 0, 0))
 QTM_USE_NAMESPACE
+#else
+QTCONTACTS_USE_NAMESPACE
+#endif
 
 class ContactReader
 {
@@ -53,21 +57,29 @@ public:
             QList<QContact> *contacts,
             const QContactFilter &filter,
             const QList<QContactSortOrder> &order,
+#if (QT_VERSION < QT_VERSION_CHECK(5, 0, 0))
             const QStringList &details);
+#else
+            const QList<QContactDetail::DetailType> &details);
+#endif
 
     QContactManager::Error readContacts(
             const QString &table,
             QList<QContact> *contacts,
-            const QList<QContactLocalId> &contactIds,
+            const QList<QContactIdClassName> &contactIds,
+#if (QT_VERSION < QT_VERSION_CHECK(5, 0, 0))
             const QStringList &details);
+#else
+            const QList<QContactDetail::DetailType> &details);
+#endif
 
     QContactManager::Error readContactIds(
-            QList<QContactLocalId> *contactIds,
+            QList<QContactIdClassName> *contactIds,
             const QContactFilter &filter,
             const QList<QContactSortOrder> &order);
 
     QContactManager::Error getIdentity(
-            ContactsDatabase::Identity identity, QContactLocalId *contactId);
+            ContactsDatabase::Identity identity, QContactIdClassName *contactId);
 
     QContactManager::Error readRelationships(
             QList<QContactRelationship> *relationships,
@@ -80,7 +92,7 @@ protected:
             const QString &table, QList<QContact> *contacts, const QStringList &details);
 
     virtual void contactsAvailable(const QList<QContact> &contacts);
-    virtual void contactIdsAvailable(const QList<QContactLocalId> &contactIds);
+    virtual void contactIdsAvailable(const QList<QContactIdClassName> &contactIds);
 
 private:
     QSqlDatabase m_database;
