@@ -121,6 +121,7 @@ public:
     bool hasFeature(QContactManager::ManagerFeature feature, const QString& contactType) const;
     bool isRelationshipTypeSupported(const QString& relationshipType, const QString& contactType) const;
     QStringList supportedContactTypes() const;
+    void regenerateDisplayLabel(QContact &contact) const;
 
 private slots:
     void _q_contactsChanged(const QList<QContactLocalId> &contacts);

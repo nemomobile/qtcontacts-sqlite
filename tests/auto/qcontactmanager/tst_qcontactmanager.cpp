@@ -3168,6 +3168,7 @@ void tst_QContactManager::selfContactId()
     if (!cm->hasFeature(QContactManager::SelfContact)) {
         // ensure that the error codes / return values are meaningful failures.
         QEXPECT_FAIL("mgr='maemo5'", "maemo5 supports getting the self contact but not setting it.", Continue);
+        QEXPECT_FAIL("mgr='org.nemomobile.contacts.sqlite'", "qtcontacts-sqlite supports getting the self contact but not setting it.", Continue);
         QVERIFY(cm->error() == QContactManager::DoesNotExistError);
         QVERIFY(!cm->setSelfContactId(QContactLocalId(123)));
         QVERIFY(cm->error() == QContactManager::NotSupportedError);

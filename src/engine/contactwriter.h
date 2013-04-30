@@ -57,11 +57,12 @@
 
 QTM_USE_NAMESPACE
 
+class ContactsEngine;
 class ContactReader;
 class ContactWriter
 {
 public:
-    ContactWriter(const QSqlDatabase &database, ContactReader *reader);
+    ContactWriter(const ContactsEngine &engine, const QSqlDatabase &database, ContactReader *reader);
     ~ContactWriter();
 
     QContactManager::Error save(
@@ -124,6 +125,7 @@ private:
     QSqlQuery &bindDetail(QContactLocalId contactId, const QContactUrl &detail);
     QSqlQuery &bindDetail(QContactLocalId contactId, const QContactTpMetadata &detail);
 
+    const ContactsEngine &m_engine;
     QSqlDatabase m_database;
     QSqlQuery m_findRelatedForAggregate;
     QSqlQuery m_findLocalForAggregate;

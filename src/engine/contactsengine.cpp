@@ -95,7 +95,7 @@ public:
     virtual QContactAbstractRequest *request() = 0;
     virtual void clear() = 0;
 
-    virtual void execute(QSqlDatabase &database, ContactReader *reader, ContactWriter *&writer) = 0;
+    virtual void execute(const ContactsEngine &engine, QSqlDatabase &database, ContactReader *reader, ContactWriter *&writer) = 0;
     virtual void update(QMutex *) {}
     virtual void updateState(QContactAbstractRequest::State state) = 0;
     virtual void setError(QContactManager::Error) {}
@@ -191,7 +191,7 @@ public:
     {
     }
 
-    void execute(QSqlDatabase &, ContactReader *, ContactWriter *&)
+    void execute(const ContactsEngine &, QSqlDatabase &, ContactReader *, ContactWriter *&)
     {
         Q_ASSERT(!"Called execute on JobList");
     }
@@ -242,10 +242,10 @@ public:
     {
     }
 
-    void execute(QSqlDatabase &database, ContactReader *reader, ContactWriter *&writer)
+    void execute(const ContactsEngine &engine, QSqlDatabase &database, ContactReader *reader, ContactWriter *&writer)
     {
         if (!writer)
-            writer = new ContactWriter(database, reader);
+            writer = new ContactWriter(engine, database, reader);
         m_error = writer->save(&m_contacts, m_definitionMask, &m_errorMap, false, false);
     }
 
@@ -270,10 +270,10 @@ public:
     {
     }
 
-    void execute(QSqlDatabase &database, ContactReader *reader, ContactWriter *&writer)
+    void execute(const ContactsEngine &engine, QSqlDatabase &database, ContactReader *reader, ContactWriter *&writer)
     {
         if (!writer)
-            writer = new ContactWriter(database, reader);
+            writer = new ContactWriter(engine, database, reader);
         m_errorMap.clear();
         m_error = writer->remove(m_contactIds, &m_errorMap, false);
     }
@@ -303,7 +303,7 @@ public:
     {
     }
 
-    void execute(QSqlDatabase &, ContactReader *reader, ContactWriter *&)
+    void execute(const ContactsEngine &, QSqlDatabase &, ContactReader *reader, ContactWriter *&)
     {
         QList<QContact> contacts;
         m_error = reader->readContacts(
@@ -354,7 +354,7 @@ public:
     {
     }
 
-    void execute(QSqlDatabase &, ContactReader *reader, ContactWriter *&)
+    void execute(const ContactsEngine &, QSqlDatabase &, ContactReader *reader, ContactWriter *&)
     {
         QList<QContactLocalId> contactIds;
         m_error = reader->readContactIds(&contactIds, m_filter, m_sorting);
@@ -402,7 +402,7 @@ public:
     {
     }
 
-    void execute(QSqlDatabase &, ContactReader *reader, ContactWriter *&)
+    void execute(const ContactsEngine &, QSqlDatabase &, ContactReader *reader, ContactWriter *&)
     {
         QList<QContact> contacts;
         m_error = reader->readContacts(
@@ -458,10 +458,10 @@ public:
     {
     }
 
-    void execute(QSqlDatabase &database, ContactReader *reader, ContactWriter *&writer)
+    void execute(const ContactsEngine &engine, QSqlDatabase &database, ContactReader *reader, ContactWriter *&writer)
     {
         if (!writer)
-            writer = new ContactWriter(database, reader);
+            writer = new ContactWriter(engine, database, reader);
         m_error = writer->save(m_relationships, &m_errorMap);
     }
 
@@ -485,10 +485,10 @@ public:
     {
     }
 
-    void execute(QSqlDatabase &database, ContactReader *reader, ContactWriter *&writer)
+    void execute(const ContactsEngine &engine, QSqlDatabase &database, ContactReader *reader, ContactWriter *&writer)
     {
         if (!writer)
-            writer = new ContactWriter(database, reader);
+            writer = new ContactWriter(engine, database, reader);
         m_error = writer->remove(m_relationships, &m_errorMap);
     }
 
@@ -514,7 +514,7 @@ public:
     {
     }
 
-    void execute(QSqlDatabase &, ContactReader *reader, ContactWriter *&)
+    void execute(const ContactsEngine &, QSqlDatabase &, ContactReader *reader, ContactWriter *&)
     {
         m_error = reader->readRelationships(
                 &m_relationships,
@@ -794,7 +794,7 @@ void JobThread::run()
             locker.unlock();
             QElapsedTimer timer;
             timer.start();
-            m_currentJob->execute(database, &reader, writer);
+            m_currentJob->execute(*m_engine, database, &reader, writer);
             qDebug() << "Job executed in" << timer.elapsed();
             locker.relock();
             m_finishedJobs.append(m_currentJob);
@@ -963,15 +963,14 @@ bool ContactsEngine::saveContacts(
         if (!m_synchronousReader) {
             m_synchronousReader = new ContactReader(m_database);
         }
-        m_synchronousWriter = new ContactWriter(m_database, m_synchronousReader);
+        m_synchronousWriter = new ContactWriter(*this, m_database, m_synchronousReader);
     }
 
     // for each contact, if it doesn't have a display label, synthesise one for it.
     for (int i = 0; contacts && i < contacts->size(); ++i) {
         QContact &curr = (*contacts)[i];
         if (curr.displayLabel().isEmpty()) {
-            QContactManager::Error displayLabelError = QContactManager::NoError;
-            setContactDisplayLabel(&curr, synthesizedDisplayLabel(curr, &displayLabelError));
+            regenerateDisplayLabel(curr);
         }
     }
 
@@ -998,7 +997,7 @@ bool ContactsEngine::removeContacts(
         if (!m_synchronousReader) {
             m_synchronousReader = new ContactReader(m_database);
         }
-        m_synchronousWriter = new ContactWriter(m_database, m_synchronousReader);
+        m_synchronousWriter = new ContactWriter(*this, m_database, m_synchronousReader);
     }
 
     QContactManager::Error err = m_synchronousWriter->remove(contactIds, errorMap, false);
@@ -1020,33 +1019,10 @@ QContactLocalId ContactsEngine::selfContactId(QContactManager::Error* error) con
 }
 
 bool ContactsEngine::setSelfContactId(
-        const QContactLocalId& contactId, QContactManager::Error* error)
+        const QContactLocalId&, QContactManager::Error* error)
 {
-    QContactManager::Error err;
-    const QContactLocalId oldContactId = selfContactId(&err);
-    if (error)
-        *error = err;
-    if (err != QContactManager::NoError)
-        return false;
-
-    if (contactId == oldContactId)
-        return true;
-
-    if (!m_synchronousWriter) {
-        if (!m_synchronousReader) {
-            m_synchronousReader = new ContactReader(m_database);
-        }
-        m_synchronousWriter = new ContactWriter(m_database, m_synchronousReader);
-    }
-
-    err = m_synchronousWriter->setIdentity(
-            ContactsDatabase::SelfContactId, contactId);
-    if (error)
-        *error = err;
-
-    ContactNotifier::selfContactIdChanged(oldContactId, contactId);
-
-    return err == QContactManager::NoError;
+    *error = QContactManager::NotSupportedError;
+    return false;
 }
 
 QList<QContactRelationship> ContactsEngine::relationships(
@@ -1081,7 +1057,7 @@ bool ContactsEngine::saveRelationships(
         if (!m_synchronousReader) {
             m_synchronousReader = new ContactReader(m_database);
         }
-        m_synchronousWriter = new ContactWriter(m_database, m_synchronousReader);
+        m_synchronousWriter = new ContactWriter(*this, m_database, m_synchronousReader);
     }
 
     QContactManager::Error err = m_synchronousWriter->save(*relationships, errorMap);
@@ -1120,7 +1096,7 @@ bool ContactsEngine::removeRelationships(
         if (!m_synchronousReader) {
             m_synchronousReader = new ContactReader(m_database);
         }
-        m_synchronousWriter = new ContactWriter(m_database, m_synchronousReader);
+        m_synchronousWriter = new ContactWriter(*this, m_database, m_synchronousReader);
     }
 
     QContactManager::Error err = m_synchronousWriter->remove(relationships, errorMap);
@@ -1274,10 +1250,13 @@ bool ContactsEngine::hasFeature(
     if (contactType != QContactType::TypeContact)
         return false;
 
+    // note that we also support SelfContact, but we don't support
+    // modifying or removing the self contact, thus we report the
+    // feature as unsupported.
+
     switch (feature) {
     case QContactManager::Relationships:
     case QContactManager::ArbitraryRelationshipTypes:
-    case QContactManager::SelfContact:
         return true;
     default:
         return false;
@@ -1295,6 +1274,15 @@ bool ContactsEngine::isRelationshipTypeSupported(
 QStringList ContactsEngine::supportedContactTypes() const
 {
     return QStringList() << QContactType::TypeContact;
+}
+
+void ContactsEngine::regenerateDisplayLabel(QContact &contact) const
+{
+    QContactManager::Error displayLabelError = QContactManager::NoError;
+    setContactDisplayLabel(&contact, synthesizedDisplayLabel(contact, &displayLabelError));
+    if (displayLabelError != QContactManager::NoError) {
+        qWarning() << "Unable to regenerate displayLabel for contact:" << contact.localId();
+    }
 }
 
 void ContactsEngine::_q_selfContactIdChanged(QContactLocalId oldId, QContactLocalId newId)

@@ -31,6 +31,7 @@
 
 #include "contactwriter.h"
 
+#include "contactsengine.h"
 #include "contactreader.h"
 #include "contactnotifier.h"
 
@@ -171,11 +172,13 @@ static const char *insertAvatar =
         "\n INSERT INTO Avatars ("
         "\n  contactId,"
         "\n  imageUrl,"
-        "\n  videoUrl)"
+        "\n  videoUrl,"
+        "\n  avatarMetadata)"
         "\n VALUES ("
         "\n  :contactId,"
         "\n  :imageUrl,"
-        "\n  :videoUrl)";
+        "\n  :videoUrl,"
+        "\n  :avatarMetadata)";
 
 static const char *insertBirthday =
         "\n INSERT INTO Birthdays ("
@@ -377,8 +380,9 @@ static QSqlQuery prepare(const char *statement, const QSqlDatabase &database)
     return ContactsDatabase::prepare(statement, database);
 }
 
-ContactWriter::ContactWriter(const QSqlDatabase &database, ContactReader *reader)
-    : m_database(database)
+ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &database, ContactReader *reader)
+    : m_engine(engine)
+    , m_database(database)
     , m_findRelatedForAggregate(prepare(findRelatedForAggregate, database))
     , m_findLocalForAggregate(prepare(findLocalForAggregate, database))
     , m_findAggregateForLocal(prepare(findAggregateForLocal, database))
@@ -463,6 +467,10 @@ QContactManager::Error ContactWriter::setIdentity(
     }
 }
 
+// This function is currently unused - but the way we currently build up the
+// relationships query is hideously inefficient, so in the future we should
+// rewrite this bindRelationships function and use execBatch().
+/*
 static QContactManager::Error bindRelationships(
         QSqlQuery *query,
         const QList<QContactRelationship> &relationships,
@@ -527,6 +535,7 @@ static QContactManager::Error bindRelationships(
 
     return QContactManager::NoError;
 }
+*/
 
 QContactManager::Error ContactWriter::save(
         const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap)
@@ -1673,6 +1682,9 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
     // XXX TODO: promote relationships!
     promoteDetailsToAggregate(*contact, &matchingAggregate, definitionMask);
 
+    // update the display label for the aggregate
+    m_engine.regenerateDisplayLabel(matchingAggregate);
+
     if (!found) {
         // need to create an aggregating contact first.
         QContactSyncTarget cst;
@@ -1820,6 +1832,9 @@ void ContactWriter::regenerateAggregates(const QList<QContactLocalId> &aggregate
                 aggregatesToSaveIds.append(aggregateContact.id().localId());
             }
         }
+
+        // update the display label for the aggregate
+        m_engine.regenerateDisplayLabel(aggregateContact);
     }
 
     QMap<int, QContactManager::Error> errorMap;
@@ -2071,6 +2086,7 @@ QSqlQuery &ContactWriter::bindDetail(QContactLocalId contactId, const QContactAv
     m_insertAvatar.bindValue(0, contactId);
     m_insertAvatar.bindValue(1, detail.variantValue(T::FieldImageUrl));
     m_insertAvatar.bindValue(2, detail.variantValue(T::FieldVideoUrl));
+    m_insertAvatar.bindValue(3, detail.variantValue(QLatin1String("AvatarMetadata")));
     return m_insertAvatar;
 }
 
