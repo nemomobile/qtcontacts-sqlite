@@ -173,10 +173,14 @@ static void setValues(QContactAnniversary *detail, QSqlQuery *query, const int o
     setValue(detail, T::FieldSubType     , query->value(offset + 2));
 }
 
+QTM_BEGIN_NAMESPACE
+Q_DECLARE_LATIN1_CONSTANT(QContactAvatar__FieldAvatarMetadata, "AvatarMetadata") = { "AvatarMetadata" };
+QTM_END_NAMESPACE
 static const FieldInfo avatarFields[] =
 {
     { QContactAvatar::FieldImageUrl, "imageUrl", StringField },
-    { QContactAvatar::FieldVideoUrl, "videoUrl", StringField }
+    { QContactAvatar::FieldVideoUrl, "videoUrl", StringField },
+    { QContactAvatar__FieldAvatarMetadata, "avatarMetadata", StringField }
 };
 
 static void setValues(QContactAvatar *detail, QSqlQuery *query, const int offset)
@@ -185,6 +189,7 @@ static void setValues(QContactAvatar *detail, QSqlQuery *query, const int offset
 
     setValue(detail, T::FieldImageUrl, query->value(offset + 0));
     setValue(detail, T::FieldVideoUrl, query->value(offset + 1));
+    setValue(detail, QContactAvatar__FieldAvatarMetadata, query->value(offset + 2));
 }
 
 static const FieldInfo birthdayFields[] =
@@ -499,6 +504,7 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
 {
     if (filter.matchFlags() & QContactFilter::MatchKeypadCollation) {
         *failed = true;
+        qWarning() << "Cannot buildWhere with filter requiring keypad collation";
         return QLatin1String("FAILED");
     }
 
@@ -569,6 +575,7 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
     }
 
     *failed = true;
+    qWarning() << "Cannot buildWhere with unknown DetailFilter detail:" << filter.detailDefinitionName();
     return QLatin1String("FALSE");
 }
 
@@ -632,6 +639,7 @@ static QString buildWhere(const QContactDetailRangeFilter &filter, QVariantList 
     }
 
     *failed = true;
+    qWarning() << "Cannot buildWhere with unknown DetailRangeFilter detail:" << filter.detailDefinitionName();
     return QLatin1String("FALSE");
 }
 
@@ -640,6 +648,7 @@ static QString buildWhere(const QContactLocalIdFilter &filter, QVariantList *bin
     const QList<QContactLocalId> contactIds = filter.ids();
     if (contactIds.isEmpty()) {
         *failed = true;
+        qWarning() << "Cannot buildWhere with empty contact ID list";
         return QLatin1String("FALSE");
     }
 
@@ -662,6 +671,7 @@ static QString buildWhere(const QContactRelationshipFilter &filter, QVariantList
 
     if (!rci.managerUri().isEmpty() && rci.managerUri() != QLatin1String("org.nemomobile.contacts.sqlite")) {
         *failed = true;
+        qWarning() << "Cannot buildWhere with invalid manager URI:" << rci.managerUri();
         return QLatin1String("FALSE");
     }
 
@@ -741,7 +751,6 @@ static QString buildWhere(const QContactUnionFilter &filter, QVariantList *bindi
         }
     }
 
-    //return fragments.join(QLatin1String(" OR "));
     return QString::fromLatin1("( %1 )").arg(fragments.join(QLatin1String(" OR ")));
 }
 
@@ -769,19 +778,20 @@ static QString buildWhere(const QContactFilter &filter, QVariantList *bindings, 
     case QContactFilter::DefaultFilter:
         return QString();
     case QContactFilter::ContactDetailFilter:
-        return buildWhere(QContactDetailFilter(filter), bindings, failed);
+        return buildWhere(static_cast<const QContactDetailFilter &>(filter), bindings, failed);
     case QContactFilter::ContactDetailRangeFilter:
-        return buildWhere(QContactDetailRangeFilter(filter), bindings, failed);
+        return buildWhere(static_cast<const QContactDetailRangeFilter &>(filter), bindings, failed);
     case QContactFilter::RelationshipFilter:
-        return buildWhere(QContactRelationshipFilter(filter), bindings, failed);
+        return buildWhere(static_cast<const QContactRelationshipFilter &>(filter), bindings, failed);
     case QContactFilter::IntersectionFilter:
-        return buildWhere(QContactIntersectionFilter(filter), bindings, failed);
+        return buildWhere(static_cast<const QContactIntersectionFilter &>(filter), bindings, failed);
     case QContactFilter::UnionFilter:
-        return buildWhere(QContactUnionFilter(filter), bindings, failed);
+        return buildWhere(static_cast<const QContactUnionFilter &>(filter), bindings, failed);
     case QContactFilter::LocalIdFilter:
-        return buildWhere(QContactLocalIdFilter(filter), bindings, failed);
+        return buildWhere(static_cast<const QContactLocalIdFilter &>(filter), bindings, failed);
     default:
         *failed = true;
+        qWarning() << "Cannot buildWhere with unknown filter type" << filter.type();
         return QLatin1String("FALSE");
     }
 }
@@ -1005,18 +1015,25 @@ QContactManager::Error ContactReader::readContacts(
         return QContactManager::UnspecifiedError;
     }
 
+    // some (union) filters can add spurious braces around empty expressions
+    QString strippedWhere = where;
+    strippedWhere.remove(QChar('('));
+    strippedWhere.remove(QChar(')'));
+    strippedWhere.remove(QChar(' '));
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
-    // by default, we only return "aggregate" contacts.
-    if (where.isEmpty()) {
-        where = QLatin1String("WHERE Contacts.syncTarget = 'aggregate'");
+    // by default, we only return "aggregate" contacts, and we don't return the self contact (2)
+    if (strippedWhere.isEmpty()) {
+        where = QLatin1String("WHERE Contacts.contactId > 2 AND Contacts.syncTarget = 'aggregate'");
     } else if (!where.contains("syncTarget")) {
-        where = QLatin1String("WHERE Contacts.syncTarget = 'aggregate' AND ") + where;
+        where = QLatin1String("WHERE Contacts.contactId > 2 AND Contacts.syncTarget = 'aggregate' AND ") + where;
     } else { // Unless they explicitly specify a syncTarget criterium
-        where = QLatin1String("WHERE ") + where;
+        where = QLatin1String("WHERE Contacts.contactId > 2 AND ") + where;
     }
 #else
-    if (!where.isEmpty()) {
-        where = QLatin1String("WHERE ") + where;
+    if (strippedWhere.isEmpty()) {
+        where = QLatin1String("WHERE Contacts.contactId > 2");
+    } else {
+        where = QLatin1String("WHERE Contacts.contactId > 2 AND ") + where;
     }
 #endif
 
@@ -1226,18 +1243,25 @@ QContactManager::Error ContactReader::readContactIds(
         return QContactManager::UnspecifiedError;
     }
 
+    // some (union) filters can add spurious braces around empty expressions
+    QString strippedWhere = where;
+    strippedWhere.remove(QChar('('));
+    strippedWhere.remove(QChar(')'));
+    strippedWhere.remove(QChar(' '));
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
-    // by default, we only return "aggregate" contacts.
-    if (where.isEmpty()) {
-        where = QLatin1String("WHERE Contacts.syncTarget = 'aggregate'");
+    // by default, we only return "aggregate" contacts, and we don't return the self contact
+    if (strippedWhere.isEmpty()) {
+        where = QLatin1String("WHERE Contacts.contactId > 2 AND Contacts.syncTarget = 'aggregate'");
     } else if (!where.contains("syncTarget")) {
-        where = QLatin1String("WHERE Contacts.syncTarget = 'aggregate' AND ") + where;
+        where = QLatin1String("WHERE Contacts.contactId > 2 AND Contacts.syncTarget = 'aggregate' AND ") + where;
     } else { // Unless they explicitly specify a syncTarget criterium
-        where = QLatin1String("WHERE ") + where;
+        where = QLatin1String("WHERE Contacts.contactId > 2 AND ") + where;
     }
 #else
-    if (!where.isEmpty()) {
-        where = QLatin1String("WHERE ") + where;
+    if (strippedWhere.isEmpty()) {
+        where = QLatin1String("WHERE Contacts.contactId > 2");
+    } else {
+        where = QLatin1String("WHERE Contacts.contactId > 2 AND ") + where;
     }
 #endif
 
@@ -1277,21 +1301,26 @@ QContactManager::Error ContactReader::readContactIds(
 QContactManager::Error ContactReader::getIdentity(
         ContactsDatabase::Identity identity, QContactLocalId *contactId)
 {
-    QSqlQuery query(m_database);
-    query.prepare(QLatin1String(
-            "\n SELECT contactId"
-            "\n FROM Identities"
-            "\n WHERE identity = :identity"));
-    query.bindValue(0, identity);
+    if (identity == ContactsDatabase::SelfContactId) {
+        // we don't allow setting the self contact id, it's always static
+        *contactId = 2;
+    } else {
+        QSqlQuery query(m_database);
+        query.prepare(QLatin1String(
+                "\n SELECT contactId"
+                "\n FROM Identities"
+                "\n WHERE identity = :identity"));
+        query.bindValue(0, identity);
 
-    if (!query.exec()) {
-        *contactId = 0;
-        return QContactManager::UnspecifiedError;
+        if (!query.exec()) {
+            *contactId = 0;
+            return QContactManager::UnspecifiedError;
+        }
+
+        *contactId = query.next()
+                ? (query.value(0).toUInt() + 1)
+                : 0;
     }
-
-    *contactId = query.next()
-            ? (query.value(0).toUInt() + 1)
-            : 0;
 
     return QContactManager::NoError;
 }

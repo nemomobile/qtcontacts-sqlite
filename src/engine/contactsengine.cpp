@@ -1020,33 +1020,10 @@ QContactLocalId ContactsEngine::selfContactId(QContactManager::Error* error) con
 }
 
 bool ContactsEngine::setSelfContactId(
-        const QContactLocalId& contactId, QContactManager::Error* error)
+        const QContactLocalId&, QContactManager::Error* error)
 {
-    QContactManager::Error err;
-    const QContactLocalId oldContactId = selfContactId(&err);
-    if (error)
-        *error = err;
-    if (err != QContactManager::NoError)
-        return false;
-
-    if (contactId == oldContactId)
-        return true;
-
-    if (!m_synchronousWriter) {
-        if (!m_synchronousReader) {
-            m_synchronousReader = new ContactReader(m_database);
-        }
-        m_synchronousWriter = new ContactWriter(m_database, m_synchronousReader);
-    }
-
-    err = m_synchronousWriter->setIdentity(
-            ContactsDatabase::SelfContactId, contactId);
-    if (error)
-        *error = err;
-
-    ContactNotifier::selfContactIdChanged(oldContactId, contactId);
-
-    return err == QContactManager::NoError;
+    *error = QContactManager::NotSupportedError;
+    return false;
 }
 
 QList<QContactRelationship> ContactsEngine::relationships(
@@ -1274,10 +1251,13 @@ bool ContactsEngine::hasFeature(
     if (contactType != QContactType::TypeContact)
         return false;
 
+    // note that we also support SelfContact, but we don't support
+    // modifying or removing the self contact, thus we report the
+    // feature as unsupported.
+
     switch (feature) {
     case QContactManager::Relationships:
     case QContactManager::ArbitraryRelationshipTypes:
-    case QContactManager::SelfContact:
         return true;
     default:
         return false;

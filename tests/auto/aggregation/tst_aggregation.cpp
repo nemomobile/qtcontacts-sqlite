@@ -142,6 +142,8 @@ private slots:
 
     void correctDetails();
 
+    void customSemantics();
+
 private:
     QContactManager *m_cm;
     QList<QContactLocalId> m_addAccumulatedIds;
@@ -152,6 +154,7 @@ private:
 tst_Aggregation::tst_Aggregation()
     : m_cm(new QContactManager(QLatin1String("org.nemomobile.contacts.sqlite")))
 {
+    QTest::qWait(250); // creating self contact etc will cause some signals to be emitted.  ignore them.
     connect(m_cm, SIGNAL(contactsAdded(QList<QContactLocalId>)), this, SLOT(addAccumulationSlot(QList<QContactLocalId>)));
     connect(m_cm, SIGNAL(contactsChanged(QList<QContactLocalId>)), this, SLOT(chgAccumulationSlot(QList<QContactLocalId>)));
     connect(m_cm, SIGNAL(contactsRemoved(QList<QContactLocalId>)), this, SLOT(remAccumulationSlot(QList<QContactLocalId>)));
@@ -1413,6 +1416,35 @@ void tst_Aggregation::correctDetails()
     }
     m_cm->removeContacts(removeList);
     QTest::qWait(500); // coalesced signals
+}
+
+void tst_Aggregation::customSemantics()
+{
+    // the qtcontacts-sqlite engine defines some custom semantics
+    // 1) avatars have a custom "AvatarMetadata" field
+    // 2) self contact cannot be changed, and its id will always be "2"
+
+    // 1 - ensure that the AvatarMetadata field is supported.
+    QContact alice;
+    QContactName an;
+    an.setFirstName("Alice");
+    alice.saveDetail(&an);
+    QContactAvatar aa;
+    aa.setImageUrl(QUrl(QString(QLatin1String("test.png"))));
+    aa.setValue(QLatin1String("AvatarMetadata"), "cover");
+    alice.saveDetail(&aa);
+    QVERIFY(m_cm->saveContact(&alice));
+    QContact aliceReloaded = m_cm->contact(alice.id().localId());
+    QCOMPARE(aliceReloaded.detail<QContactName>().value(QContactName::FieldFirstName), QLatin1String("Alice"));
+    QCOMPARE(QUrl(aliceReloaded.detail<QContactAvatar>().value(QContactAvatar::FieldImageUrl)).toString(), QUrl(QString(QLatin1String("test.png"))).toString());
+    QCOMPARE(aliceReloaded.detail<QContactAvatar>().value(QLatin1String("AvatarMetadata")), QLatin1String("cover"));
+
+    // 2 - test the self contact semantics
+    QCOMPARE(m_cm->selfContactId(), QContactLocalId(2));
+    QVERIFY(!m_cm->setSelfContactId(alice.id().localId()));
+
+    // cleanup.
+    m_cm->removeContact(alice.id().localId());
 }
 
 QTEST_MAIN(tst_Aggregation)

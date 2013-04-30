@@ -171,11 +171,13 @@ static const char *insertAvatar =
         "\n INSERT INTO Avatars ("
         "\n  contactId,"
         "\n  imageUrl,"
-        "\n  videoUrl)"
+        "\n  videoUrl,"
+        "\n  avatarMetadata)"
         "\n VALUES ("
         "\n  :contactId,"
         "\n  :imageUrl,"
-        "\n  :videoUrl)";
+        "\n  :videoUrl,"
+        "\n  :avatarMetadata)";
 
 static const char *insertBirthday =
         "\n INSERT INTO Birthdays ("
@@ -463,6 +465,10 @@ QContactManager::Error ContactWriter::setIdentity(
     }
 }
 
+// This function is currently unused - but the way we currently build up the
+// relationships query is hideously inefficient, so in the future we should
+// rewrite this bindRelationships function and use execBatch().
+/*
 static QContactManager::Error bindRelationships(
         QSqlQuery *query,
         const QList<QContactRelationship> &relationships,
@@ -527,6 +533,7 @@ static QContactManager::Error bindRelationships(
 
     return QContactManager::NoError;
 }
+*/
 
 QContactManager::Error ContactWriter::save(
         const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap)
@@ -2071,6 +2078,7 @@ QSqlQuery &ContactWriter::bindDetail(QContactLocalId contactId, const QContactAv
     m_insertAvatar.bindValue(0, contactId);
     m_insertAvatar.bindValue(1, detail.variantValue(T::FieldImageUrl));
     m_insertAvatar.bindValue(2, detail.variantValue(T::FieldVideoUrl));
+    m_insertAvatar.bindValue(3, detail.variantValue(QLatin1String("AvatarMetadata")));
     return m_insertAvatar;
 }
 

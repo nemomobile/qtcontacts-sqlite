@@ -90,7 +90,8 @@ static const char *createAvatarsTable =
         "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
         "\n contactId INTEGER KEY,"
         "\n imageUrl TEXT,"
-        "\n videoUrl TEXT);";
+        "\n videoUrl TEXT,"
+        "\n avatarMetadata TEXT);"; // arbitrary metadata
 
 static const char *createBirthdaysTable =
         "\n CREATE TABLE Birthdays ("
@@ -262,6 +263,18 @@ static const char *createRemoveTrigger =
         "\n  DELETE FROM Relationships WHERE firstId = old.contactId OR secondId = old.contactId;"
         "\n END;";
 
+#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
+static const char *createLocalSelfContact =
+        "\n INSERT INTO Contacts (contactId, displayLabel, firstName, lastName, middleName, prefix, suffix, customLabel, syncTarget, created, modified, gender, isFavorite) VALUES (1, '', '', '', '', '', '', '', 'local', '', '', '', 0);";
+static const char *createAggregateSelfContact =
+        "\n INSERT INTO Contacts (contactId, displayLabel, firstName, lastName, middleName, prefix, suffix, customLabel, syncTarget, created, modified, gender, isFavorite) VALUES (2, '', '', '', '', '', '', '', 'aggregate', '', '', '', 0);";
+static const char *createSelfContactRelationship =
+        "\n INSERT INTO Relationships (firstId, secondId, type) VALUES (2, 1, 'Aggregates');";
+#else
+static const char *createLocalSelfContact =
+        "\n INSERT INTO Contacts (contactId, displayLabel, firstName, lastName, middleName, prefix, suffix, customLabel, syncTarget, created, modified, gender, isFavorite) VALUES (2, '', '', '', '', '', '', '', 'local', '', '', '', 0);";
+#endif
+
 static const char *createTables[] =
 {
     createContactsTable,
@@ -288,7 +301,12 @@ static const char *createTables[] =
     createDetailsRemoveIndex,
     createIdentitiesTable,
     createRelationshipsTable,
-    createRemoveTrigger
+    createRemoveTrigger,
+    createLocalSelfContact
+#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
+    , createAggregateSelfContact
+    , createSelfContactRelationship
+#endif
 };
 
 template <typename T, int N> static int lengthOf(const T(&)[N]) { return N; }
