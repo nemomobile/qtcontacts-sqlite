@@ -357,15 +357,13 @@ static bool prepareDatabase(QSqlDatabase &database)
 
 QSqlDatabase ContactsDatabase::open(const QString &databaseName)
 {
-    // horrible hack: Qt4 didn't have GenericDataLocation so we manually remove application name etc.
-    QFileInfo storageInfo(QDesktopServices::storageLocation(QDesktopServices::DataLocation));
-    QString storageLoc = storageInfo.path();
-    QDir databaseDir(storageLoc + QLatin1String("qtcontacts-sqlite/"));
+    // horrible hack: Qt4 didn't have GenericDataLocation so we hardcode database location.
+    QDir databaseDir(QLatin1String(QTCONTACTS_SQLITE_DATABASE_DIR));
     if (!databaseDir.exists()) {
         databaseDir.mkpath(QLatin1String("."));
     }
 
-    const QString databaseFile = databaseDir.absoluteFilePath(QLatin1String("contacts.db"));
+    const QString databaseFile = databaseDir.absoluteFilePath(QLatin1String(QTCONTACTS_SQLITE_DATABASE_NAME));
     const bool exists = QFile::exists(databaseFile);
 
     QSqlDatabase database = QSqlDatabase::addDatabase(QLatin1String("QSQLITE"), databaseName);

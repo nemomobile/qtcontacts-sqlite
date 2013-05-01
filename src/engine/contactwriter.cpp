@@ -2173,7 +2173,7 @@ QSqlQuery &ContactWriter::bindDetail(QContactLocalId contactId, const QContactPh
     m_insertPhoneNumber.bindValue(0, contactId);
     m_insertPhoneNumber.bindValue(1, detail.variantValue(T::FieldNumber));
     m_insertPhoneNumber.bindValue(2, detail.subTypes().join(QLatin1String(";")));
-    m_insertPhoneNumber.bindValue(3, detail.variantValue("NormalizedNumber"));
+    m_insertPhoneNumber.bindValue(3, QVariant(ContactsEngine::normalizedPhoneNumber(detail.number())));
     return m_insertPhoneNumber;
 }
 

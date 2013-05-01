@@ -1440,7 +1440,7 @@ void tst_Aggregation::customSemantics()
     QCOMPARE(aliceReloaded.detail<QContactAvatar>().value(QLatin1String("AvatarMetadata")), QLatin1String("cover"));
 
     // 2 - test the self contact semantics
-    QCOMPARE(m_cm->selfContactId(), QContactLocalId(2));
+    QCOMPARE(m_cm->selfContactId(), QContactLocalId(3));
     QVERIFY(!m_cm->setSelfContactId(alice.id().localId()));
 
     // cleanup.

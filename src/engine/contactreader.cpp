@@ -30,6 +30,7 @@
  */
 
 #include "contactreader.h"
+#include "contactsengine.h"
 
 #include <QContactAddress>
 #include <QContactAnniversary>
@@ -530,37 +531,59 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
 
             bool stringField = field.fieldType == StringField;
             bool phoneNumberMatch = filter.matchFlags() & QContactFilter::MatchPhoneNumber;
-            bool caseSensitive = phoneNumberMatch || (filter.matchFlags() & QContactFilter::MatchCaseSensitive);
+            bool caseSensitive = filter.matchFlags() & QContactFilter::MatchCaseSensitive;
+            bool useNormalizedNumber = false;
+            int globValue = filter.matchFlags() & 7;
+
             QString comparison = (stringField && !caseSensitive) ? QLatin1String("lower(%1)") : QLatin1String("%1");
             QString bindValue;
+            QString column;
+
             if (phoneNumberMatch) {
-                // remove any non-digit characters from the column value when we do our comparison: +,-, ,#,(,) are removed.
-                comparison = QLatin1String("replace(replace(replace(replace(replace(replace(%1, '+', ''), '-', ''), '#', ''), '(', ''), ')', ''), ' ', '')");
-                QString tempValue = caseSensitive ? filter.value().toString() : filter.value().toString().toLower();
-                for (int i = 0; i < tempValue.size(); ++i) {
-                    QChar current = tempValue.at(i).toLower();
-                    if (current.isDigit()) {
-                        bindValue.append(current);
+                // If the phone number match is on the number field of a phoneNumber detail, then
+                // match on the normalized number rather than the unconstrained number (for simple matches)
+                useNormalizedNumber = (filter.detailDefinitionName() == QContactPhoneNumber::DefinitionName &&
+                                       filter.detailFieldName() == QContactPhoneNumber::FieldNumber &&
+                                       globValue != QContactFilter::MatchStartsWith &&
+                                       globValue != QContactFilter::MatchContains &&
+                                       globValue != QContactFilter::MatchEndsWith);
+
+                if (useNormalizedNumber) {
+                    // Normalize the input for comparison
+                    bindValue = ContactsEngine::normalizedPhoneNumber(filter.value().toString());
+                    if (!caseSensitive) {
+                        bindValue = bindValue.toLower();
+                    }
+                    column = QString::fromLatin1("NormalizedNumber");
+                } else {
+                    // remove any non-digit characters from the column value when we do our comparison: +,-, ,#,(,) are removed.
+                    comparison = QLatin1String("replace(replace(replace(replace(replace(replace(%1, '+', ''), '-', ''), '#', ''), '(', ''), ')', ''), ' ', '')");
+                    QString tempValue = caseSensitive ? filter.value().toString() : filter.value().toString().toLower();
+                    for (int i = 0; i < tempValue.size(); ++i) {
+                        QChar current = tempValue.at(i).toLower();
+                        if (current.isDigit()) {
+                            bindValue.append(current);
+                        }
                     }
                 }
             } else {
                 bindValue = caseSensitive ? filter.value().toString() : filter.value().toString().toLower();
             }
 
-            if (stringField && ((filter.matchFlags() & 7) == QContactFilter::MatchStartsWith)) {
+            if (stringField && (globValue == QContactFilter::MatchStartsWith)) {
                 bindValue = bindValue + QLatin1String("*");
                 comparison += QLatin1String(" GLOB ?");
                 bindings->append(bindValue);
-            } else if (stringField && ((filter.matchFlags() & 7) == QContactFilter::MatchContains)) {
+            } else if (stringField && (globValue == QContactFilter::MatchContains)) {
                 bindValue = QLatin1String("*") + bindValue + QLatin1String("*");
                 comparison += QLatin1String(" GLOB ?");
                 bindings->append(bindValue);
-            } else if (stringField && ((filter.matchFlags() & 7) == QContactFilter::MatchEndsWith)) {
+            } else if (stringField && (globValue == QContactFilter::MatchEndsWith)) {
                 bindValue = QLatin1String("*") + bindValue;
                 comparison += QLatin1String(" GLOB ?");
                 bindings->append(bindValue);
             } else {
-                if (phoneNumberMatch) {
+                if (phoneNumberMatch && !useNormalizedNumber) {
                     bindValue = QLatin1String("*") + bindValue;
                     comparison += QLatin1String(" GLOB ?");
                     bindings->append(bindValue);
@@ -570,7 +593,7 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
                 }
             }
 
-            return detail.where().arg(comparison.arg(field.column));
+            return detail.where().arg(comparison.arg(column.isEmpty() ? field.column : column));
         }
     }
 
@@ -1303,7 +1326,7 @@ QContactManager::Error ContactReader::getIdentity(
 {
     if (identity == ContactsDatabase::SelfContactId) {
         // we don't allow setting the self contact id, it's always static
-        *contactId = 2;
+        *contactId = 2 + 1; // 2 is the database id, +1 to turn into contact id.
     } else {
         QSqlQuery query(m_database);
         query.prepare(QLatin1String(

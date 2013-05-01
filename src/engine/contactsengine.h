@@ -123,6 +123,8 @@ public:
     QStringList supportedContactTypes() const;
     void regenerateDisplayLabel(QContact &contact) const;
 
+    static QString normalizedPhoneNumber(const QString &input);
+
 private slots:
     void _q_contactsChanged(const QList<QContactLocalId> &contacts);
     void _q_contactsAdded(const QList<QContactLocalId> &contacts);
