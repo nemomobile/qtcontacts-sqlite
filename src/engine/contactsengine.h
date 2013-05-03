@@ -125,6 +125,8 @@ public:
 
     static QString normalizedPhoneNumber(const QString &input);
 
+    virtual QString synthesizedDisplayLabel(const QContact &contact, QContactManager::Error *error) const;
+
 private slots:
     void _q_contactsChanged(const QList<QContactLocalId> &contacts);
     void _q_contactsAdded(const QList<QContactLocalId> &contacts);

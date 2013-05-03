@@ -1317,6 +1317,64 @@ QString ContactsEngine::normalizedPhoneNumber(const QString &input)
     return subset.right(maxCharacters);
 }
 
+QString ContactsEngine::synthesizedDisplayLabel(const QContact &contact, QContactManager::Error *error) const
+{
+    *error = QContactManager::NoError;
+
+    QContactName name = contact.detail<QContactName>();
+
+    // If a custom label has been set, return that
+    if (!name.customLabel().isEmpty())
+        return name.customLabel();
+
+    QString displayLabel;
+
+    if (!name.firstName().isEmpty())
+        displayLabel.append(name.firstName());
+
+    if (!name.lastName().isEmpty()) {
+        if (!displayLabel.isEmpty())
+            displayLabel.append(" ");
+        displayLabel.append(name.lastName());
+    }
+
+    if (!displayLabel.isEmpty()) {
+        return displayLabel;
+    }
+
+    foreach (const QContactNickname& nickname, contact.details<QContactNickname>()) {
+        if (!nickname.nickname().isEmpty()) {
+            return nickname.nickname();
+        }
+    }
+
+    foreach (const QContactGlobalPresence& gp, contact.details<QContactGlobalPresence>()) {
+        if (!gp.nickname().isEmpty()) {
+            return gp.nickname();
+        }
+    }
+
+    foreach (const QContactOnlineAccount& account, contact.details<QContactOnlineAccount>()) {
+        if (!account.accountUri().isEmpty()) {
+            return account.accountUri();
+        }
+    }
+
+    foreach (const QContactEmailAddress& email, contact.details<QContactEmailAddress>()) {
+        if (!email.emailAddress().isEmpty()) {
+            return email.emailAddress();
+        }
+    }
+
+    foreach (const QContactPhoneNumber& phone, contact.details<QContactPhoneNumber>()) {
+        if (!phone.number().isEmpty())
+            return phone.number();
+    }
+
+    *error = QContactManager::UnspecifiedError;
+    return QString();
+}
+
 void ContactsEngine::_q_selfContactIdChanged(QContactLocalId oldId, QContactLocalId newId)
 {
     emit selfContactIdChanged(oldId, newId);
