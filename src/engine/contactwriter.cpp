@@ -382,6 +382,17 @@ static QSqlQuery prepare(const char *statement, const QSqlDatabase &database)
     return ContactsDatabase::prepare(statement, database);
 }
 
+static bool detailsEquivalent(const QContactDetail &lhs, const QContactDetail &rhs)
+{
+    // Same as operator== except ignores differences in accessConstraints values
+    if (lhs.definitionName() != rhs.definitionName())
+        return false;
+
+    QMap<QString, QVariant> lhsValues = lhs.variantValues();
+    QMap<QString, QVariant> rhsValues = rhs.variantValues();
+    return (lhsValues == rhsValues);
+}
+
 ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &database, ContactReader *reader)
     : m_engine(engine)
     , m_database(database)
@@ -1153,7 +1164,7 @@ QContactManager::Error ContactWriter::save(
         const QContactLocalId contactId = contact.localId();
         bool aggregateUpdated = false;
         if (contactId == 0) {
-            err = create(&contact, definitionMask, true);
+            err = create(&contact, definitionMask, true, withinAggregateUpdate);
             createdContactIds.append(contact.localId());
         } else {
             err = update(&contact, definitionMask, &aggregateUpdated, true, withinAggregateUpdate);
@@ -1209,16 +1220,29 @@ static QContactManager::Error calculateDelta(ContactReader *reader, QContact *co
         return readError == QContactManager::NoError ? QContactManager::UnspecifiedError : readError;
     }
 
+    // Make mutable copies of the contacts (without Irremovable|Readonly flags)
+    QContact dbContact;
+    foreach (const QContactDetail &detail, readList.at(0).details()) {
+        QContactDetail copy(detail);
+        QContactManagerEngine::setDetailAccessConstraints(&copy, QContactDetail::NoConstraint);
+        dbContact.saveDetail(&copy);
+    }
+
+    QContact upContact;
+    foreach (const QContactDetail &detail, contact->details()) {
+        QContactDetail copy(detail);
+        QContactManagerEngine::setDetailAccessConstraints(&copy, QContactDetail::NoConstraint);
+        upContact.saveDetail(&copy);
+    }
+
     // Determine which details are in the update contact which aren't in the database contact:
-    QContact dbContact(readList.at(0)); // database version
-    QContact upContact(*contact);       // update version
     QList<QContactDetail> dbDetails = dbContact.details();
     QList<QContactDetail> upDetails = upContact.details();
 
     // Detail order is not defined, so loop over the entire set for each, removing exact matches
     foreach(QContactDetail ddb, dbDetails) {
         foreach(QContactDetail dup, upDetails) {
-            if(ddb == dup) {
+            if (detailsEquivalent(ddb, dup)) {
                 dbContact.removeDetail(&ddb);
                 upContact.removeDetail(&dup);
                 break;
@@ -1234,7 +1258,7 @@ static QContactManager::Error calculateDelta(ContactReader *reader, QContact *co
             if (ddb.definitionName() == dup.definitionName()) {
                 bool dbIsSuperset = true;
                 QMap<QString, QVariant> dupmap = dup.variantValues();
-                foreach (QString key, dupmap.keys()) {
+                foreach (const QString &key, dupmap.keys()) {
                     if (ddb.value(key) != dup.value(key)) {
                         dbIsSuperset = false; // the value of this field changed in the update version
                     }
@@ -1416,9 +1440,7 @@ static void promoteDetailsToLocal(const QList<QContactDetail> addDelta, const QL
             // Don't promote details already in the local, or those not originally present in the local
             QList<QContactDetail> noPromoteDetails(localContact->details() + notPresentInLocal);
             foreach (QContactDetail ld, noPromoteDetails) {
-                // Ignore access constraints in detail comparison
-                QContactManagerEngine::setDetailAccessConstraints(&ld, det.accessConstraints());
-                if (det == ld) {
+                if (detailsEquivalent(det, ld)) {
                     needsPromote = false;
                     break;
                 }
@@ -1482,10 +1504,13 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
     } else {
         // no local contact exists for the aggregate.  Create a new one.
         createdNewLocal = true;
+
         QContactSyncTarget lst;
         lst.setSyncTarget(QLatin1String("local"));
         localContact.saveDetail(&lst);
+
         QContactName lcn = contact->detail<QContactName>();
+        adjustDetailUrisForLocal(lcn);
         localContact.saveDetail(&lcn);
     }
 
@@ -1503,6 +1528,24 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
     if (writeError != QContactManager::NoError) {
         qWarning() << "Unable to update (or create) local contact for modified aggregate";
         return writeError;
+    }
+
+    if (createdNewLocal) {
+        // Add the aggregates relationship
+        QContactRelationship r;
+        r.setFirst(contact->id());
+        r.setSecond(writeList.at(0).id());
+        r.setRelationshipType(QContactRelationship::Aggregates);
+
+        QList<QContactRelationship> saveRelationshipList;
+        saveRelationshipList.append(r);
+        writeError = save(saveRelationshipList, &errorMap);
+        if (writeError != QContactManager::NoError) {
+            // TODO: remove unaggregated contact
+            // if the aggregation relationship fails, the entire save has failed.
+            qWarning() << "Unable to save aggregation relationship for new local contact!";
+            return writeError;
+        }
     }
 
     if (aggregatesUpdated.count() && (aggregatesUpdated[0] == true)) {
@@ -1653,9 +1696,7 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
             bool needsPromote = true;
             QList<QContactDetail> allADetails = aggregate->details();
             foreach (QContactDetail ad, allADetails) {
-                // Ignore access constraints in detail comparison
-                QContactManagerEngine::setDetailAccessConstraints(&ad, currDet.accessConstraints());
-                if (currDet == ad) {
+                if (detailsEquivalent(currDet, ad)) {
                     needsPromote = false;
                     break;
                 }
@@ -1687,7 +1728,7 @@ int detailMatch(const QContact &first, const QContact &second)
 
     foreach (const T &ft, fdets) {
         foreach (const T &st, sdets) {
-            if (ft == st) {
+            if (detailsEquivalent(ft, st)) {
                 return 1; // match!
             }
         }
@@ -2013,7 +2054,7 @@ void ContactWriter::regenerateAggregates(const QList<QContactLocalId> &aggregate
     }
 }
 
-QContactManager::Error ContactWriter::create(QContact *contact, const QStringList &definitionMask, bool withinTransaction)
+QContactManager::Error ContactWriter::create(QContact *contact, const QStringList &definitionMask, bool withinTransaction, bool withinAggregateUpdate)
 {
 #ifndef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     Q_UNUSED(withinTransaction)
@@ -2035,10 +2076,14 @@ QContactManager::Error ContactWriter::create(QContact *contact, const QStringLis
             contact->setId(id);
 
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
-            // and either update the aggregate contact (if it exists) or create a new one (unless it is an aggregate contact).
-            if (contact->detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget) != QLatin1String("aggregate")) {
-                writeErr = updateOrCreateAggregate(contact, definitionMask, withinTransaction);
+            if (!withinAggregateUpdate) {
+                // and either update the aggregate contact (if it exists) or create a new one (unless it is an aggregate contact).
+                if (contact->detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget) != QLatin1String("aggregate")) {
+                    writeErr = updateOrCreateAggregate(contact, definitionMask, withinTransaction);
+                }
             }
+#else
+            Q_UNUSED(withinAggregateUpdate)
 #endif
         }
 

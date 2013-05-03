@@ -86,7 +86,7 @@ public:
             QMap<int, QContactManager::Error> *errorMap);
 
 private:
-    QContactManager::Error create(QContact *contact, const QStringList &definitionMask, bool withinTransaction);
+    QContactManager::Error create(QContact *contact, const QStringList &definitionMask, bool withinTransaction, bool withinAggregateUpdate);
     QContactManager::Error update(QContact *contact, const QStringList &definitionMask, bool *aggregateUpdated, bool withinTransaction, bool withinAggregateUpdate);
     QContactManager::Error write(QContactLocalId contactId, QContact *contact, const QStringList &definitionMask);
 

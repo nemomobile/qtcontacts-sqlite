@@ -763,7 +763,7 @@ private:
 
 void JobThread::run()
 {
-    QSqlDatabase database = ContactsDatabase::open(QLatin1String("qtcontacts-sqlite-job-"));
+    QSqlDatabase database = ContactsDatabase::open(QString(QLatin1String("qtcontacts-sqlite-job-%1")).arg(m_databaseUuid));
     if (!database.isOpen()) {
         while (m_running) {
             if (m_pendingJobs.isEmpty()) {
