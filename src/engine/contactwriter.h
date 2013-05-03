@@ -68,6 +68,7 @@ public:
     QContactManager::Error save(
             QList<QContact> *contacts,
             const QStringList &definitionMask,
+            QMap<int, bool> *aggregateUpdated,
             QMap<int, QContactManager::Error> *errorMap,
             bool withinTransaction,
             bool withinAggregateUpdate);
@@ -86,7 +87,7 @@ public:
 
 private:
     QContactManager::Error create(QContact *contact, const QStringList &definitionMask, bool withinTransaction);
-    QContactManager::Error update(QContact *contact, const QStringList &definitionMask, bool withinTransaction, bool withinAggregateUpdate);
+    QContactManager::Error update(QContact *contact, const QStringList &definitionMask, bool *aggregateUpdated, bool withinTransaction, bool withinAggregateUpdate);
     QContactManager::Error write(QContactLocalId contactId, QContact *contact, const QStringList &definitionMask);
 
     QContactManager::Error updateOrCreateAggregate(QContact *contact, const QStringList &definitionMask, bool withinTransaction);
@@ -129,7 +130,7 @@ private:
     QSqlDatabase m_database;
     QSqlQuery m_findRelatedForAggregate;
     QSqlQuery m_findLocalForAggregate;
-    QSqlQuery m_findAggregateForLocal;
+    QSqlQuery m_findAggregateForContact;
     QSqlQuery m_selectAggregateContactIds;
     QSqlQuery m_orphanAggregateIds;
     QSqlQuery m_checkContactExists;

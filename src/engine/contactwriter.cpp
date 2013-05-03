@@ -55,7 +55,7 @@ static const char *findLocalForAggregate =
         "\n SELECT contactId FROM Contacts WHERE syncTarget = 'local' AND contactId IN ("
         "\n SELECT secondId FROM Relationships WHERE firstId = :aggregateId AND type = 'Aggregates')";
 
-static const char *findAggregateForLocal =
+static const char *findAggregateForContact =
         "\n SELECT DISTINCT firstId FROM Relationships WHERE type = 'Aggregates' AND secondId = :localId";
 
 static const char *selectAggregateContactIds =
@@ -357,14 +357,16 @@ static const char *insertDetail =
         "\n  detail,"
         "\n  detailUri,"
         "\n  linkedDetailUris,"
-        "\n  contexts)"
+        "\n  contexts,"
+        "\n  accessConstraints)"
         "\n VALUES ("
         "\n  :contactId,"
         "\n  :detailId,"
         "\n  :detail,"
         "\n  :detailUri,"
         "\n  :linkedDetailUris,"
-        "\n  :contexts);";
+        "\n  :contexts,"
+        "\n  :accessConstraints);";
 
 static const char *insertIdentity =
         "\n INSERT OR REPLACE INTO Identities ("
@@ -385,7 +387,7 @@ ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &d
     , m_database(database)
     , m_findRelatedForAggregate(prepare(findRelatedForAggregate, database))
     , m_findLocalForAggregate(prepare(findLocalForAggregate, database))
-    , m_findAggregateForLocal(prepare(findAggregateForLocal, database))
+    , m_findAggregateForContact(prepare(findAggregateForContact, database))
     , m_selectAggregateContactIds(prepare(selectAggregateContactIds, database))
     , m_orphanAggregateIds(prepare(orphanAggregateIds, database))
     , m_checkContactExists(prepare(checkContactExists, database))
@@ -818,14 +820,14 @@ QContactManager::Error ContactWriter::remove(const QList<QContactLocalId> &conta
     while (m_selectAggregateContactIds.next()) {
         aggregatesToRemove.append(m_selectAggregateContactIds.value(0).toUInt() + 1);
     }
-    m_findAggregateForLocal.bindValue(":localId", boundRealRemoveIds);
-    if (!m_findAggregateForLocal.execBatch()) {
+    m_findAggregateForContact.bindValue(":localId", boundRealRemoveIds);
+    if (!m_findAggregateForContact.execBatch()) {
         qWarning() << "Failed to fetch aggregator contact ids during remove";
-        qWarning() << m_findAggregateForLocal.lastError();
+        qWarning() << m_findAggregateForContact.lastError();
         return QContactManager::UnspecifiedError;
     }
-    while (m_findAggregateForLocal.next()) {
-        aggregatesOfRemoved.append(m_findAggregateForLocal.value(0).toUInt() + 1);
+    while (m_findAggregateForContact.next()) {
+        aggregatesOfRemoved.append(m_findAggregateForContact.value(0).toUInt() + 1);
     }
 
     QVariantList boundNonAggregatesToRemove;
@@ -975,14 +977,16 @@ template <typename T> bool ContactWriter::writeCommonDetails(
     const QVariant detailUri = detail.variantValue(QContactDetail::FieldDetailUri);
     const QVariant linkedDetailUris = detail.variantValue(QContactDetail::FieldLinkedDetailUris);
     const QVariant contexts = detail.variantValue(QContactDetail::FieldContext);
+    int accessConstraints = static_cast<int>(detail.accessConstraints());
 
-    if (detailUri.isValid() || linkedDetailUris.isValid() || contexts.isValid()) {
+    if (detailUri.isValid() || linkedDetailUris.isValid() || contexts.isValid() || accessConstraints > 0) {
         m_insertDetail.bindValue(0, contactId);
         m_insertDetail.bindValue(1, query.lastInsertId());
         m_insertDetail.bindValue(2, T::DefinitionName);
         m_insertDetail.bindValue(3, detailUri);
         m_insertDetail.bindValue(4, linkedDetailUris.toStringList().join(QLatin1String(";")));
         m_insertDetail.bindValue(5, contexts.toStringList().join(QLatin1String(";")));
+        m_insertDetail.bindValue(6, accessConstraints);
 
         if (!m_insertDetail.exec()) {
             qWarning() << "Failed to write common details for" << QLatin1String(T::DefinitionName);
@@ -1125,6 +1129,7 @@ template <> bool ContactWriter::writeDetails<QContactPresence>(
 QContactManager::Error ContactWriter::save(
             QList<QContact> *contacts,
             const QStringList &definitionMask,
+            QMap<int, bool> *aggregatesUpdated,
             QMap<int, QContactManager::Error> *errorMap,
             bool withinTransaction,
             bool withinAggregateUpdate)
@@ -1146,12 +1151,16 @@ QContactManager::Error ContactWriter::save(
     for (int i = 0; i < contacts->count(); ++i) {
         QContact &contact = (*contacts)[i];
         const QContactLocalId contactId = contact.localId();
+        bool aggregateUpdated = false;
         if (contactId == 0) {
             err = create(&contact, definitionMask, true);
             createdContactIds.append(contact.localId());
         } else {
-            err = update(&contact, definitionMask, true, withinAggregateUpdate);
+            err = update(&contact, definitionMask, &aggregateUpdated, true, withinAggregateUpdate);
             updatedContactIds.append(contactId);
+        }
+        if (aggregatesUpdated) {
+            aggregatesUpdated->insert(i, aggregateUpdated);
         }
         if (err != QContactManager::NoError) {
             worstError = err;
@@ -1188,7 +1197,7 @@ QContactManager::Error ContactWriter::save(
     in the updated version (compared to the current database version)
     and returns it.
 */
-static QContactManager::Error calculateDelta(ContactReader *reader, QContact *contact, const QStringList &definitionMask, QList<QContactDetail> *delta)
+static QContactManager::Error calculateDelta(ContactReader *reader, QContact *contact, const QStringList &definitionMask, QList<QContactDetail> *addDelta, QList<QContactDetail> *removeDelta)
 {
     QMap<int, QContactManager::Error> errorMap;
     QList<QContactLocalId> whichList;
@@ -1240,7 +1249,8 @@ static QContactManager::Error calculateDelta(ContactReader *reader, QContact *co
         }
     }
 
-    // Now extract the delta from the update version
+    // Now extract the add delta from the update version
+    // These are details which exist in the updated contact, but not in the database contact.
     upDetails = upContact.details();
     QList<QContactDetail> retn;
     foreach (const QContactDetail &det, upDetails) {
@@ -1250,9 +1260,175 @@ static QContactManager::Error calculateDelta(ContactReader *reader, QContact *co
             retn.append(det);
         }
     }
+    addDelta->append(retn);
 
-    delta->append(retn);
+    // Now extract the remove delta from the database version
+    // These are details which exist in the database contact, but not in the updated contact.
+    dbDetails = dbContact.details();
+    retn.clear();
+    foreach (const QContactDetail &det, dbDetails) {
+        if (det.definitionName() != QContactDisplayLabel::DefinitionName
+                && det.definitionName() != QContactType::DefinitionName
+                && (definitionMask.isEmpty() || definitionMask.contains(det.definitionName()))) {
+            retn.append(det);
+        }
+    }
+    removeDelta->append(retn);
+
     return QContactManager::NoError;
+}
+
+
+static void adjustDetailUrisForLocal(QContactDetail &currDet)
+{
+    if (currDet.detailUri().startsWith(QLatin1String("aggregate:"))) {
+        currDet.setDetailUri(currDet.detailUri().mid(10));
+    }
+
+    bool needsLinkedDUs = false;
+    QStringList linkedDUs = currDet.linkedDetailUris();
+    for (int i = 0; i < linkedDUs.size(); ++i) {
+        QString currLDU = linkedDUs.at(i);
+        if (currLDU.startsWith(QLatin1String("aggregate"))) {
+            currLDU = currLDU.mid(10);
+            linkedDUs.replace(i, currLDU);
+            needsLinkedDUs = true;
+        }
+    }
+    if (needsLinkedDUs) {
+        currDet.setLinkedDetailUris(linkedDUs);
+    }
+}
+
+/*
+    This function is called when an aggregate contact is updated directly.
+    The addDelta and remDelta are calculated from the existing (database) aggregate,
+    and then these deltas are applied (within this function) to the local contact.
+*/
+static void promoteDetailsToLocal(const QList<QContactDetail> addDelta, const QList<QContactDetail> remDelta, QContact *localContact, const QStringList &definitionMask)
+{
+    // first apply the removals.  Note that these may not always apply
+    // (eg, if the client attempted to manually remove a detail which
+    // comes from a synced contact, rather than the local contact) -
+    // in which case, it'll be ignored.
+    QList<QContactDetail> notPresentInLocal;
+    foreach (const QContactDetail &det, remDelta) {
+        if (det.definitionName() == QContactGuid::DefinitionName
+                || det.definitionName() == QContactSyncTarget::DefinitionName
+                || det.definitionName() == QContactDisplayLabel::DefinitionName
+                || (!definitionMask.isEmpty() && !definitionMask.contains(det.definitionName()))) {
+            continue; // don't remove these details.  They cannot apply to the local contact.
+        }
+
+        // handle unique details specifically.
+        QContactDetail detToRemove;
+        if (det.definitionName() == QContactName::DefinitionName) {
+            detToRemove = localContact->detail<QContactName>();
+            localContact->removeDetail(&detToRemove);
+        } else if (det.definitionName() == QContactTimestamp::DefinitionName) {
+            detToRemove = localContact->detail<QContactTimestamp>();
+            localContact->removeDetail(&detToRemove);
+        } else if (det.definitionName() == QContactGender::DefinitionName) {
+            detToRemove = localContact->detail<QContactGender>();
+            localContact->removeDetail(&detToRemove);
+        } else if (det.definitionName() == QContactFavorite::DefinitionName) {
+            detToRemove = localContact->detail<QContactFavorite>();
+            localContact->removeDetail(&detToRemove);
+        } else {
+            // all other details are just removed directly.
+            bool found = false;
+            QList<QContactDetail> allDets = localContact->details();
+            for (int j = 0; j < allDets.size(); ++j) {
+                detToRemove = allDets.at(j);
+                if (detToRemove.definitionName() == det.definitionName() && detToRemove == det) {
+                    // note: this comparison does value checking only.
+                    localContact->removeDetail(&detToRemove);
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) {
+                notPresentInLocal.append(det);
+            }
+        }
+    }
+
+#if 0
+    // debugging: print out some information about the removals which were ignored / not applied.
+    QString ignoredStr;
+    foreach (const QContactDetail &det, notPresentInLocal) {
+        QString valStr;
+        if (det.definitionName() == QContactName::DefinitionName) {
+            valStr = det.value(QContactName::FieldFirstName) + QLatin1String(" ") + det.value(QContactName::FieldLastName);
+        } else if (det.definitionName() == QContactPhoneNumber::DefinitionName) {
+            valStr = det.value(QContactPhoneNumber::FieldNumber);
+        } else if (det.definitionName() == QContactEmailAddress::DefinitionName) {
+            valStr = det.value(QContactEmailAddress::FieldEmailAddress);
+        } else {
+            valStr = QLatin1String("Some value...");
+        }
+        ignoredStr += QString(QLatin1String("\n    %1: %2")).arg(det.definitionName()).arg(valStr);
+    }
+    qWarning() << "promoteDetailsToLocal: IGNORED" << notPresentInLocal.size() << "details:" << ignoredStr;
+#endif
+
+    foreach (QContactDetail det, addDelta) {
+        if (det.definitionName() == QContactGuid::DefinitionName
+                || det.definitionName() == QContactSyncTarget::DefinitionName
+                || det.definitionName() == QContactDisplayLabel::DefinitionName
+                || (!definitionMask.isEmpty() && !definitionMask.contains(det.definitionName()))) {
+            continue; // don't save these details.  Guid MUST be globally unique.
+        }
+
+        // handle unique details specifically.
+        if (det.definitionName() == QContactName::DefinitionName) {
+            QContactName lcn = localContact->detail<QContactName>();
+            lcn.setPrefix(det.value(QContactName::FieldPrefix));
+            lcn.setFirstName(det.value(QContactName::FieldFirstName));
+            lcn.setMiddleName(det.value(QContactName::FieldMiddleName));
+            lcn.setLastName(det.value(QContactName::FieldLastName));
+            lcn.setSuffix(det.value(QContactName::FieldSuffix));
+            lcn.setCustomLabel(det.value(QContactName::FieldCustomLabel));
+            localContact->saveDetail(&lcn);
+        } else if (det.definitionName() == QContactTimestamp::DefinitionName) {
+            QContactTimestamp lts = localContact->detail<QContactTimestamp>();
+            lts.setLastModified(det.value<QDateTime>(QContactTimestamp::FieldModificationTimestamp));
+            lts.setCreated(det.value<QDateTime>(QContactTimestamp::FieldCreationTimestamp));
+            localContact->saveDetail(&lts);
+        } else if (det.definitionName() == QContactGender::DefinitionName) {
+            QContactGender lg = localContact->detail<QContactGender>();
+            lg.setGender(det.value(QContactGender::FieldGender));
+            localContact->saveDetail(&lg);
+        } else if (det.definitionName() == QContactFavorite::DefinitionName) {
+            QContactFavorite lf = localContact->detail<QContactFavorite>();
+            lf.setFavorite(det.value<bool>(QContactFavorite::FieldFavorite));
+            localContact->saveDetail(&lf);
+        } else {
+            // other details can be saved to the local contact (if they don't already exist).
+            adjustDetailUrisForLocal(det);
+
+            // This is a pretty crude heuristic.  The detail equality
+            // algorithm only attempts to match values, not key/value pairs.
+            // XXX TODO: use a better heuristic to minimise duplicates.
+            bool needsPromote = true;
+
+            // Don't promote details already in the local, or those not originally present in the local
+            QList<QContactDetail> noPromoteDetails(localContact->details() + notPresentInLocal);
+            foreach (QContactDetail ld, noPromoteDetails) {
+                // Ignore access constraints in detail comparison
+                QContactManagerEngine::setDetailAccessConstraints(&ld, det.accessConstraints());
+                if (det == ld) {
+                    needsPromote = false;
+                    break;
+                }
+            }
+
+            if (needsPromote) {
+                localContact->saveDetail(&det);
+            }
+        }
+    }
 }
 
 /*
@@ -1270,14 +1446,15 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
     // 5) save the "delta details" into the local sync target
     // 6) clobber the database aggregate by overwriting with the new aggregate.
 
-    QList<QContactDetail> deltaDetails;
-    QContactManager::Error deltaError = calculateDelta(m_reader, contact, definitionMask, &deltaDetails);
+    QList<QContactDetail> addDeltaDetails;
+    QList<QContactDetail> remDeltaDetails;
+    QContactManager::Error deltaError = calculateDelta(m_reader, contact, definitionMask, &addDeltaDetails, &remDeltaDetails);
     if (deltaError != QContactManager::NoError) {
         qWarning() << "Unable to calculate delta for modified aggregate";
         return deltaError;
     }
 
-    if (deltaDetails.isEmpty()) {
+    if (addDeltaDetails.isEmpty() && remDeltaDetails.isEmpty()) {
         return QContactManager::NoError; // nothing to do.
     }
 
@@ -1312,68 +1489,40 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
         localContact.saveDetail(&lcn);
     }
 
-    for (int i = 0; i < deltaDetails.size(); ++i) {
-        QContactDetail det(deltaDetails.at(i));
-        if (det.definitionName() == QContactGuid::DefinitionName
-                || det.definitionName() == QContactSyncTarget::DefinitionName
-                || det.definitionName() == QContactDisplayLabel::DefinitionName) {
-            continue; // don't save these details.  Guid MUST be globally unique.
-        }
-
-        // handle unique details specifically.
-        if (det.definitionName() == QContactName::DefinitionName) {
-            QContactName lcn = localContact.detail<QContactName>();
-            lcn.setPrefix(det.value(QContactName::FieldPrefix));
-            lcn.setFirstName(det.value(QContactName::FieldFirstName));
-            lcn.setMiddleName(det.value(QContactName::FieldMiddleName));
-            lcn.setLastName(det.value(QContactName::FieldLastName));
-            lcn.setSuffix(det.value(QContactName::FieldSuffix));
-            lcn.setCustomLabel(det.value(QContactName::FieldCustomLabel));
-            localContact.saveDetail(&lcn);
-        } else if (det.definitionName() == QContactTimestamp::DefinitionName) {
-            QContactTimestamp lts = localContact.detail<QContactTimestamp>();
-            lts.setLastModified(det.value<QDateTime>(QContactTimestamp::FieldModificationTimestamp));
-            lts.setCreated(det.value<QDateTime>(QContactTimestamp::FieldCreationTimestamp));
-            localContact.saveDetail(&lts);
-        } else if (det.definitionName() == QContactGender::DefinitionName) {
-            QContactGender lg = localContact.detail<QContactGender>();
-            lg.setGender(det.value(QContactGender::FieldGender));
-            localContact.saveDetail(&lg);
-        } else if (det.definitionName() == QContactFavorite::DefinitionName) {
-            QContactFavorite lf = localContact.detail<QContactFavorite>();
-            lf.setFavorite(det.value<bool>(QContactFavorite::FieldFavorite));
-            localContact.saveDetail(&lf);
-        } else {
-            // other details can be duplicates.
-            localContact.saveDetail(&det);
-        }
-    }
+    // promote delta to local contact
+    promoteDetailsToLocal(addDeltaDetails, remDeltaDetails, &localContact, definitionMask);
 
     // update (or create) the local contact
+    QMap<int, bool> aggregatesUpdated;
     QMap<int, QContactManager::Error> errorMap;
     QList<QContact> writeList;
     writeList.append(localContact);
     QContactManager::Error writeError = save(&writeList, QStringList(),     // when we update the local, we don't use definitionMask.
-                                             &errorMap, withinTransaction,  // because it might be a new contact and need name+synct.
-                                             false);
+                                             &aggregatesUpdated, &errorMap,  // because it might be a new contact and need name+synct.
+                                             withinTransaction, true);
     if (writeError != QContactManager::NoError) {
         qWarning() << "Unable to update (or create) local contact for modified aggregate";
         return writeError;
     }
 
-    // update (via clobber) the aggregate contact
-    errorMap.clear();
-    writeList.clear();
-    writeList.append(*contact);
-    writeError = save(&writeList, definitionMask, &errorMap, withinTransaction, true); // we're updating the aggregate contact deliberately.
-    if (writeError != QContactManager::NoError) {
-        qWarning() << "Unable to update modified aggregate";
-        if (createdNewLocal) {
-            QList<QContactLocalId> removeList;
-            removeList.append(localContact.id().localId());
-            QContactManager::Error removeError = remove(removeList, &errorMap, withinTransaction);
-            if (removeError != QContactManager::NoError) {
-                qWarning() << "Unable to remove stale local contact created for modified aggregate";
+    if (aggregatesUpdated.count() && (aggregatesUpdated[0] == true)) {
+        // Saving the local has caused the aggregate to be regenerated and saved, so we
+        // don't need to save it now (our copy doesn't have the regenerated details yet)
+    } else {
+        // update (via clobber) the aggregate contact
+        errorMap.clear();
+        writeList.clear();
+        writeList.append(*contact);
+        writeError = save(&writeList, definitionMask, 0, &errorMap, withinTransaction, true); // we're updating the aggregate contact deliberately.
+        if (writeError != QContactManager::NoError) {
+            qWarning() << "Unable to update modified aggregate";
+            if (createdNewLocal) {
+                QList<QContactLocalId> removeList;
+                removeList.append(localContact.id().localId());
+                QContactManager::Error removeError = remove(removeList, &errorMap, withinTransaction);
+                if (removeError != QContactManager::NoError) {
+                    qWarning() << "Unable to remove stale local contact created for modified aggregate";
+                }
             }
         }
     }
@@ -1402,14 +1551,21 @@ static void adjustDetailUrisForAggregate(QContactDetail &currDet)
     }
 }
 
-static QStringList getUnupdatedDetailNames()
+static QStringList getIdentityDetailNames()
 {
-    // THe list of definition names for details that are not updated in regeneration
+    // The list of definition names for details that identify a contact
     QStringList rv;
     rv << QContactSyncTarget::DefinitionName
        << QContactGuid::DefinitionName
-       << QContactType::DefinitionName
-       << QContactDisplayLabel::DefinitionName;
+       << QContactType::DefinitionName;
+    return rv;
+}
+
+static QStringList getUnpromotedDetailNames()
+{
+    // The list of definition names for details that are not propagated to an aggregate
+    QStringList rv(getIdentityDetailNames());
+    rv << QContactDisplayLabel::DefinitionName;
     return rv;
 }
 
@@ -1421,14 +1577,14 @@ static QStringList getUnupdatedDetailNames()
     Note that QContactSyncTarget and QContactGuid details will NOT be promoted,
     nor will QContactDisplayLabel or QContactType details.
 */
-static void promoteDetailsToAggregate(const QContact &c, QContact *aggregate, const QStringList &definitionMask)
+static void promoteDetailsToAggregate(const QContact &contact, QContact *aggregate, const QStringList &definitionMask)
 {
-    static const QStringList unupdatedDetailNames(getUnupdatedDetailNames());
+    static const QStringList unpromotedDetailNames(getUnpromotedDetailNames());
 
-    QList<QContactDetail> currDetails = c.details();
+    QList<QContactDetail> currDetails = contact.details();
     for (int j = 0; j < currDetails.size(); ++j) {
         QContactDetail currDet = currDetails.at(j);
-        if (unupdatedDetailNames.contains(currDet.definitionName())) {
+        if (unpromotedDetailNames.contains(currDet.definitionName())) {
             // don't promote this detail.
             continue;
         }
@@ -1486,7 +1642,7 @@ static void promoteDetailsToAggregate(const QContact &c, QContact *aggregate, co
             }
         } else {
             // All other details involve duplication.
-            // Only duplicate from c to a if an identical detail doesn't already exist in a.
+            // Only duplicate from contact to the aggregate if an identical detail doesn't already exist in the aggregate.
             // We also modify any detail uris by prepending "aggregate:" to the start,
             // to ensure uniqueness.
             adjustDetailUrisForAggregate(currDet);
@@ -1496,7 +1652,9 @@ static void promoteDetailsToAggregate(const QContact &c, QContact *aggregate, co
             // XXX TODO: use a better heuristic to minimise duplicates.
             bool needsPromote = true;
             QList<QContactDetail> allADetails = aggregate->details();
-            foreach (const QContactDetail &ad, allADetails) {
+            foreach (QContactDetail ad, allADetails) {
+                // Ignore access constraints in detail comparison
+                QContactManagerEngine::setDetailAccessConstraints(&ad, currDet.accessConstraints());
                 if (currDet == ad) {
                     needsPromote = false;
                     break;
@@ -1504,6 +1662,10 @@ static void promoteDetailsToAggregate(const QContact &c, QContact *aggregate, co
             }
 
             if (needsPromote) {
+                if (!contact.detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget).isEmpty() &&
+                        contact.detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget) != QLatin1String("local")) {
+                    QContactManagerEngine::setDetailAccessConstraints(&currDet, QContactDetail::ReadOnly | QContactDetail::Irremovable);
+                }
                 aggregate->saveDetail(&currDet);
             }
         }
@@ -1694,7 +1856,7 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
 
     // now save in database.
     saveContactList.append(matchingAggregate);
-    err = save(&saveContactList, QStringList(), &errorMap, withinTransaction, true); // we're updating (or creating) the aggregate
+    err = save(&saveContactList, QStringList(), 0, &errorMap, withinTransaction, true); // we're updating (or creating) the aggregate
     if (err != QContactManager::NoError) {
         if (!found) {
             qWarning() << "Could not create new aggregate contact";
@@ -1742,7 +1904,8 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
 */
 void ContactWriter::regenerateAggregates(const QList<QContactLocalId> &aggregateIds, const QStringList &definitionMask, bool withinTransaction)
 {
-    static const QStringList unupdatedDetailNames(getUnupdatedDetailNames());
+    static const QStringList identityDetailNames(getIdentityDetailNames());
+    static const QStringList unpromotedDetailNames(getUnpromotedDetailNames());
 
     // for each aggregate contact:
     // 1) get the contacts it aggregates
@@ -1751,8 +1914,12 @@ void ContactWriter::regenerateAggregates(const QList<QContactLocalId> &aggregate
     // In all cases, we "prefer" the 'local' contact's data (if it exists)
 
     QList<QContact> aggregatesToSave;
-    QList<QContactLocalId> aggregatesToSaveIds;
+    QSet<QContactLocalId> aggregatesToSaveIds;
     foreach (QContactLocalId aggId, aggregateIds) {
+        if (aggregatesToSaveIds.contains(aggId)) {
+            continue;
+        }
+
         QList<QContactLocalId> readIds;
         readIds.append(aggId);
         m_findRelatedForAggregate.bindValue(":aggregateId", (aggId - 1));
@@ -1779,15 +1946,25 @@ void ContactWriter::regenerateAggregates(const QList<QContactLocalId> &aggregate
             continue;
         }
 
-        // We have read the related contacts from the database.  Now compose the aggregate.
-        // Step one: throw away all current data, except for guid and synctarget.
-        QContact aggregateContact = readList.at(0);
-        QList<QContactDetail> allDetails = aggregateContact.details();
-        for (int i = 0; i < allDetails.size(); ++i) {
-            QContactDetail det = allDetails.at(i);
-            if (!unupdatedDetailNames.contains(det.definitionName()) &&
-                (definitionMask.isEmpty() || definitionMask.contains(det.definitionName()))) {
-                aggregateContact.removeDetail(&det);
+        QContact originalAggregateContact = readList.at(0);
+
+        QContact aggregateContact;
+        QContactId existingId;
+        existingId.setLocalId(originalAggregateContact.localId());
+        aggregateContact.setId(existingId);
+
+        // Copy any existing fields not affected by this update
+        foreach (const QContactDetail &detail, originalAggregateContact.details()) {
+            const QString &detailName(detail.definitionName());
+            if (identityDetailNames.contains(detailName) ||
+                (!definitionMask.isEmpty() &&
+                 !definitionMask.contains(detailName) &&
+                 !unpromotedDetailNames.contains(detailName))) {
+                // Copy this detail to the new aggregate
+                QContactDetail newDetail(detail);
+                if (!aggregateContact.saveDetail(&newDetail)) {
+                    qWarning() << "Contact:" << aggregateContact.localId() << "Failed to copy existing detail:" << detail;
+                }
             }
         }
 
@@ -1799,20 +1976,13 @@ void ContactWriter::regenerateAggregates(const QList<QContactLocalId> &aggregate
             QList<QContactDetail> currDetails = curr.details();
             for (int j = 0; j < currDetails.size(); ++j) {
                 QContactDetail currDet = currDetails.at(j);
-                if (!unupdatedDetailNames.contains(currDet.definitionName()) &&
+                if (!unpromotedDetailNames.contains(currDet.definitionName()) &&
                     (definitionMask.isEmpty() || definitionMask.contains(currDet.definitionName()))) {
                     // promote this detail to the aggregate.
                     adjustDetailUrisForAggregate(currDet);
                     aggregateContact.saveDetail(&currDet);
                 }
             }
-
-            // we save the updated aggregates to database all in a batch at the end.
-            if (!aggregatesToSaveIds.contains(aggregateContact.id().localId())) {
-                aggregatesToSave.append(aggregateContact);
-                aggregatesToSaveIds.append(aggregateContact.id().localId());
-            }
-
             break; // we've successfully promoted the local contact's details to the aggregate.
         }
 
@@ -1825,20 +1995,18 @@ void ContactWriter::regenerateAggregates(const QList<QContactLocalId> &aggregate
 
             // need to promote this contact's details to the aggregate
             promoteDetailsToAggregate(curr, &aggregateContact, definitionMask);
-
-            // we save the updated aggregates to database all in a batch at the end.
-            if (!aggregatesToSaveIds.contains(aggregateContact.id().localId())) {
-                aggregatesToSave.append(aggregateContact);
-                aggregatesToSaveIds.append(aggregateContact.id().localId());
-            }
         }
 
         // update the display label for the aggregate
         m_engine.regenerateDisplayLabel(aggregateContact);
+
+        // we save the updated aggregates to database all in a batch at the end.
+        aggregatesToSave.append(aggregateContact);
+        aggregatesToSaveIds.insert(aggregateContact.id().localId());
     }
 
     QMap<int, QContactManager::Error> errorMap;
-    QContactManager::Error writeError = save(&aggregatesToSave, QStringList(), &errorMap, withinTransaction, true); // we're updating aggregates.
+    QContactManager::Error writeError = save(&aggregatesToSave, QStringList(), 0, &errorMap, withinTransaction, true); // we're updating aggregates.
     if (writeError != QContactManager::NoError) {
         qWarning() << "Failed to write updated aggregate contacts during regenerate";
         qWarning() << "definitionMask:" << definitionMask;
@@ -1887,12 +2055,14 @@ QContactManager::Error ContactWriter::create(QContact *contact, const QStringLis
     }
 }
 
-QContactManager::Error ContactWriter::update(QContact *contact, const QStringList &definitionMask, bool withinTransaction, bool withinAggregateUpdate)
+QContactManager::Error ContactWriter::update(QContact *contact, const QStringList &definitionMask, bool *aggregateUpdated, bool withinTransaction, bool withinAggregateUpdate)
 {
 #ifndef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     Q_UNUSED(withinTransaction)
     Q_UNUSED(withinAggregateUpdate)
 #endif
+    *aggregateUpdated = false;
+
     // 0 is an invalid QContactLocalId but a valid sqlite row id, so ids are all offset by one.
     QContactLocalId contactId = contact->localId() - 1;
 
@@ -1926,11 +2096,6 @@ QContactManager::Error ContactWriter::update(QContact *contact, const QStringLis
         // (ie, not using a heuristic aggregation algorithm).
         return updateLocalAndAggregate(contact, definitionMask, withinTransaction);
     }
-
-    // else, just update the contact as normal.  Note that we
-    // don't regenerate the aggregate contact, as we only do
-    // that when we create a new contact, not when we update
-    // an existing one.
 #endif
 
     bindContactDetails(*contact, m_updateContact);
@@ -1946,19 +2111,21 @@ QContactManager::Error ContactWriter::update(QContact *contact, const QStringLis
 
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     if (writeError == QContactManager::NoError) {
-        if (!withinAggregateUpdate && oldSyncTarget != QLatin1String("aggregate")) {
+        //if (!withinAggregateUpdate && oldSyncTarget != QLatin1String("aggregate")) {
+        if (oldSyncTarget != QLatin1String("aggregate")) {
             QList<QContactLocalId> aggregatesOfUpdated;
-            m_findAggregateForLocal.bindValue(":localId", contactId);
-            if (!m_findAggregateForLocal.exec()) {
+            m_findAggregateForContact.bindValue(":localId", contactId);
+            if (!m_findAggregateForContact.exec()) {
                 qWarning() << "Failed to fetch aggregator contact ids during remove";
-                qWarning() << m_findAggregateForLocal.lastError();
+                qWarning() << m_findAggregateForContact.lastError();
                 return QContactManager::UnspecifiedError;
             }
-            while (m_findAggregateForLocal.next()) {
-                aggregatesOfUpdated.append(m_findAggregateForLocal.value(0).toUInt() + 1);
+            while (m_findAggregateForContact.next()) {
+                aggregatesOfUpdated.append(m_findAggregateForContact.value(0).toUInt() + 1);
             }
 
             if (aggregatesOfUpdated.size() > 0) {
+                *aggregateUpdated = true;
                 regenerateAggregates(aggregatesOfUpdated, definitionMask, withinTransaction);
             }
         }

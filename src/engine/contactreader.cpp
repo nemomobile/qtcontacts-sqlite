@@ -424,6 +424,7 @@ template <typename T> static void readDetail(
         QString detailUriValue = query->value(0).toString();
         QString linkedDetailUrisValue = query->value(1).toString();
         QString contextValue = query->value(2).toString();
+        int accessConstraints = query->value(3).toInt();
 
         if (!detailUriValue.isEmpty()) {
             setValue(&detail,
@@ -440,10 +441,11 @@ template <typename T> static void readDetail(
                      QContactDetail::FieldContext,
                      contextValue.split(QLatin1Char(';'), QString::SkipEmptyParts));
         }
-        setValues(&detail, query, 5);
+        QContactManagerEngine::setDetailAccessConstraints(&detail, static_cast<QContactDetail::AccessConstraints>(accessConstraints));
+        setValues(&detail, query, 6);
 
         contact->saveDetail(&detail);
-    } while (query->next() && (currentId = query->value(4).toUInt()) == contactId);
+    } while (query->next() && (currentId = query->value(5).toUInt()) == contactId);
 }
 
 typedef void (*ReadDetail)(QContactLocalId contactId, QContact *contact, QSqlQuery *query, QContactLocalId &currentId);
@@ -1140,6 +1142,7 @@ QContactManager::Error ContactReader::queryContacts(
             "\n  Details.detailUri,"
             "\n  Details.linkedDetailUris,"
             "\n  Details.contexts,"
+            "\n  Details.accessConstraints,"
             "\n  %2.*"
             "\n FROM temp.%1"
             "\n  INNER JOIN %2 ON temp.%1.contactId = %2.contactId"
@@ -1169,7 +1172,7 @@ QContactManager::Error ContactReader::queryContacts(
                     qWarning() << "Failed to query table" << detail.table;
                     qWarning() << table.query.lastError();
                 } else if (table.query.next()) {
-                    table.currentId = table.query.value(4).toUInt();
+                    table.currentId = table.query.value(5).toUInt();
                     tables.append(table);
                 }
             }
@@ -1228,6 +1231,7 @@ QContactManager::Error ContactReader::queryContacts(
                 }
             }
 
+            // XXX TODO: fetch hint - if "don't fetch relationships" is specified, skip this!
             QList<QContactRelationship> currContactRelationships;
             QList<QContactRelationship> ccfrels;
             QList<QContactRelationship> ccsrels;

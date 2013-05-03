@@ -246,7 +246,7 @@ public:
     {
         if (!writer)
             writer = new ContactWriter(engine, database, reader);
-        m_error = writer->save(&m_contacts, m_definitionMask, &m_errorMap, false, false);
+        m_error = writer->save(&m_contacts, m_definitionMask, 0, &m_errorMap, false, false);
     }
 
     void updateState(QContactAbstractRequest::State state)
@@ -974,7 +974,7 @@ bool ContactsEngine::saveContacts(
         }
     }
 
-    QContactManager::Error err = m_synchronousWriter->save(contacts, definitionMask, errorMap, false, false);
+    QContactManager::Error err = m_synchronousWriter->save(contacts, definitionMask, 0, errorMap, false, false);
 
     if (error)
         *error = err;

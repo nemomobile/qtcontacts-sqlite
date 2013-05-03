@@ -215,7 +215,8 @@ static const char *createDetailsTable =
         "\n detail TEXT,"
         "\n detailUri TEXT UNIQUE,"
         "\n linkedDetailUris TEXT,"
-        "\n contexts TEXT);";
+        "\n contexts TEXT,"
+        "\n accessConstraints INTEGER);";
 
 static const char *createDetailsJoinIndex =
         "\n CREATE INDEX DetailsJoinIndex ON Details(detailId, detail);";
