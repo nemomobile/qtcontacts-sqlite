@@ -104,7 +104,7 @@ private:
             QContactManager::Error *error);
 
     template <typename T> bool writeCommonDetails(
-                QContactLocalId contactId, const QSqlQuery &query, const T &detail, QContactManager::Error *error);
+                QContactLocalId contactId, const QVariant &detailId, const T &detail, QContactManager::Error *error);
     template <typename T> bool removeCommonDetails(
                 QContactLocalId contactId, QContactManager::Error *error);
 

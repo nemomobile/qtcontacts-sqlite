@@ -464,6 +464,17 @@ void tst_QContactManager::dumpContactDifferences(const QContact& ca, const QCont
     }
 }
 
+static bool detailsEquivalent(const QContactDetail &lhs, const QContactDetail &rhs)
+{
+    // Same as operator== except ignores differences in accessConstraints values
+    if (lhs.definitionName() != rhs.definitionName())
+        return false;
+
+    QMap<QString, QVariant> lhsValues = lhs.variantValues();
+    QMap<QString, QVariant> rhsValues = rhs.variantValues();
+    return (lhsValues == rhsValues);
+}
+
 bool tst_QContactManager::isSuperset(const QContact& ca, const QContact& cb)
 {
     // returns true if contact ca is a superset of contact cb
@@ -481,7 +492,7 @@ bool tst_QContactManager::isSuperset(const QContact& ca, const QContact& cb)
     // First remove any matches
     foreach(QContactDetail d, aDetails) {
         foreach(QContactDetail d2, bDetails) {
-            if(d == d2) {
+            if (detailsEquivalent(d, d2)) {
                 a.removeDetail(&d);
                 b.removeDetail(&d2);
                 break;
