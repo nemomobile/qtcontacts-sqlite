@@ -473,7 +473,7 @@ QContactManager::Error ContactWriter::setIdentity(
 
     if (query->exec()) {
         // Notify..
-
+        query->finish();
         return QContactManager::NoError;
     } else {
         return QContactManager::UnspecifiedError;
@@ -571,6 +571,8 @@ QContactManager::Error ContactWriter::save(
             QString rt = m_existingRelationships.value(2).toString();
             bucketedRelationships.insert(fid, QPair<QString, QContactLocalId>(rt, sid));
         }
+
+        m_existingRelationships.finish();
     }
 
     // in order to perform validity detection we build up the following set.
@@ -586,6 +588,8 @@ QContactManager::Error ContactWriter::save(
         while (m_existingContactIds.next()) {
             validContactIds.insert(m_existingContactIds.value(0).toUInt() + 1);
         }
+
+        m_existingContactIds.finish();
     }
 
     QList<QContactLocalId> firstIdsToBind;
@@ -684,6 +688,8 @@ QContactManager::Error ContactWriter::remove(
             QString rt = m_existingRelationships.value(2).toString();
             bucketedRelationships.insert(fid, QPair<QString, QContactLocalId>(rt, sid));
         }
+
+        m_existingRelationships.finish();
     }
 
     QContactManager::Error worstError = QContactManager::NoError;
@@ -753,6 +759,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactLocalId> &conta
     if (m_selfContactId.next()) {
         selfContactId = m_selfContactId.value(0).toUInt() + 1;
     }
+    m_selfContactId.finish();
 
     // grab the existing contact ids so that we can perform removal detection
     // XXX TODO: for perf, remove this check.  Less conformant, but client
@@ -766,6 +773,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactLocalId> &conta
     while (m_existingContactIds.next()) {
         existingContactIds.insert(m_existingContactIds.value(0).toUInt() + 1);
     }
+    m_existingContactIds.finish();
 
     // determine which contacts we actually need to remove
     QContactManager::Error error = QContactManager::NoError;
@@ -806,6 +814,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactLocalId> &conta
             }
             return QContactManager::UnspecifiedError;
         }
+        m_removeContact.finish();
         if (!withinTransaction && !m_database.commit()) {
             // only commit if we created a transaction.
             qWarning() << "Failed to commit removal";
@@ -831,6 +840,8 @@ QContactManager::Error ContactWriter::remove(const QList<QContactLocalId> &conta
     while (m_selectAggregateContactIds.next()) {
         aggregatesToRemove.append(m_selectAggregateContactIds.value(0).toUInt() + 1);
     }
+    m_selectAggregateContactIds.finish();
+
     m_findAggregateForContact.bindValue(":localId", boundRealRemoveIds);
     if (!m_findAggregateForContact.execBatch()) {
         qWarning() << "Failed to fetch aggregator contact ids during remove";
@@ -840,6 +851,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactLocalId> &conta
     while (m_findAggregateForContact.next()) {
         aggregatesOfRemoved.append(m_findAggregateForContact.value(0).toUInt() + 1);
     }
+    m_findAggregateForContact.finish();
 
     QVariantList boundNonAggregatesToRemove;
     QVariantList boundAggregatesToRemove;
@@ -871,6 +883,8 @@ QContactManager::Error ContactWriter::remove(const QList<QContactLocalId> &conta
             }
             return QContactManager::UnspecifiedError;
         }
+
+        m_removeContact.finish();
     }
 
     // remove the aggregate contacts - and any contacts they aggregate
@@ -892,6 +906,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactLocalId> &conta
             boundAggregatesToRemove.append(dbId); // we just add it to the big list of bound "remove these"
             realRemoveIds.append(currToRemove);
         }
+        m_findRelatedForAggregate.finish();
 
         // remove the aggregates + the aggregated
         m_removeContact.bindValue(QLatin1String(":contactId"), boundAggregatesToRemove);
@@ -904,6 +919,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactLocalId> &conta
             }
             return QContactManager::UnspecifiedError;
         }
+        m_removeContact.finish();
     }
 
     // removing aggregates if they no longer aggregate any contacts.
@@ -922,6 +938,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactLocalId> &conta
         boundOrphans.append(orphan);
         realRemoveIds.append(orphan + 1);
     }
+    m_orphanAggregateIds.finish();
 
     if (boundOrphans.size() > 0) {
         m_removeContact.bindValue(QLatin1String(":contactId"), boundOrphans);
@@ -934,6 +951,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactLocalId> &conta
             }
             return QContactManager::UnspecifiedError;
         }
+        m_removeContact.finish();
     }
 
     // Success!  If we created a transaction, commit.
@@ -979,11 +997,13 @@ template <typename T> bool ContactWriter::removeCommonDetails(
         *error = QContactManager::UnspecifiedError;
         return false;
     }
+
+    m_removeDetail.finish();
     return true;
 }
 
 template <typename T> bool ContactWriter::writeCommonDetails(
-            QContactLocalId contactId, const QSqlQuery &query, const T &detail, QContactManager::Error *error)
+            QContactLocalId contactId, const QVariant &detailId, const T &detail, QContactManager::Error *error)
 {
     const QVariant detailUri = detail.variantValue(QContactDetail::FieldDetailUri);
     const QVariant linkedDetailUris = detail.variantValue(QContactDetail::FieldLinkedDetailUris);
@@ -992,7 +1012,7 @@ template <typename T> bool ContactWriter::writeCommonDetails(
 
     if (detailUri.isValid() || linkedDetailUris.isValid() || contexts.isValid() || accessConstraints > 0) {
         m_insertDetail.bindValue(0, contactId);
-        m_insertDetail.bindValue(1, query.lastInsertId());
+        m_insertDetail.bindValue(1, detailId);
         m_insertDetail.bindValue(2, T::DefinitionName);
         m_insertDetail.bindValue(3, detailUri);
         m_insertDetail.bindValue(4, linkedDetailUris.toStringList().join(QLatin1String(";")));
@@ -1005,6 +1025,8 @@ template <typename T> bool ContactWriter::writeCommonDetails(
             *error = QContactManager::UnspecifiedError;
             return false;
         }
+
+        m_insertDetail.finish();
     }
     return true;
 }
@@ -1030,6 +1052,8 @@ template <typename T> bool ContactWriter::writeDetails(
         return false;
     }
 
+    removeQuery.finish();
+
     foreach (const T &detail, contact->details<T>()) {
         QSqlQuery &query = bindDetail(contactId, detail);
         if (!query.exec()) {
@@ -1039,7 +1063,10 @@ template <typename T> bool ContactWriter::writeDetails(
             return false;
         }
 
-        if (!writeCommonDetails(contactId, query, detail, error))
+        QVariant detailId = query.lastInsertId();
+        query.finish();
+
+        if (!writeCommonDetails(contactId, detailId, detail, error))
             return false;
     }
     return true;
@@ -1078,13 +1105,17 @@ template <> bool ContactWriter::writeDetails<QContactPresence>(
         return false;
     }
 
+    removeQuery.finish();
+
     m_removeGlobalPresence.bindValue(0, contactId);
     if (!m_removeGlobalPresence.exec()) {
         qWarning() << "Failed to remove existing details for" << QLatin1String(QContactGlobalPresence::DefinitionName);
-        qWarning() << removeQuery.lastError();
+        qWarning() << m_removeGlobalPresence.lastError();
         *error = QContactManager::UnspecifiedError;
         return false;
     }
+
+    m_removeGlobalPresence.finish();
 
     QContactGlobalPresence globalPresence = contact->detail<QContactGlobalPresence>();
     const QList<QContactPresence> details = contact->details<QContactPresence>();
@@ -1111,7 +1142,10 @@ template <> bool ContactWriter::writeDetails<QContactPresence>(
             return false;
         }
 
-        if (!writeCommonDetails(contactId, query, detail, error))
+        QVariant detailId = query.lastInsertId();
+        query.finish();
+
+        if (!writeCommonDetails(contactId, detailId, detail, error))
             return false;
     }
 
@@ -1126,6 +1160,8 @@ template <> bool ContactWriter::writeDetails<QContactPresence>(
         *error = QContactManager::UnspecifiedError;
         return false;
     }
+
+    m_insertGlobalPresence.finish();
 
     globalPresence.setPresenceState(bestPresence.presenceState());
     globalPresence.setTimestamp(bestPresence.timestamp());
@@ -1491,9 +1527,12 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
     QContact localContact;
     if (m_findLocalForAggregate.next()) {
         // found the existing local contact aggregated by this aggregate.
-        QList<QContact> readList;
         QList<QContactLocalId> whichList;
         whichList.append(m_findLocalForAggregate.value(0).toUInt() + 1);
+
+        m_findLocalForAggregate.finish();
+
+        QList<QContact> readList;
         QContactManager::Error readError = m_reader->readContacts(QLatin1String("UpdateAggregate"), &readList, whichList, QStringList());
         if (readError != QContactManager::NoError || readList.size() == 0) {
             qWarning() << "Unable to read local contact for aggregate" << contact->displayLabel() << "during update";
@@ -1502,6 +1541,8 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
 
         localContact = readList.at(0);
     } else {
+        m_findLocalForAggregate.finish();
+
         // no local contact exists for the aggregate.  Create a new one.
         createdNewLocal = true;
 
@@ -1971,6 +2012,7 @@ void ContactWriter::regenerateAggregates(const QList<QContactLocalId> &aggregate
         while (m_findRelatedForAggregate.next()) {
             readIds.append(m_findRelatedForAggregate.value(0).toUInt() + 1);
         }
+        m_findRelatedForAggregate.finish();
 
         if (readIds.size() == 1) { // only the aggregate?
             qWarning() << "Existing aggregate" << aggId << "should already have been removed - aborting regenerate";
@@ -2066,8 +2108,9 @@ QContactManager::Error ContactWriter::create(QContact *contact, const QStringLis
         return QContactManager::UnspecifiedError;
     } else {
         QContactLocalId contactId = m_insertContact.lastInsertId().toUInt();
-        QContactManager::Error writeErr = write(contactId, contact, definitionMask);
+        m_insertContact.finish();
 
+        QContactManager::Error writeErr = write(contactId, contact, definitionMask);
         if (writeErr == QContactManager::NoError) {
             // successfully saved all data.  Update id.
             QContactId id;
@@ -2094,6 +2137,7 @@ QContactManager::Error ContactWriter::create(QContact *contact, const QStringLis
                 qWarning() << "Unable to remove stale contact after failed save";
                 qWarning() << m_removeContact.lastError().text();
             }
+            m_removeContact.finish();
         }
 
         return writeErr;
@@ -2119,9 +2163,12 @@ QContactManager::Error ContactWriter::update(QContact *contact, const QStringLis
     }
     m_checkContactExists.next();
     int exists = m_checkContactExists.value(0).toInt();
+    QString oldSyncTarget = m_checkContactExists.value(1).toString();
+    m_checkContactExists.finish();
+
     if (!exists)
         return QContactManager::DoesNotExistError;
-    QString oldSyncTarget = m_checkContactExists.value(1).toString();
+
     QString newSyncTarget = contact->detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget);
 
     if (newSyncTarget != oldSyncTarget && oldSyncTarget != QLatin1String("local")) {
@@ -2152,6 +2199,8 @@ QContactManager::Error ContactWriter::update(QContact *contact, const QStringLis
         return QContactManager::UnspecifiedError;
     }
 
+    m_updateContact.finish();
+
     QContactManager::Error writeError = write(contactId, contact, definitionMask);
 
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
@@ -2168,6 +2217,7 @@ QContactManager::Error ContactWriter::update(QContact *contact, const QStringLis
             while (m_findAggregateForContact.next()) {
                 aggregatesOfUpdated.append(m_findAggregateForContact.value(0).toUInt() + 1);
             }
+            m_findAggregateForContact.finish();
 
             if (aggregatesOfUpdated.size() > 0) {
                 *aggregateUpdated = true;
