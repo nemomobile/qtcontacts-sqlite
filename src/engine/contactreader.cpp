@@ -1023,6 +1023,95 @@ static void clearTemporaryContactIdsTable(QSqlDatabase *db, const QString &table
     }
 }
 
+namespace {
+
+bool includesSelfId(const QContactFilter &filter);
+
+// Returns true if this filter includes the self contact by ID
+bool includesSelfId(const QList<QContactFilter> &filters)
+{
+    foreach (const QContactFilter &filter, filters) {
+        if (includesSelfId(filter)) {
+            return true;
+        }
+    }
+    return false;
+}
+bool includesSelfId(const QContactIntersectionFilter &filter)
+{
+    return includesSelfId(filter.filters());
+}
+bool includesSelfId(const QContactUnionFilter &filter)
+{
+    return includesSelfId(filter.filters());
+}
+bool includesSelfId(const QContactLocalIdFilter &filter)
+{
+    static const QContactLocalId selfLocalId(2 + 1);
+    return filter.ids().contains(selfLocalId);
+}
+bool includesSelfId(const QContactFilter &filter)
+{
+    switch (filter.type()) {
+    case QContactFilter::DefaultFilter:
+    case QContactFilter::ContactDetailFilter:
+    case QContactFilter::ContactDetailRangeFilter:
+    case QContactFilter::RelationshipFilter:
+        return false;
+
+    case QContactFilter::IntersectionFilter:
+        return includesSelfId(static_cast<const QContactIntersectionFilter &>(filter));
+    case QContactFilter::UnionFilter:
+        return includesSelfId(static_cast<const QContactUnionFilter &>(filter));
+    case QContactFilter::LocalIdFilter:
+        return includesSelfId(static_cast<const QContactLocalIdFilter &>(filter));
+
+    default:
+        qWarning() << "Cannot includesSelfId with unknown filter type" << filter.type();
+        return false;
+    }
+}
+
+QString expandWhere(const QString &where, const QContactFilter &filter)
+{
+    QString preamble(QLatin1String("WHERE "));
+
+    // remove the self contact, unless specifically included
+    bool includesSelfContactId = includesSelfId(filter);
+    if (!includesSelfContactId) {
+        preamble += QLatin1String("Contacts.contactId > 2 AND ");
+    }
+
+    // some (union) filters can add spurious braces around empty expressions
+    QString strippedWhere = where;
+    strippedWhere.remove(QChar('('));
+    strippedWhere.remove(QChar(')'));
+    strippedWhere.remove(QChar(' '));
+
+#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
+    // by default, we only return "aggregate" contacts, and we don't return the self contact (2)
+    if (strippedWhere.isEmpty()) {
+        return preamble + QLatin1String("Contacts.syncTarget = 'aggregate'");
+    } else if (!where.contains("syncTarget")) {
+        return preamble + QLatin1String("Contacts.syncTarget = 'aggregate' AND ") + where;
+    } else { // Unless they explicitly specify a syncTarget criterium
+        return preamble + where;
+    }
+#else
+    if (strippedWhere.isEmpty()) {
+        if (!includesSelfContactId(filter)) {
+            return QLatin1String("WHERE Contacts.contactId > 2");
+        } else {
+            return QString();
+        }
+    } else {
+        return preamble + where;
+    }
+#endif
+}
+
+}
+
 QContactManager::Error ContactReader::readContacts(
         const QString &table,
         QList<QContact> *contacts,
@@ -1040,27 +1129,7 @@ QContactManager::Error ContactReader::readContacts(
         return QContactManager::UnspecifiedError;
     }
 
-    // some (union) filters can add spurious braces around empty expressions
-    QString strippedWhere = where;
-    strippedWhere.remove(QChar('('));
-    strippedWhere.remove(QChar(')'));
-    strippedWhere.remove(QChar(' '));
-#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
-    // by default, we only return "aggregate" contacts, and we don't return the self contact (2)
-    if (strippedWhere.isEmpty()) {
-        where = QLatin1String("WHERE Contacts.contactId > 2 AND Contacts.syncTarget = 'aggregate'");
-    } else if (!where.contains("syncTarget")) {
-        where = QLatin1String("WHERE Contacts.contactId > 2 AND Contacts.syncTarget = 'aggregate' AND ") + where;
-    } else { // Unless they explicitly specify a syncTarget criterium
-        where = QLatin1String("WHERE Contacts.contactId > 2 AND ") + where;
-    }
-#else
-    if (strippedWhere.isEmpty()) {
-        where = QLatin1String("WHERE Contacts.contactId > 2");
-    } else {
-        where = QLatin1String("WHERE Contacts.contactId > 2 AND ") + where;
-    }
-#endif
+    where = expandWhere(where, filter);
 
     QContactManager::Error createTempError = createTemporaryContactIdsTable(
             &m_database, table, true, QVariantList(), join, where, orderBy, bindings);
@@ -1270,27 +1339,7 @@ QContactManager::Error ContactReader::readContactIds(
         return QContactManager::UnspecifiedError;
     }
 
-    // some (union) filters can add spurious braces around empty expressions
-    QString strippedWhere = where;
-    strippedWhere.remove(QChar('('));
-    strippedWhere.remove(QChar(')'));
-    strippedWhere.remove(QChar(' '));
-#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
-    // by default, we only return "aggregate" contacts, and we don't return the self contact
-    if (strippedWhere.isEmpty()) {
-        where = QLatin1String("WHERE Contacts.contactId > 2 AND Contacts.syncTarget = 'aggregate'");
-    } else if (!where.contains("syncTarget")) {
-        where = QLatin1String("WHERE Contacts.contactId > 2 AND Contacts.syncTarget = 'aggregate' AND ") + where;
-    } else { // Unless they explicitly specify a syncTarget criterium
-        where = QLatin1String("WHERE Contacts.contactId > 2 AND ") + where;
-    }
-#else
-    if (strippedWhere.isEmpty()) {
-        where = QLatin1String("WHERE Contacts.contactId > 2");
-    } else {
-        where = QLatin1String("WHERE Contacts.contactId > 2 AND ") + where;
-    }
-#endif
+    where = expandWhere(where, filter);
 
     const QString queryString = QString(QLatin1String(
                 "\n SELECT DISTINCT Contacts.contactId"
