@@ -1151,7 +1151,7 @@ QContactManager::Error ContactReader::readContacts(
 {
     // XXX TODO: get rid of this query, just iterate over the returned results in memory
     // and if the id doesn't match, insert an empty contact (and error) for that index.
-    QVector<QContactLocalId> existingIds;
+    QList<QContactLocalId> existingIds;
     QSqlQuery queryExistingIds(m_database);
     if (!queryExistingIds.exec("SELECT DISTINCT contactId FROM Contacts")) {
         qWarning() << "Failed to query existing contacts";
@@ -1217,7 +1217,7 @@ QContactManager::Error ContactReader::queryContacts(
             "\n  INNER JOIN %2 ON temp.%1.contactId = %2.contactId"
             "\n  LEFT JOIN Details ON %2.detailId = Details.detailId AND Details.detail = :detail;")).arg(table);
 
-    QVector<Table> tables;
+    QList<Table> tables;
     for (int i = 0; i < lengthOf(detailInfo); ++i) {
         const DetailInfo &detail = detailInfo[i];
         if (!detail.read)

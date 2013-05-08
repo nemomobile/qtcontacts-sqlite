@@ -103,6 +103,8 @@ public:
     virtual void contactsAvailable(const QList<QContact> &) {}
     virtual void contactIdsAvailable(const QList<QContactLocalId> &) {}
 
+    virtual QString description() const = 0;
+
 private:
     Job *m_next;
     Job *m_previous;
@@ -200,6 +202,11 @@ public:
     {
         Q_ASSERT(!"Called update on JobList");
     }
+
+    QString description() const
+    {
+        return QString::fromLatin1("Job List");
+    }
 };
 
 template <typename T>
@@ -255,6 +262,15 @@ public:
                      m_request, m_contacts, m_error, m_errorMap, state);
     }
 
+    QString description() const
+    {
+        QString s(QLatin1String("Save"));
+        foreach (const QContact &c, m_contacts) {
+            s.append(' ').append(QString::number(c.localId()));
+        }
+        return s;
+    }
+
 private:
     QList<QContact> m_contacts;
     QStringList m_definitionMask;
@@ -285,6 +301,15 @@ public:
                 m_error,
                 m_errorMap,
                 state);
+    }
+
+    QString description() const
+    {
+        QString s(QLatin1String("Remove"));
+        foreach (const QContactLocalId &id, m_contactIds) {
+            s.append(' ').append(QString::number(id));
+        }
+        return s;
     }
 
 private:
@@ -337,6 +362,12 @@ public:
         m_contacts = contacts;
     }
 
+    QString description() const
+    {
+        QString s(QLatin1String("Fetch"));
+        return s;
+    }
+
 private:
     QContactFilter m_filter;
     QContactFetchHint m_fetchHint;
@@ -384,6 +415,12 @@ public:
     void contactIdsAvailable(const QList<QContactLocalId> &contactIds)
     {
         m_contactIds = contactIds;
+    }
+
+    QString description() const
+    {
+        QString s(QLatin1String("Fetch IDs"));
+        return s;
     }
 
 private:
@@ -442,6 +479,15 @@ public:
         m_contacts = contacts;
     }
 
+    QString description() const
+    {
+        QString s(QLatin1String("Fetch"));
+        foreach (const QContactLocalId &id, m_contactIds) {
+            s.append(' ').append(QString::number(id));
+        }
+        return s;
+    }
+
 private:
     QList<QContactLocalId> m_contactIds;
     QContactFetchHint m_fetchHint;
@@ -471,6 +517,12 @@ public:
                      m_request, m_relationships, m_error, m_errorMap, state);
     }
 
+    QString description() const
+    {
+        QString s(QLatin1String("Relationship Save"));
+        return s;
+    }
+
 private:
     QList<QContactRelationship> m_relationships;
     QMap<int, QContactManager::Error> m_errorMap;
@@ -496,6 +548,12 @@ public:
     {
         QContactManagerEngine::updateRelationshipRemoveRequest(
                 m_request, m_error, m_errorMap, state);
+    }
+
+    QString description() const
+    {
+        QString s(QLatin1String("Relationship Remove"));
+        return s;
     }
 
 private:
@@ -527,6 +585,12 @@ public:
     {
         QContactManagerEngine::updateRelationshipFetchRequest(
                 m_request, m_relationships, m_error, state);
+    }
+
+    QString description() const
+    {
+        QString s(QLatin1String("Relationship Fetch"));
+        return s;
     }
 
 private:
@@ -795,7 +859,7 @@ void JobThread::run()
             QElapsedTimer timer;
             timer.start();
             m_currentJob->execute(*m_engine, database, &reader, writer);
-            qDebug() << "Job executed in" << timer.elapsed();
+            qDebug() << "Job executed in" << timer.elapsed() << ":" << m_currentJob->description();
             locker.relock();
             m_finishedJobs.append(m_currentJob);
             m_currentJob = 0;
@@ -815,8 +879,8 @@ ContactsEngine::ContactsEngine(const QString &name)
 
 ContactsEngine::~ContactsEngine()
 {
-    delete m_synchronousReader;
     delete m_synchronousWriter;
+    delete m_synchronousReader;
     delete m_jobThread;
 }
 

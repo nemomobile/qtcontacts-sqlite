@@ -32,6 +32,8 @@
 #ifndef QTCONTACTSSQLITE_CONTACTWRITER
 #define QTCONTACTSSQLITE_CONTACTWRITER
 
+#include "contactsdatabase.h"
+
 #include <QSqlQuery>
 
 #include <QContactAddress>
@@ -52,8 +54,6 @@
 #include <QContactUrl>
 
 #include <QContactManager>
-
-#include "contactsdatabase.h"
 
 QTM_USE_NAMESPACE
 
@@ -86,6 +86,10 @@ public:
             QMap<int, QContactManager::Error> *errorMap);
 
 private:
+    bool beginTransaction();
+    bool commitTransaction();
+    void rollbackTransaction();
+
     QContactManager::Error create(QContact *contact, const QStringList &definitionMask, bool withinTransaction, bool withinAggregateUpdate);
     QContactManager::Error update(QContact *contact, const QStringList &definitionMask, bool *aggregateUpdated, bool withinTransaction, bool withinAggregateUpdate);
     QContactManager::Error write(QContactLocalId contactId, QContact *contact, const QStringList &definitionMask);
@@ -183,6 +187,10 @@ private:
     QSqlQuery m_removeDetail;
     QSqlQuery m_removeIdentity;
     ContactReader *m_reader;
+
+    QList<QContactLocalId> m_addedIds;
+    QList<QContactLocalId> m_removedIds;
+    QList<QContactLocalId> m_changedIds;
 };
 
 

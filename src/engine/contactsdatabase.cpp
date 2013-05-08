@@ -374,6 +374,8 @@ QSqlDatabase ContactsDatabase::open(const QString &databaseName)
         qWarning() << "Failed to open contacts database";
         qWarning() << database.lastError();
         return database;
+    } else {
+        qWarning() << "Opened contacts database:" << databaseFile;
     }
 
     if (!exists && !prepareDatabase(database)) {

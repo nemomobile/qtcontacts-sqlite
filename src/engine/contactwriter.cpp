@@ -43,7 +43,6 @@
 #include <QContactTimestamp>
 
 #include <QSqlError>
-#include <QVector>
 
 #include <QtDebug>
 
@@ -458,6 +457,43 @@ ContactWriter::~ContactWriter()
 {
 }
 
+bool ContactWriter::beginTransaction()
+{
+    return m_database.transaction();
+}
+
+bool ContactWriter::commitTransaction()
+{
+    if (!m_database.commit()) {
+        qWarning() << "Commit error:" << m_database.lastError();
+        rollbackTransaction();
+        return false;
+    }
+
+    if (!m_removedIds.isEmpty()) {
+        ContactNotifier::contactsRemoved(m_removedIds);
+        m_removedIds.clear();
+    }
+    if (!m_changedIds.isEmpty()) {
+        ContactNotifier::contactsChanged(m_changedIds);
+        m_changedIds.clear();
+    }
+    if (!m_addedIds.isEmpty()) {
+        ContactNotifier::contactsAdded(m_addedIds);
+        m_addedIds.clear();
+    }
+    return true;
+}
+
+void ContactWriter::rollbackTransaction()
+{
+    m_database.rollback();
+
+    m_removedIds.clear();
+    m_changedIds.clear();
+    m_addedIds.clear();
+}
+
 QContactManager::Error ContactWriter::setIdentity(
         ContactsDatabase::Identity identity, QContactLocalId contactId)
 {
@@ -799,7 +835,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactLocalId> &conta
     // If we don't perform aggregation, we simply need to remove every
     // (valid, non-self) contact specified in the list.
     if (realRemoveIds.size() > 0) {
-        if (!withinTransaction && !m_database.transaction()) {
+        if (!withinTransaction && !beginTransaction()) {
             // if we are not already within a transaction, create a transaction.
             qWarning() << "Unable to begin database transaction while removing contacts";
             return QContactManager::UnspecifiedError;
@@ -810,18 +846,17 @@ QContactManager::Error ContactWriter::remove(const QList<QContactLocalId> &conta
             qWarning() << m_removeContact.lastError();
             if (!withinTransaction) {
                 // only rollback if we created a transaction.
-                m_database.rollback();
+                rollbackTransaction();
             }
             return QContactManager::UnspecifiedError;
         }
         m_removeContact.finish();
-        if (!withinTransaction && !m_database.commit()) {
+        m_removedIds.append(realRemoveIds);
+        if (!withinTransaction && !commitTransaction()) {
             // only commit if we created a transaction.
             qWarning() << "Failed to commit removal";
-            m_database.rollback();
             return QContactManager::UnspecifiedError;
         }
-        ContactNotifier::contactsRemoved(realRemoveIds);
     }
     return error;
 #else
@@ -865,7 +900,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactLocalId> &conta
         }
     }
 
-    if (!withinTransaction && !m_database.transaction()) {
+    if (!withinTransaction && !beginTransaction()) {
         // only create a transaction if we're not already within one
         qWarning() << "Unable to begin database transaction while removing contacts";
         return QContactManager::UnspecifiedError;
@@ -879,7 +914,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactLocalId> &conta
             qWarning() << m_removeContact.lastError();
             if (!withinTransaction) {
                 // only rollback the transaction if we created it
-                m_database.rollback();
+                rollbackTransaction();
             }
             return QContactManager::UnspecifiedError;
         }
@@ -896,7 +931,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactLocalId> &conta
             qWarning() << m_findRelatedForAggregate.lastError();
             if (!withinTransaction) {
                 // only rollback the transaction if we created it
-                m_database.rollback();
+                rollbackTransaction();
             }
             return QContactManager::UnspecifiedError;
         }
@@ -915,7 +950,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactLocalId> &conta
             qWarning() << m_removeContact.lastError();
             if (!withinTransaction) {
                 // only rollback the transaction if we created it
-                m_database.rollback();
+                rollbackTransaction();
             }
             return QContactManager::UnspecifiedError;
         }
@@ -929,7 +964,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactLocalId> &conta
         qWarning() << m_orphanAggregateIds.lastError();
         if (!withinTransaction) {
             // only rollback the transaction if we created it
-            m_database.rollback();
+            rollbackTransaction();
         }
         return QContactManager::UnspecifiedError;
     }
@@ -947,38 +982,32 @@ QContactManager::Error ContactWriter::remove(const QList<QContactLocalId> &conta
             qWarning() << m_removeContact.lastError();
             if (!withinTransaction) {
                 // only rollback the transaction if we created it
-                m_database.rollback();
+                rollbackTransaction();
             }
             return QContactManager::UnspecifiedError;
         }
         m_removeContact.finish();
     }
 
-    // Success!  If we created a transaction, commit.
-    if (!withinTransaction && !m_database.commit()) {
-        qWarning() << "Failed to commit database after removal";
-        m_database.rollback();
-        return QContactManager::UnspecifiedError;
-    }
+    m_removedIds.append(realRemoveIds);
 
     // And notify of any removals.
     if (realRemoveIds.size() > 0) {
         // update our "regenerate list" by purging removed contacts
-        foreach (QContactLocalId removedId, realRemoveIds) {
+        foreach (const QContactLocalId &removedId, realRemoveIds) {
             aggregatesOfRemoved.removeAll(removedId);
         }
-
-        // emit removed signals
-        ContactNotifier::contactsRemoved(realRemoveIds);
     }
 
     // Now regenerate our remaining aggregates as required.
-    // note that we commit() the database prior to this point,
-    // as the write process could cause temporary tables to be
-    // created, and if it fails it's not catastrophic (just
-    // means that the aggregate retains some stale data).
     if (aggregatesOfRemoved.size() > 0) {
-        regenerateAggregates(aggregatesOfRemoved, QStringList(), withinTransaction);
+        regenerateAggregates(aggregatesOfRemoved, QStringList(), true);
+    }
+
+    // Success!  If we created a transaction, commit.
+    if (!withinTransaction && !commitTransaction()) {
+        qWarning() << "Failed to commit database after removal";
+        return QContactManager::UnspecifiedError;
     }
 
     return error;
@@ -1184,14 +1213,11 @@ QContactManager::Error ContactWriter::save(
     if (contacts->isEmpty())
         return QContactManager::NoError;
 
-    if (!withinTransaction && !m_database.transaction()) {
+    if (!withinTransaction && !beginTransaction()) {
         // only create a transaction if we're not within one already
         qWarning() << "Unable to begin database transaction while saving contacts";
         return QContactManager::UnspecifiedError;
     }
-
-    QVector<QContactLocalId> createdContactIds;
-    QVector<QContactLocalId> updatedContactIds;
 
     QContactManager::Error worstError = QContactManager::NoError;
     QContactManager::Error err = QContactManager::NoError;
@@ -1201,10 +1227,18 @@ QContactManager::Error ContactWriter::save(
         bool aggregateUpdated = false;
         if (contactId == 0) {
             err = create(&contact, definitionMask, true, withinAggregateUpdate);
-            createdContactIds.append(contact.localId());
+            if (err == QContactManager::NoError) {
+                m_addedIds.append(contact.localId());
+            } else {
+                qWarning() << "Error creating contact:" << err;
+            }
         } else {
             err = update(&contact, definitionMask, &aggregateUpdated, true, withinAggregateUpdate);
-            updatedContactIds.append(contactId);
+            if (err == QContactManager::NoError) {
+                m_changedIds.append(contactId);
+            } else {
+                qWarning() << "Error updating contact" << contactId << ":" << err;
+            }
         }
         if (aggregatesUpdated) {
             aggregatesUpdated->insert(i, aggregateUpdated);
@@ -1219,21 +1253,30 @@ QContactManager::Error ContactWriter::save(
 
     if (!withinTransaction) {
         // only attempt to commit/rollback the transaction if we created it
-        if (err != QContactManager::NoError) {
-            m_database.rollback();
+        if (worstError != QContactManager::NoError) {
+            // If anything failed at all, we need to rollback, so that we do not
+            // have an inconsistent state between aggregate and constituent contacts
+
+            // Any contacts we 'added' are not actually added - clear their IDs
+            for (int i = 0; i < contacts->count(); ++i) {
+                QContact &contact = (*contacts)[i];
+                if (m_addedIds.contains(contact.localId())) {
+                    contact.setId(QContactId());
+                    if (errorMap) {
+                        // We also need to report an error for this contact, even though there
+                        // is no true error preventing it from being updated
+                        errorMap->insert(i, QContactManager::LockedError);
+                    }
+                }
+            }
+
+            rollbackTransaction();
             return worstError;
-        } else if (!m_database.commit()) {
+        } else if (!commitTransaction()) {
             qWarning() << "Failed to commit contacts";
-            qWarning() << m_database.lastError();
-            m_database.rollback();
             return QContactManager::UnspecifiedError;
         }
     }
-
-    if (!createdContactIds.isEmpty())
-        ContactNotifier::contactsAdded(createdContactIds);
-    if (!updatedContactIds.isEmpty())
-        ContactNotifier::contactsChanged(updatedContactIds);
 
     return worstError;
 }

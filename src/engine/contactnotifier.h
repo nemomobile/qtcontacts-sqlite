@@ -41,8 +41,8 @@ QTM_USE_NAMESPACE
 namespace ContactNotifier
 {
     void initialize();
-    void contactsAdded(const QVector<QContactLocalId> &contactIds);
-    void contactsChanged(const QVector<QContactLocalId> &contactIds);
+    void contactsAdded(const QList<QContactLocalId> &contactIds);
+    void contactsChanged(const QList<QContactLocalId> &contactIds);
     void contactsRemoved(const QList<QContactLocalId> &contactIds);
     void selfContactIdChanged(QContactLocalId oldId, QContactLocalId newId);
     void relationshipsAdded(const QSet<QContactLocalId> &contactIds);
