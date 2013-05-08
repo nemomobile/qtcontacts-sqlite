@@ -45,8 +45,8 @@ namespace ContactNotifier
     void contactsChanged(const QList<QContactLocalId> &contactIds);
     void contactsRemoved(const QList<QContactLocalId> &contactIds);
     void selfContactIdChanged(QContactLocalId oldId, QContactLocalId newId);
-    void relationshipsAdded(const QSet<QContactLocalId> &contactIds);
-    void relationshipsRemoved(const QSet<QContactLocalId> &contactIds);
+    void relationshipsAdded(const QList<QContactLocalId> &contactIds);
+    void relationshipsRemoved(const QList<QContactLocalId> &contactIds);
 
     bool connect(const char *name, const char *signature, QObject *receiver, const char *slot);
 }

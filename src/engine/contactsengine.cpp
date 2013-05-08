@@ -895,16 +895,15 @@ QString ContactsEngine::databaseUuid()
 
 QContactManager::Error ContactsEngine::open()
 {
-    
     m_database = ContactsDatabase::open(QString(QLatin1String("qtcontacts-sqlite-%1")).arg(databaseUuid()));
     if (m_database.isOpen()) {
         ContactNotifier::initialize();
-        ContactNotifier::connect("contactsAdded", "au", this, SIGNAL(contactsAdded(QList<QContactLocalId>)));
-        ContactNotifier::connect("contactsChanged", "au", this, SIGNAL(contactsChanged(QList<QContactLocalId>)));
-        ContactNotifier::connect("contactsRemoved", "au", this, SIGNAL(contactsRemoved(QList<QContactLocalId>)));
+        ContactNotifier::connect("contactsAdded", "au", this, SLOT(_q_contactsAdded(QVector<QContactLocalId>)));
+        ContactNotifier::connect("contactsChanged", "au", this, SLOT(_q_contactsChanged(QVector<QContactLocalId>)));
+        ContactNotifier::connect("contactsRemoved", "au", this, SLOT(_q_contactsRemoved(QVector<QContactLocalId>)));
         ContactNotifier::connect("selfContactIdChanged", "uu", this, SLOT(_q_selfContactIdChanged(quint32,quint32)));
-        ContactNotifier::connect("relationshipsAdded", "au", this, SIGNAL(relationshipsAdded(QList<QContactLocalId>)));
-        ContactNotifier::connect("relationshipsRemoved", "au", this, SIGNAL(relationshipsRemoved(QList<QContactLocalId>)));
+        ContactNotifier::connect("relationshipsAdded", "au", this, SLOT(_q_relationshipsAdded(QVector<QContactLocalId>)));
+        ContactNotifier::connect("relationshipsRemoved", "au", this, SLOT(_q_relationshipsRemoved(QVector<QContactLocalId>)));
         return QContactManager::NoError;
     } else {
         qWarning() << "Unable to open database";
@@ -1439,7 +1438,33 @@ QString ContactsEngine::synthesizedDisplayLabel(const QContact &contact, QContac
     return QString();
 }
 
+void ContactsEngine::_q_contactsAdded(const QVector<QContactLocalId> &contactIds)
+{
+    emit contactsAdded(contactIds.toList());
+}
+
+void ContactsEngine::_q_contactsChanged(const QVector<QContactLocalId> &contactIds)
+{
+    emit contactsChanged(contactIds.toList());
+}
+
+void ContactsEngine::_q_contactsRemoved(const QVector<QContactLocalId> &contactIds)
+{
+    emit contactsRemoved(contactIds.toList());
+}
+
 void ContactsEngine::_q_selfContactIdChanged(QContactLocalId oldId, QContactLocalId newId)
 {
     emit selfContactIdChanged(oldId, newId);
 }
+
+void ContactsEngine::_q_relationshipsAdded(const QVector<QContactLocalId> &contactIds)
+{
+    emit relationshipsAdded(contactIds.toList());
+}
+
+void ContactsEngine::_q_relationshipsRemoved(const QVector<QContactLocalId> &contactIds)
+{
+    emit relationshipsRemoved(contactIds.toList());
+}
+
