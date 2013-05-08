@@ -218,6 +218,7 @@ private slots:
     void contactType();
     void lateDeletion();
     void compareVariant();
+    void constituentOfSelf();
 
 #if defined(USE_VERSIT_PLZ)
     void partialSave();
@@ -4455,6 +4456,101 @@ void tst_QContactManager::compareVariant_data()
     QTest::newRow("datetimes dt3 = dt3") << QVariant(dt3) << QVariant(dt3) << Qt::CaseInsensitive << 0;
     QTest::newRow("datetimes dt4 = dt4") << QVariant(dt4) << QVariant(dt4) << Qt::CaseInsensitive << 0;
     QTest::newRow("datetimes dt5 = dt5") << QVariant(dt5) << QVariant(dt5) << Qt::CaseInsensitive << 0;
+}
+
+void tst_QContactManager::constituentOfSelf()
+{
+    QContactManager m;
+
+    QContactId selfId;
+    selfId.setLocalId(m.selfContactId());
+
+    // Create a contact which is aggregated by the self contact
+    QContactSyncTarget cst;
+    cst.setSyncTarget("test");
+
+    QContact constituent;
+    QVERIFY(constituent.saveDetail(&cst));
+
+    QVERIFY(m.saveContact(&constituent));
+    QVERIFY(m.error() == QContactManager::NoError);
+
+    // Find the aggregate contact created by saving
+    QContactRelationshipFilter relationshipFilter;
+    relationshipFilter.setRelationshipType(QContactRelationship::Aggregates);
+    relationshipFilter.setRelatedContactId(constituent.id());
+    relationshipFilter.setRelatedContactRole(QContactRelationship::Second);
+
+    foreach (const QContact &aggregator, m.contacts(relationshipFilter)) {
+        // Remove the relationship between these contacts
+        QContactRelationship relationship;
+        relationship.setRelationshipType(QContactRelationship::Aggregates);
+        relationship.setFirst(aggregator.id());
+        relationship.setSecond(constituent.id());
+
+        QVERIFY(m.removeRelationship(relationship));
+        QVERIFY(m.removeContact(aggregator.localId()));
+    }
+
+    // Now connect our contact to the real self contact
+    QContactRelationship relationship;
+    relationship.setRelationshipType(QContactRelationship::Aggregates);
+    relationship.setFirst(selfId);
+    relationship.setSecond(constituent.id());
+
+    QVERIFY(m.saveRelationship(&relationship));
+
+    // Update the constituent
+    QContactNickname nn;
+    nn.setNickname("nickname");
+
+    constituent = m.contact(constituent.localId());
+    QVERIFY(constituent.saveDetail(&nn));
+
+    QVERIFY(m.saveContact(&constituent));
+    QVERIFY(m.error() == QContactManager::NoError);
+
+    constituent = m.contact(constituent.localId());
+    QVERIFY(detailsEquivalent(constituent.detail<QContactNickname>(), nn));
+
+    // Change should be reflected in the self contact
+    QContact self = m.contact(m.selfContactId());
+    QVERIFY(detailsEquivalent(self.detail<QContactNickname>(), nn));
+
+    // Do a presence update
+    QContactPresence presence;
+    presence.setPresenceState(QContactPresence::PresenceAway);
+
+    constituent = m.contact(constituent.localId());
+    QVERIFY(constituent.saveDetail(&presence));
+
+    QVERIFY(m.saveContact(&constituent));
+    QVERIFY(m.error() == QContactManager::NoError);
+
+    constituent = m.contact(constituent.localId());
+    QVERIFY(detailsEquivalent(constituent.detail<QContactPresence>(), presence));
+    QCOMPARE(constituent.detail<QContactGlobalPresence>().presenceState(), presence.presenceState());
+
+    // Update should be relected in the self contact
+    self = m.contact(m.selfContactId());
+    QVERIFY(detailsEquivalent(self.detail<QContactPresence>(), presence));
+    QCOMPARE(self.detail<QContactGlobalPresence>().presenceState(), presence.presenceState());
+
+    // Update again
+    presence = constituent.detail<QContactPresence>();
+    presence.setPresenceState(QContactPresence::PresenceBusy);
+    QVERIFY(constituent.saveDetail(&presence));
+
+    QVERIFY(m.saveContact(&constituent));
+    QVERIFY(m.error() == QContactManager::NoError);
+
+    constituent = m.contact(constituent.localId());
+    QVERIFY(detailsEquivalent(constituent.detail<QContactPresence>(), presence));
+    QCOMPARE(constituent.detail<QContactGlobalPresence>().presenceState(), presence.presenceState());
+
+    self = m.contact(m.selfContactId());
+    QVERIFY(detailsEquivalent(self.detail<QContactPresence>(), presence));
+    QCOMPARE(self.detail<QContactGlobalPresence>().presenceState(), presence.presenceState());
 }
 
 
