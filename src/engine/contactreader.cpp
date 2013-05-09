@@ -450,6 +450,35 @@ template <typename T> static void readDetail(
     } while (query->next() && (currentId = query->value(5).toUInt()) == contactId);
 }
 
+static QContactId createContactId(QContactLocalId localId)
+{
+    QContactId id;
+    id.setManagerUri(QLatin1String("org.nemomobile.contacts.sqlite"));
+    id.setLocalId(localId + 1);
+    return id;
+}
+
+static void readRelationshipTable(
+        QContactLocalId contactId, QContact *contact, QSqlQuery *query, QContactLocalId &currentId)
+{
+    QList<QContactRelationship> currContactRelationships;
+
+    do {
+        QString type = query->value(1).toString();
+        QContactLocalId firstLocalId = query->value(2).toUInt();
+        QContactLocalId secondLocalId = query->value(3).toUInt();
+
+        QContactRelationship relationship;
+        relationship.setRelationshipType(type);
+        relationship.setFirst(createContactId(firstLocalId));
+        relationship.setSecond(createContactId(secondLocalId));
+
+        currContactRelationships.append(relationship);
+    } while (query->next() && (currentId = query->value(0).toUInt()) == contactId);
+
+    QContactManagerEngine::setContactRelationships(contact, currContactRelationships);
+}
+
 typedef void (*ReadDetail)(QContactLocalId contactId, QContact *contact, QSqlQuery *query, QContactLocalId &currentId);
 
 struct DetailInfo
@@ -1202,7 +1231,8 @@ QContactManager::Error ContactReader::queryContacts(
     QSqlQuery query(m_database);
     if (!query.exec(QString(QLatin1String(
             "\n SELECT Contacts.*"
-            "\n FROM temp.%1 INNER JOIN Contacts ON temp.%1.contactId = Contacts.contactId;")).arg(table))) {
+            "\n FROM temp.%1 INNER JOIN Contacts ON temp.%1.contactId = Contacts.contactId"
+            "\n ORDER BY temp.%1.rowId ASC;")).arg(table))) {
         qWarning() << "Failed to query from" << table;
         qWarning() << query.lastError();
         return QContactManager::UnspecifiedError;
@@ -1217,7 +1247,8 @@ QContactManager::Error ContactReader::queryContacts(
             "\n  %2.*"
             "\n FROM temp.%1"
             "\n  INNER JOIN %2 ON temp.%1.contactId = %2.contactId"
-            "\n  LEFT JOIN Details ON %2.detailId = Details.detailId AND Details.detail = :detail;")).arg(table);
+            "\n  LEFT JOIN Details ON %2.detailId = Details.detailId AND Details.detail = :detail"
+            "\n ORDER BY temp.%1.rowId ASC;")).arg(table);
 
     QList<Table> tables;
     for (int i = 0; i < lengthOf(detailInfo); ++i) {
@@ -1250,6 +1281,42 @@ QContactManager::Error ContactReader::queryContacts(
         }
     }
 
+    // XXX TODO: fetch hint - if "don't fetch relationships" is specified, skip this!
+    const bool includeRelationships = true;
+    if (includeRelationships) {
+        const QString relationshipQuery = QString::fromLatin1(
+            "\n SELECT"
+            "\n  temp.%1.contactId,"
+            "\n  Relationships.type,"
+            "\n  Relationships.firstId,"
+            "\n  Relationships.secondId"
+            "\n FROM temp.%1"
+            "\n  INNER JOIN Relationships"
+            "\n    ON (temp.%1.contactId = Relationships.firstId"
+            "\n     OR temp.%1.contactId = Relationships.secondId)"
+            "\n ORDER BY temp.%1.rowId ASC;").arg(table);
+
+        Table table = {
+            QSqlQuery(m_database),
+            &readRelationshipTable,
+            0
+        };
+
+        if (!table.query.prepare(relationshipQuery)) {
+            qWarning() << "Failed to prepare relationship table query";
+            qWarning() << relationshipQuery;
+            qWarning() << table.query.lastError();
+        } else {
+            if (!table.query.exec()) {
+                qWarning() << "Failed to query relationship table";
+                qWarning() << table.query.lastError();
+            } else if (table.query.next()) {
+                table.currentId = table.query.value(0).toUInt();
+                tables.append(table);
+            }
+        }
+    }
+
     do {
         int contactCount = contacts->count();
 
@@ -1257,9 +1324,7 @@ QContactManager::Error ContactReader::queryContacts(
             QContactLocalId contactId = query.value(0).toUInt();
             QContact contact;
 
-            QContactId id;
-            id.setLocalId(contactId + 1);
-            id.setManagerUri(QLatin1String("org.nemomobile.contacts.sqlite"));
+            QContactId id(createContactId(contactId));
             contact.setId(id);
 
             QString persistedDL = query.value(1).toString();
@@ -1296,15 +1361,6 @@ QContactManager::Error ContactReader::queryContacts(
             setValue(&favorite, QContactFavorite::FieldFavorite, query.value(12));
             if (!favorite.isEmpty())
                 contact.saveDetail(&favorite);
-
-            // XXX TODO: fetch hint - if "don't fetch relationships" is specified, skip this!
-            QList<QContactRelationship> currContactRelationships;
-            QList<QContactRelationship> ccfrels;
-            QList<QContactRelationship> ccsrels;
-            readRelationships(&ccfrels, QString(), id, QContactId());
-            readRelationships(&ccsrels, QString(), QContactId(), id);
-            currContactRelationships << ccfrels << ccsrels;
-            QContactManagerEngine::setContactRelationships(&contact, currContactRelationships);
 
             contacts->append(contact);
         }
@@ -1463,16 +1519,8 @@ QContactManager::Error ContactReader::readRelationships(
     while (query.next()) {
         QContactRelationship relationship;
         relationship.setRelationshipType(query.value(0).toString());
-
-        QContactId firstId;
-        firstId.setManagerUri(QLatin1String("org.nemomobile.contacts.sqlite"));
-        firstId.setLocalId(query.value(1).toUInt() + 1);
-        relationship.setFirst(firstId);
-
-        QContactId secondId;
-        secondId.setManagerUri(QLatin1String("org.nemomobile.contacts.sqlite"));
-        secondId.setLocalId(query.value(2).toUInt() + 1);
-        relationship.setSecond(secondId);
+        relationship.setFirst(createContactId(query.value(1).toUInt()));
+        relationship.setSecond(createContactId(query.value(2).toUInt()));
 
         relationships->append(relationship);
     }
