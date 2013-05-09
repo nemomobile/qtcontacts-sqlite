@@ -1148,7 +1148,7 @@ QContactManager::Error ContactReader::readContacts(
         QList<QContact> *contacts,
         const QContactFilter &filter,
         const QList<QContactSortOrder> &order,
-        const QStringList &details)
+        const QContactFetchHint &fetchHint)
 {
     QString join;
     const QString orderBy = buildOrderBy(order, &join);
@@ -1166,7 +1166,7 @@ QContactManager::Error ContactReader::readContacts(
             &m_database, table, true, QVariantList(), join, where, orderBy, bindings);
 
     QContactManager::Error error = (createTempError == QContactManager::NoError)
-            ? queryContacts(table, contacts, details)
+            ? queryContacts(table, contacts, fetchHint)
             : createTempError;
 
     clearTemporaryContactIdsTable(&m_database, table);
@@ -1178,7 +1178,7 @@ QContactManager::Error ContactReader::readContacts(
         const QString &table,
         QList<QContact> *contacts,
         const QList<QContactLocalId> &contactIds,
-        const QStringList &details)
+        const QContactFetchHint &fetchHint)
 {
     // XXX TODO: get rid of this query, just iterate over the returned results in memory
     // and if the id doesn't match, insert an empty contact (and error) for that index.
@@ -1209,7 +1209,7 @@ QContactManager::Error ContactReader::readContacts(
             &m_database, table, false, boundIds, QString(), QString(), QString(), QVariantList());
 
     QContactManager::Error error = (createTempError == QContactManager::NoError)
-            ? queryContacts(table, contacts, details)
+            ? queryContacts(table, contacts, fetchHint)
             : createTempError;
 
     clearTemporaryContactIdsTable(&m_database, table);
@@ -1226,7 +1226,7 @@ QContactManager::Error ContactReader::readContacts(
 }
 
 QContactManager::Error ContactReader::queryContacts(
-        const QString &table, QList<QContact> *contacts, const QStringList &details)
+        const QString &table, QList<QContact> *contacts, const QContactFetchHint &fetchHint)
 {
     QSqlQuery query(m_database);
     if (!query.exec(QString(QLatin1String(
@@ -1249,6 +1249,8 @@ QContactManager::Error ContactReader::queryContacts(
             "\n  INNER JOIN %2 ON temp.%1.contactId = %2.contactId"
             "\n  LEFT JOIN Details ON %2.detailId = Details.detailId AND Details.detail = :detail"
             "\n ORDER BY temp.%1.rowId ASC;")).arg(table);
+
+    const QStringList &details = fetchHint.detailDefinitionsHint();
 
     QList<Table> tables;
     for (int i = 0; i < lengthOf(detailInfo); ++i) {
@@ -1281,9 +1283,10 @@ QContactManager::Error ContactReader::queryContacts(
         }
     }
 
-    // XXX TODO: fetch hint - if "don't fetch relationships" is specified, skip this!
-    const bool includeRelationships = true;
-    if (includeRelationships) {
+    QContactFetchHint::OptimizationHints optimizationHints(fetchHint.optimizationHints());
+
+    // Skip relationships if they're able to be left out
+    if ((optimizationHints & QContactFetchHint::NoRelationships) == 0) {
         const QString relationshipQuery = QString::fromLatin1(
             "\n SELECT"
             "\n  temp.%1.contactId,"
@@ -1317,10 +1320,13 @@ QContactManager::Error ContactReader::queryContacts(
         }
     }
 
+    const int maximumCount = fetchHint.maxCountHint();
+    const int batchSize = (maximumCount > 0) ? maximumCount : ReportBatchSize;
+
     do {
         int contactCount = contacts->count();
 
-        for (int i = 0; i < ReportBatchSize && query.next(); ++i) {
+        for (int i = 0; i < batchSize && query.next(); ++i) {
             QContactLocalId contactId = query.value(0).toUInt();
             QContact contact;
 
@@ -1379,7 +1385,7 @@ QContactManager::Error ContactReader::queryContacts(
         }
 
         contactsAvailable(*contacts);
-    } while (query.isValid());
+    } while (query.isValid() && (maximumCount < 0));
 
     query.finish();
     for (int k = 0; k < tables.count(); ++k) {

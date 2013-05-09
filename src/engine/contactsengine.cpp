@@ -336,7 +336,7 @@ public:
                 &contacts,
                 m_filter,
                 m_sorting,
-                m_fetchHint.detailDefinitionsHint());
+                m_fetchHint);
     }
 
     void update(QMutex *mutex)
@@ -446,7 +446,7 @@ public:
                 QLatin1String("AsynchronousIds"),
                 &contacts,
                 m_contactIds,
-                m_fetchHint.detailDefinitionsHint());
+                m_fetchHint);
     }
 
     void update(QMutex *mutex)
@@ -953,7 +953,7 @@ QList<QContact> ContactsEngine::contacts(
                 &contacts,
                 filter,
                 sortOrders,
-                fetchHint.detailDefinitionsHint());
+                fetchHint);
     if (error)
         *error = err;
     return contacts;
@@ -988,7 +988,7 @@ QList<QContact> ContactsEngine::contacts(
                 QLatin1String("SynchronousIds"),
                 &contacts,
                 localIds,
-                fetchHint.detailDefinitionsHint());
+                fetchHint);
     if (error)
         *error = err;
     return contacts;
