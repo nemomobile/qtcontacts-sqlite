@@ -1281,6 +1281,53 @@ QContactManager::Error ContactWriter::save(
     return worstError;
 }
 
+static QContactManager::Error enforceDetailConstraints(QContact *contact)
+{
+    // look for unsupported detail data.  XXX TODO: this is really slow, due to string comparison.
+    // We could simply ignore all unsupported data during save, which would save quite some time.
+    QList<QContactDetail> allDets = contact->details();
+    foreach (const QContactDetail &det, allDets) {
+        if (det.definitionName() != QContactType::DefinitionName
+                && det.definitionName() != QContactDisplayLabel::DefinitionName
+                && det.definitionName() != QContactName::DefinitionName
+                && det.definitionName() != QContactSyncTarget::DefinitionName
+                && det.definitionName() != QContactGuid::DefinitionName
+                && det.definitionName() != QContactNickname::DefinitionName
+                && det.definitionName() != QContactFavorite::DefinitionName
+                && det.definitionName() != QContactGender::DefinitionName
+                && det.definitionName() != QContactTimestamp::DefinitionName
+                && det.definitionName() != QContactPhoneNumber::DefinitionName
+                && det.definitionName() != QContactEmailAddress::DefinitionName
+                && det.definitionName() != QContactBirthday::DefinitionName
+                && det.definitionName() != QContactAvatar::DefinitionName
+                && det.definitionName() != QContactOnlineAccount::DefinitionName
+                && det.definitionName() != QContactPresence::DefinitionName
+                && det.definitionName() != QContactGlobalPresence::DefinitionName
+                && det.definitionName() != QContactTpMetadata::DefinitionName
+                && det.definitionName() != QContactAddress::DefinitionName
+                && det.definitionName() != QContactTag::DefinitionName
+                && det.definitionName() != QContactUrl::DefinitionName
+                && det.definitionName() != QContactAnniversary::DefinitionName
+                && det.definitionName() != QContactHobby::DefinitionName
+                && det.definitionName() != QContactNote::DefinitionName
+                && det.definitionName() != QContactOrganization::DefinitionName
+                && det.definitionName() != QContactRingtone::DefinitionName) {
+            return QContactManager::InvalidDetailError;
+        }
+    }
+
+    // enforce uniqueness constraints
+    if (contact->details<QContactName>().count() > 1
+            || contact->details<QContactTimestamp>().count() > 1
+            || contact->details<QContactSyncTarget>().count() > 1
+            || contact->details<QContactGuid>().count() > 1
+            || contact->details<QContactFavorite>().count() > 1) {
+        return QContactManager::LimitReachedError;
+    }
+
+    return QContactManager::NoError;
+}
+
 /*
     This function is called as part of the "save updated aggregate"
     codepath.  It calculates the list of details which were modified
@@ -1710,7 +1757,6 @@ static QStringList getUnpromotedDetailNames()
 static void promoteDetailsToAggregate(const QContact &contact, QContact *aggregate, const QStringList &definitionMask)
 {
     static const QStringList unpromotedDetailNames(getUnpromotedDetailNames());
-
     QList<QContactDetail> currDetails = contact.details();
     for (int j = 0; j < currDetails.size(); ++j) {
         QContactDetail currDet = currDetails.at(j);
@@ -2150,47 +2196,53 @@ QContactManager::Error ContactWriter::create(QContact *contact, const QStringLis
 #ifndef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     Q_UNUSED(withinTransaction)
 #endif
+    QContactManager::Error writeErr = enforceDetailConstraints(contact);
+    if (writeErr != QContactManager::NoError) {
+        qWarning() << "Contact failed detail constraints";
+        return writeErr;
+    }
+
     bindContactDetails(*contact, m_insertContact);
     if (!m_insertContact.exec()) {
         qWarning() << "Failed to create contact";
         qWarning() << m_insertContact.lastError();
         return QContactManager::UnspecifiedError;
-    } else {
-        QContactLocalId contactId = m_insertContact.lastInsertId().toUInt();
-        m_insertContact.finish();
+    }
 
-        QContactManager::Error writeErr = write(contactId, contact, definitionMask);
-        if (writeErr == QContactManager::NoError) {
-            // successfully saved all data.  Update id.
-            QContactId id;
-            id.setLocalId(contactId + 1);
-            id.setManagerUri(QLatin1String("org.nemomobile.contacts.sqlite"));
-            contact->setId(id);
+    QContactLocalId contactId = m_insertContact.lastInsertId().toUInt();
+    m_insertContact.finish();
+
+    writeErr = write(contactId, contact, definitionMask);
+    if (writeErr == QContactManager::NoError) {
+        // successfully saved all data.  Update id.
+        QContactId id;
+        id.setLocalId(contactId + 1);
+        id.setManagerUri(QLatin1String("org.nemomobile.contacts.sqlite"));
+        contact->setId(id);
 
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
-            if (!withinAggregateUpdate) {
-                // and either update the aggregate contact (if it exists) or create a new one (unless it is an aggregate contact).
-                if (contact->detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget) != QLatin1String("aggregate")) {
-                    writeErr = updateOrCreateAggregate(contact, definitionMask, withinTransaction);
-                }
+        if (!withinAggregateUpdate) {
+            // and either update the aggregate contact (if it exists) or create a new one (unless it is an aggregate contact).
+            if (contact->detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget) != QLatin1String("aggregate")) {
+                writeErr = updateOrCreateAggregate(contact, definitionMask, withinTransaction);
             }
+        }
 #else
-            Q_UNUSED(withinAggregateUpdate)
+        Q_UNUSED(withinAggregateUpdate)
 #endif
-        }
-
-        if (writeErr != QContactManager::NoError) {
-            // error occurred.  Remove the failed entry.
-            m_removeContact.bindValue(":contactId", contactId);
-            if (!m_removeContact.exec()) {
-                qWarning() << "Unable to remove stale contact after failed save";
-                qWarning() << m_removeContact.lastError().text();
-            }
-            m_removeContact.finish();
-        }
-
-        return writeErr;
     }
+
+    if (writeErr != QContactManager::NoError) {
+        // error occurred.  Remove the failed entry.
+        m_removeContact.bindValue(":contactId", contactId);
+        if (!m_removeContact.exec()) {
+            qWarning() << "Unable to remove stale contact after failed save";
+            qWarning() << m_removeContact.lastError().text();
+        }
+        m_removeContact.finish();
+    }
+
+    return writeErr;
 }
 
 QContactManager::Error ContactWriter::update(QContact *contact, const QStringList &definitionMask, bool *aggregateUpdated, bool withinTransaction, bool withinAggregateUpdate)
@@ -2226,6 +2278,12 @@ QContactManager::Error ContactWriter::update(QContact *contact, const QStringLis
         return QContactManager::InvalidDetailError;
     }
 
+    QContactManager::Error writeError = enforceDetailConstraints(contact);
+    if (writeError != QContactManager::NoError) {
+        qWarning() << "Contact failed detail constraints";
+        return writeError;
+    }
+
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     if (!withinAggregateUpdate && oldSyncTarget == QLatin1String("aggregate")) {
         // Attempting to update the aggregate contact.
@@ -2241,16 +2299,14 @@ QContactManager::Error ContactWriter::update(QContact *contact, const QStringLis
 
     bindContactDetails(*contact, m_updateContact);
     m_updateContact.bindValue(12, contactId);
-
     if (!m_updateContact.exec()) {
         qWarning() << "Failed to update contact";
         qWarning() << m_updateContact.lastError();
         return QContactManager::UnspecifiedError;
     }
-
     m_updateContact.finish();
 
-    QContactManager::Error writeError = write(contactId, contact, definitionMask);
+    writeError = write(contactId, contact, definitionMask);
 
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     if (writeError == QContactManager::NoError) {
@@ -2282,40 +2338,6 @@ QContactManager::Error ContactWriter::update(QContact *contact, const QStringLis
 QContactManager::Error ContactWriter::write(QContactLocalId contactId, QContact *contact, const QStringList &definitionMask)
 {
     QContactManager::Error error = QContactManager::NoError;
-
-    // look for unsupported detail data.  XXX TODO: this is really slow, due to string comparison.
-    // We could simply ignore all unsupported data during save, which would save quite some time.
-    QList<QContactDetail> allDets = contact->details();
-    foreach (const QContactDetail &det, allDets) {
-        if (det.definitionName() != QContactType::DefinitionName
-                && det.definitionName() != QContactDisplayLabel::DefinitionName
-                && det.definitionName() != QContactName::DefinitionName
-                && det.definitionName() != QContactSyncTarget::DefinitionName
-                && det.definitionName() != QContactGuid::DefinitionName
-                && det.definitionName() != QContactNickname::DefinitionName
-                && det.definitionName() != QContactFavorite::DefinitionName
-                && det.definitionName() != QContactGender::DefinitionName
-                && det.definitionName() != QContactTimestamp::DefinitionName
-                && det.definitionName() != QContactPhoneNumber::DefinitionName
-                && det.definitionName() != QContactEmailAddress::DefinitionName
-                && det.definitionName() != QContactBirthday::DefinitionName
-                && det.definitionName() != QContactAvatar::DefinitionName
-                && det.definitionName() != QContactOnlineAccount::DefinitionName
-                && det.definitionName() != QContactPresence::DefinitionName
-                && det.definitionName() != QContactGlobalPresence::DefinitionName
-                && det.definitionName() != QContactTpMetadata::DefinitionName
-                && det.definitionName() != QContactAddress::DefinitionName
-                && det.definitionName() != QContactTag::DefinitionName
-                && det.definitionName() != QContactUrl::DefinitionName
-                && det.definitionName() != QContactAnniversary::DefinitionName
-                && det.definitionName() != QContactHobby::DefinitionName
-                && det.definitionName() != QContactNote::DefinitionName
-                && det.definitionName() != QContactOrganization::DefinitionName
-                && det.definitionName() != QContactRingtone::DefinitionName) {
-            return QContactManager::InvalidDetailError;
-        }
-    }
-
     if (writeDetails<QContactAddress>(contactId, contact, m_removeAddress, definitionMask, &error)
             && writeDetails<QContactAnniversary>(contactId, contact, m_removeAnniversary, definitionMask, &error)
             && writeDetails<QContactAvatar>(contactId, contact, m_removeAvatar, definitionMask, &error)

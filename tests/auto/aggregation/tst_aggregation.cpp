@@ -141,6 +141,9 @@ private slots:
     void updateSingleAggregate();
     void updateAggregateOfLocalAndSync();
 
+    void promotionToSingleLocal();
+    void uniquenessConstraints();
+
     void removeSingleLocal();
     void removeSingleAggregate();
 
@@ -275,13 +278,6 @@ void tst_Aggregation::createSingleLocal()
                 aggregateAlice = curr;
                 foundAggregateAlice = true;
             }
-        } else {
-            qWarning() << "Found unrelated contact:"
-                       << currSt.syncTarget()
-                       << currName.firstName()
-                       << currName.middleName()
-                       << currName.lastName()
-                       << currPhn.number();
         }
     }
 
@@ -624,13 +620,6 @@ void tst_Aggregation::updateSingleLocal()
                 aggregateAlice = curr;
                 foundAggregateAlice = true;
             }
-        } else {
-            qWarning() << "Found unrelated contact:"
-                       << currSt.syncTarget()
-                       << currName.firstName()
-                       << currName.middleName()
-                       << currName.lastName()
-                       << currPhn.number();
         }
     }
 
@@ -757,13 +746,6 @@ void tst_Aggregation::updateSingleAggregate()
                 aggregateAlice = curr;
                 foundAggregateAlice = true;
             }
-        } else {
-            qWarning() << "Found unrelated contact:"
-                       << currSt.syncTarget()
-                       << currName.firstName()
-                       << currName.middleName()
-                       << currName.lastName()
-                       << currPhn.number();
         }
     }
 
@@ -907,6 +889,362 @@ void tst_Aggregation::updateAggregateOfLocalAndSync()
     }
 }
 
+void tst_Aggregation::promotionToSingleLocal()
+{
+    QContactDetailFilter allSyncTargets;
+    allSyncTargets.setDetailDefinitionName(QContactSyncTarget::DefinitionName, QContactSyncTarget::FieldSyncTarget);
+
+    // first, save a sync target alice.  This should generate an aggregate, but not a local.
+    QContact syncAlice;
+    QContactName san;
+    san.setFirstName(QLatin1String("Single"));
+    san.setMiddleName(QLatin1String("Promotion"));
+    san.setLastName(QLatin1String("ToAggregate"));
+    syncAlice.saveDetail(&san);
+
+    QContactEmailAddress saem;
+    saem.setEmailAddress(QLatin1String("spta@test.com"));
+    syncAlice.saveDetail(&saem);
+
+    QContactSyncTarget sast;
+    sast.setSyncTarget(QLatin1String("test"));
+    syncAlice.saveDetail(&sast);
+
+    QVERIFY(m_cm->saveContact(&syncAlice));
+
+    QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
+    QContact aggregateAlice;
+    QContact localAlice;
+    bool foundLocalAlice = false;
+    bool foundSyncAlice = false;
+    bool foundAggregateAlice = false;
+    foreach (const QContact &curr, allContacts) {
+        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
+        QContactEmailAddress currEm = curr.detail<QContactEmailAddress>();
+        QContactName currName = curr.detail<QContactName>();
+        if (currName.firstName() == QLatin1String("Single")
+                && currName.middleName() == QLatin1String("Promotion")
+                && currName.lastName() == QLatin1String("ToAggregate")
+                && currEm.emailAddress() == QLatin1String("spta@test.com")) {
+            if (currSt.syncTarget() == QLatin1String("test")) {
+                syncAlice = curr;
+                foundSyncAlice = true;
+            } else if (currSt.syncTarget() == QLatin1String("local")) {
+                localAlice = curr;
+                foundLocalAlice = true;
+            } else {
+                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                aggregateAlice = curr;
+                foundAggregateAlice = true;
+            }
+        }
+    }
+
+    QVERIFY(!foundLocalAlice); // shouldn't have created a local
+    QVERIFY(foundSyncAlice);
+    QVERIFY(foundAggregateAlice); // should have created an aggregate
+    QVERIFY(syncAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::Second).contains(syncAlice.id()));
+
+    // now we favoritify the aggregate contact.
+    // this should cause the creation of a local contact.
+    // The favoriteness should be promoted down to the local, but not to the sync.
+    // Also, the email address should not be promoted down to the local, as it
+    // came from the sync.
+    QContactFavorite afav = aggregateAlice.detail<QContactFavorite>();
+    afav.setFavorite(true);
+    QVERIFY(aggregateAlice.saveDetail(&afav)); // this overwrites the existing one.
+    QVERIFY(m_cm->saveContact(&aggregateAlice)); // should succeed, and update.
+
+    allContacts = m_cm->contacts(allSyncTargets);
+    foundLocalAlice = false;
+    foundSyncAlice = false;
+    foundAggregateAlice = false;
+    foreach (const QContact &curr, allContacts) {
+        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
+        QContactEmailAddress currEm = curr.detail<QContactEmailAddress>();
+        QContactName currName = curr.detail<QContactName>();
+        QContactFavorite currFav = curr.detail<QContactFavorite>();
+        if (currName.firstName() == QLatin1String("Single")
+                && currName.middleName() == QLatin1String("Promotion")
+                && currName.lastName() == QLatin1String("ToAggregate")) {
+            if (currSt.syncTarget() == QLatin1String("test")) {
+                QVERIFY(!foundSyncAlice); // found more than one = error...
+                QCOMPARE(currEm.emailAddress(), QLatin1String("spta@test.com"));
+                QVERIFY(!currFav.isFavorite());
+                syncAlice = curr;
+                foundSyncAlice = true;
+            } else if (currSt.syncTarget() == QLatin1String("local")) {
+                QVERIFY(!foundLocalAlice); // found more than one = error...
+                QCOMPARE(currEm.emailAddress(), QString());
+                QVERIFY(currFav.isFavorite());
+                localAlice = curr;
+                foundLocalAlice = true;
+            } else {
+                QVERIFY(!foundAggregateAlice); // found more than one = error...
+                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(currEm.emailAddress(), QLatin1String("spta@test.com"));
+                QVERIFY(currFav.isFavorite());
+                aggregateAlice = curr;
+                foundAggregateAlice = true;
+            }
+        }
+    }
+
+    // ensure that we found them all
+    QVERIFY(foundLocalAlice);
+    QVERIFY(foundSyncAlice);
+    QVERIFY(foundAggregateAlice);
+
+    // ensure they're related as required.
+    QVERIFY(localAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::Second).contains(localAlice.id()));
+    QVERIFY(syncAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::Second).contains(syncAlice.id()));
+
+    // finally, save a phone number in the aggregate.
+    // this should get downpromoted to the local.
+    // no more local contacts should be generated.
+    QContactPhoneNumber aphn;
+    aphn.setNumber("11111");
+    QVERIFY(aggregateAlice.saveDetail(&aphn));
+    QVERIFY(m_cm->saveContact(&aggregateAlice));
+
+    allContacts = m_cm->contacts(allSyncTargets);
+    foundLocalAlice = false;
+    foundSyncAlice = false;
+    foundAggregateAlice = false;
+    foreach (const QContact &curr, allContacts) {
+        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
+        QContactEmailAddress currEm = curr.detail<QContactEmailAddress>();
+        QContactPhoneNumber currPhn = curr.detail<QContactPhoneNumber>();
+        QContactName currName = curr.detail<QContactName>();
+        QContactFavorite currFav = curr.detail<QContactFavorite>();
+        if (currName.firstName() == QLatin1String("Single")
+                && currName.middleName() == QLatin1String("Promotion")
+                && currName.lastName() == QLatin1String("ToAggregate")) {
+            if (currSt.syncTarget() == QLatin1String("test")) {
+                QVERIFY(!foundSyncAlice); // found more than one = error...
+                QCOMPARE(currEm.emailAddress(), QLatin1String("spta@test.com"));
+                QCOMPARE(currPhn.number(), QString());
+                QVERIFY(!currFav.isFavorite());
+                syncAlice = curr;
+                foundSyncAlice = true;
+            } else if (currSt.syncTarget() == QLatin1String("local")) {
+                QVERIFY(!foundLocalAlice); // found more than one = error...
+                QCOMPARE(currEm.emailAddress(), QString());
+                QCOMPARE(currPhn.number(), QLatin1String("11111"));
+                QVERIFY(currFav.isFavorite());
+                localAlice = curr;
+                foundLocalAlice = true;
+            } else {
+                QVERIFY(!foundAggregateAlice); // found more than one = error...
+                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(currEm.emailAddress(), QLatin1String("spta@test.com"));
+                QCOMPARE(currPhn.number(), QLatin1String("11111"));
+                QVERIFY(currFav.isFavorite());
+                aggregateAlice = curr;
+                foundAggregateAlice = true;
+            }
+        }
+    }
+
+    // ensure that we found them all
+    QVERIFY(foundLocalAlice);
+    QVERIFY(foundSyncAlice);
+    QVERIFY(foundAggregateAlice);
+
+    // ensure they're related as required.
+    QVERIFY(localAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::Second).contains(localAlice.id()));
+    QVERIFY(syncAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::Second).contains(syncAlice.id()));
+
+    // now unfavorite aggregate alice.  ensure that it propagates properly.
+    afav = aggregateAlice.detail<QContactFavorite>();
+    afav.setFavorite(false);
+    QVERIFY(aggregateAlice.saveDetail(&afav));
+    QVERIFY(m_cm->saveContact(&aggregateAlice));
+
+    allContacts = m_cm->contacts(allSyncTargets);
+    foundLocalAlice = false;
+    foundSyncAlice = false;
+    foundAggregateAlice = false;
+    foreach (const QContact &curr, allContacts) {
+        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
+        QContactEmailAddress currEm = curr.detail<QContactEmailAddress>();
+        QContactPhoneNumber currPhn = curr.detail<QContactPhoneNumber>();
+        QContactName currName = curr.detail<QContactName>();
+        QContactFavorite currFav = curr.detail<QContactFavorite>();
+        if (currName.firstName() == QLatin1String("Single")
+                && currName.middleName() == QLatin1String("Promotion")
+                && currName.lastName() == QLatin1String("ToAggregate")) {
+            if (currSt.syncTarget() == QLatin1String("test")) {
+                QVERIFY(!foundSyncAlice); // found more than one = error...
+                QCOMPARE(currEm.emailAddress(), QLatin1String("spta@test.com"));
+                QCOMPARE(currPhn.number(), QString());
+                QVERIFY(!currFav.isFavorite());
+                syncAlice = curr;
+                foundSyncAlice = true;
+            } else if (currSt.syncTarget() == QLatin1String("local")) {
+                QVERIFY(!foundLocalAlice); // found more than one = error...
+                QCOMPARE(currEm.emailAddress(), QString());
+                QCOMPARE(currPhn.number(), QLatin1String("11111"));
+                QVERIFY(!currFav.isFavorite());
+                localAlice = curr;
+                foundLocalAlice = true;
+            } else {
+                QVERIFY(!foundAggregateAlice); // found more than one = error...
+                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(currEm.emailAddress(), QLatin1String("spta@test.com"));
+                QCOMPARE(currPhn.number(), QLatin1String("11111"));
+                QVERIFY(!currFav.isFavorite());
+                aggregateAlice = curr;
+                foundAggregateAlice = true;
+            }
+        }
+    }
+}
+
+void tst_Aggregation::uniquenessConstraints()
+{
+    QContactDetailFilter allSyncTargets;
+    allSyncTargets.setDetailDefinitionName(QContactSyncTarget::DefinitionName, QContactSyncTarget::FieldSyncTarget);
+
+    // create a valid local contact.  An aggregate should be generated.
+    QContact localAlice;
+    QContactName an;
+    an.setFirstName("Uniqueness");
+    an.setLastName("Constraints");
+    QVERIFY(localAlice.saveDetail(&an));
+    QContactEmailAddress aem;
+    aem.setEmailAddress("uniqueness@test.com");
+    QVERIFY(localAlice.saveDetail(&aem));
+    QVERIFY(m_cm->saveContact(&localAlice));
+
+    QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
+    QContact aggregateAlice;
+    bool foundLocalAlice = false;
+    bool foundAggregateAlice = false;
+    foreach (const QContact &curr, allContacts) {
+        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
+        QContactEmailAddress currEm = curr.detail<QContactEmailAddress>();
+        QContactName currName = curr.detail<QContactName>();
+        if (currName.firstName() == QLatin1String("Uniqueness")
+                && currName.lastName() == QLatin1String("Constraints")
+                && currEm.emailAddress() == QLatin1String("uniqueness@test.com")) {
+            if (currSt.syncTarget() == QLatin1String("local")) {
+                localAlice = curr;
+                foundLocalAlice = true;
+            } else {
+                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                aggregateAlice = curr;
+                foundAggregateAlice = true;
+            }
+        }
+    }
+
+    QVERIFY(foundLocalAlice);
+    QVERIFY(foundAggregateAlice);
+
+    // test uniqueness constraint of favorite detail.
+    QCOMPARE(aggregateAlice.details<QContactFavorite>().size(), 1);
+    QContactFavorite afav;
+    afav.setFavorite(true);
+    QVERIFY(aggregateAlice.saveDetail(&afav)); // this actually creates a second (in memory) favorite detail
+    QCOMPARE(aggregateAlice.details<QContactFavorite>().size(), 2);
+    QVERIFY(!m_cm->saveContact(&aggregateAlice)); // should fail, as Favorite is unique
+    QVERIFY(aggregateAlice.removeDetail(&afav));
+    QCOMPARE(aggregateAlice.details<QContactFavorite>().size(), 1);
+    afav = aggregateAlice.detail<QContactFavorite>();
+    afav.setFavorite(true);
+    QVERIFY(aggregateAlice.saveDetail(&afav));   // should update the existing.
+    QVERIFY(m_cm->saveContact(&aggregateAlice)); // should succeed.
+    QVERIFY(m_cm->contact(aggregateAlice.id().localId()).detail<QContactFavorite>().isFavorite());
+
+    // test uniqueness constraint of name detail.
+    QVERIFY(aggregateAlice.details<QContactName>().size() == 1);
+    QContactName anotherName;
+    anotherName.setFirstName("Testing");
+    QVERIFY(aggregateAlice.saveDetail(&anotherName));
+    QCOMPARE(aggregateAlice.details<QContactName>().size(), 2);
+    QVERIFY(!m_cm->saveContact(&aggregateAlice));
+    QVERIFY(aggregateAlice.removeDetail(&anotherName));
+    QCOMPARE(aggregateAlice.details<QContactName>().size(), 1);
+    anotherName = aggregateAlice.detail<QContactName>();
+    anotherName.setMiddleName("Middle");
+    QVERIFY(aggregateAlice.saveDetail(&anotherName));
+    QVERIFY(m_cm->saveContact(&aggregateAlice));
+
+    // test uniqueness (and read-only) constraint of sync target.
+    QVERIFY(aggregateAlice.details<QContactSyncTarget>().size() == 1);
+    QCOMPARE(aggregateAlice.detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget), QLatin1String("aggregate"));
+    QContactSyncTarget ast;
+    ast.setSyncTarget("uniqueness");
+    QVERIFY(aggregateAlice.saveDetail(&ast));
+    QCOMPARE(aggregateAlice.details<QContactSyncTarget>().size(), 2);
+    QVERIFY(!m_cm->saveContact(&aggregateAlice));
+    QVERIFY(aggregateAlice.removeDetail(&ast));
+    QCOMPARE(aggregateAlice.details<QContactSyncTarget>().size(), 1);
+    ast = aggregateAlice.detail<QContactSyncTarget>();
+    ast.setSyncTarget("uniqueness");
+    QVERIFY(aggregateAlice.saveDetail(&ast));
+    QVERIFY(!m_cm->saveContact(&aggregateAlice)); // should also fail, as sync target is read only.
+    ast = aggregateAlice.detail<QContactSyncTarget>();
+    ast.setSyncTarget("aggregate"); // reset the state.
+    QVERIFY(aggregateAlice.saveDetail(&ast));
+
+    // test uniqueness constraint of timestamp detail.
+    // Timestamp is a bit special, since if no values exist, we don't synthesise it,
+    // even though it exists in the main table.
+    QDateTime testDt = QDateTime::currentDateTime();
+    QTime testDtTime = testDt.time();
+    testDt.setTime(testDtTime.addMSecs(testDtTime.msec()*-1)); // get rid of millis as sqlite doesn't support them.
+    bool hasCreatedTs = false;
+    if (aggregateAlice.details<QContactTimestamp>().size() == 0) {
+        QContactTimestamp firstTs;
+        firstTs.setCreated(testDt);
+        QVERIFY(aggregateAlice.saveDetail(&firstTs));
+        QVERIFY(m_cm->saveContact(&aggregateAlice));
+        hasCreatedTs = true;
+    }
+    QVERIFY(aggregateAlice.details<QContactTimestamp>().size() == 1);
+    QContactTimestamp ats;
+    ats.setLastModified(testDt);
+    QVERIFY(aggregateAlice.saveDetail(&ats));
+    QCOMPARE(aggregateAlice.details<QContactTimestamp>().size(), 2);
+    QVERIFY(!m_cm->saveContact(&aggregateAlice));
+    QVERIFY(aggregateAlice.removeDetail(&ats));
+    QCOMPARE(aggregateAlice.details<QContactTimestamp>().size(), 1);
+    ats = aggregateAlice.detail<QContactTimestamp>();
+    ats.setLastModified(testDt);
+    QVERIFY(aggregateAlice.saveDetail(&ats));
+    QVERIFY(m_cm->saveContact(&aggregateAlice));
+    QCOMPARE(m_cm->contact(aggregateAlice.id().localId()).detail<QContactTimestamp>().lastModified(), testDt);
+    if (hasCreatedTs) {
+        QCOMPARE(m_cm->contact(aggregateAlice.id().localId()).detail<QContactTimestamp>().created(), testDt);
+    }
+
+    // test uniqueness constraint of guid detail.  Guid is a bit special, as it's not in the main table.
+    QVERIFY(aggregateAlice.details<QContactGuid>().size() == 0);
+    QContactGuid ag;
+    ag.setGuid("first-unique-guid");
+    QVERIFY(aggregateAlice.saveDetail(&ag));
+    QVERIFY(m_cm->saveContact(&aggregateAlice)); // this succeeds, because GUID is NOT stored in main table.
+    QContactGuid ag2;
+    ag2.setGuid("second-unique-guid");
+    QVERIFY(aggregateAlice.saveDetail(&ag2));
+    QCOMPARE(aggregateAlice.details<QContactGuid>().size(), 2);
+    QVERIFY(!m_cm->saveContact(&aggregateAlice)); // this fails, because now aggregateAlice has two.
+    QVERIFY(aggregateAlice.removeDetail(&ag2));
+    QCOMPARE(aggregateAlice.details<QContactGuid>().size(), 1);
+    ag2 = aggregateAlice.detail<QContactGuid>();
+    ag2.setGuid("second-unique-guid");
+    QVERIFY(aggregateAlice.saveDetail(&ag2));
+    QVERIFY(m_cm->saveContact(&aggregateAlice)); // this now updates the original guid.
+    QCOMPARE(aggregateAlice.detail<QContactGuid>().guid(), QLatin1String("second-unique-guid"));
+}
+
 void tst_Aggregation::removeSingleLocal()
 {
     QContactDetailFilter allSyncTargets;
@@ -970,13 +1308,6 @@ void tst_Aggregation::removeSingleLocal()
                 aggregateAlice = curr;
                 foundAggregateAlice = true;
             }
-        } else {
-            qWarning() << "Found unrelated contact:"
-                       << currSt.syncTarget()
-                       << currName.firstName()
-                       << currName.middleName()
-                       << currName.lastName()
-                       << currPhn.number();
         }
     }
 
@@ -1097,13 +1428,6 @@ void tst_Aggregation::removeSingleAggregate()
                 aggregateAlice = curr;
                 foundAggregateAlice = true;
             }
-        } else {
-            qWarning() << "Found unrelated contact:"
-                       << currSt.syncTarget()
-                       << currName.firstName()
-                       << currName.middleName()
-                       << currName.lastName()
-                       << currPhn.number();
         }
     }
 
