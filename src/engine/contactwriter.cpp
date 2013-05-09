@@ -1289,11 +1289,14 @@ QContactManager::Error ContactWriter::save(
 */
 static QContactManager::Error calculateDelta(ContactReader *reader, QContact *contact, const QStringList &definitionMask, QList<QContactDetail> *addDelta, QList<QContactDetail> *removeDelta)
 {
-    QMap<int, QContactManager::Error> errorMap;
+    QContactFetchHint fetchHint;
+    fetchHint.setDetailDefinitionsHint(definitionMask);
+
     QList<QContactLocalId> whichList;
     whichList.append(contact->id().localId());
+
     QList<QContact> readList;
-    QContactManager::Error readError = reader->readContacts(QLatin1String("UpdateAggregate"), &readList, whichList, definitionMask);
+    QContactManager::Error readError = reader->readContacts(QLatin1String("UpdateAggregate"), &readList, whichList, fetchHint);
     if (readError != QContactManager::NoError || readList.size() == 0) {
         // unable to read the aggregate contact from the database
         return readError == QContactManager::NoError ? QContactManager::UnspecifiedError : readError;
@@ -1576,7 +1579,7 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
         m_findLocalForAggregate.finish();
 
         QList<QContact> readList;
-        QContactManager::Error readError = m_reader->readContacts(QLatin1String("UpdateAggregate"), &readList, whichList, QStringList());
+        QContactManager::Error readError = m_reader->readContacts(QLatin1String("UpdateAggregate"), &readList, whichList, QContactFetchHint());
         if (readError != QContactManager::NoError || readList.size() == 0) {
             qWarning() << "Unable to read local contact for aggregate" << contact->displayLabel() << "during update";
             return readError == QContactManager::NoError ? QContactManager::UnspecifiedError : readError;
@@ -1945,12 +1948,15 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
     //    only update empty fields of details, or promote non-existent details.  Never delete or replace details.)
     // 4) otherwise, create new aggregate, consisting of all details of contact, return.
 
+    QContactFetchHint fetchHint;
+    fetchHint.setDetailDefinitionsHint(definitionMask);
+
     QList<QContact> allAggregates;
     QContactManager::Error err = m_reader->readContacts(QLatin1String("CreateAggregate"),
                                                         &allAggregates,
                                                         QContactFilter(),
                                                         QContactSortOrder(),
-                                                        definitionMask);
+                                                        fetchHint);
 
     if (err != QContactManager::NoError) {
         qWarning() << "Could not read aggregate contacts during creation aggregation";
@@ -2064,7 +2070,7 @@ void ContactWriter::regenerateAggregates(const QList<QContactLocalId> &aggregate
 
         QList<QContact> readList;
         QContactManager::Error readError = m_reader->readContacts(QLatin1String("RegenerateAggregate"),
-                                                                  &readList, readIds, QStringList());
+                                                                  &readList, readIds, QContactFetchHint());
         if (readError != QContactManager::NoError
                 || readList.size() <= 1
                 || readList.at(0).detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget) != QLatin1String("aggregate")) {

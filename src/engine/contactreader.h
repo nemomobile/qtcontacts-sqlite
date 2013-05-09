@@ -53,13 +53,13 @@ public:
             QList<QContact> *contacts,
             const QContactFilter &filter,
             const QList<QContactSortOrder> &order,
-            const QStringList &details);
+            const QContactFetchHint &fetchHint);
 
     QContactManager::Error readContacts(
             const QString &table,
             QList<QContact> *contacts,
             const QList<QContactLocalId> &contactIds,
-            const QStringList &details);
+            const QContactFetchHint &fetchHint);
 
     QContactManager::Error readContactIds(
             QList<QContactLocalId> *contactIds,
@@ -77,7 +77,7 @@ public:
 
 protected:
     QContactManager::Error queryContacts(
-            const QString &table, QList<QContact> *contacts, const QStringList &details);
+            const QString &table, QList<QContact> *contacts, const QContactFetchHint &fetchHint);
 
     virtual void contactsAvailable(const QList<QContact> &contacts);
     virtual void contactIdsAvailable(const QList<QContactLocalId> &contactIds);

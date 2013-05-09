@@ -31,6 +31,8 @@
 
 #include <QContactManager>
 #include <QContactFetchRequest>
+#include <QContactName>
+#include <QContactAddress>
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QtDebug>
@@ -46,20 +48,58 @@ int main(int argc, char  *argv[])
     QContactFetchRequest request;
     request.setManager(&manager);
 
-    QElapsedTimer timer;
-    timer.start();
-    request.start();
-    request.waitForFinished();
+    for (int i = 0; i < 3; ++i) {
+        QElapsedTimer timer;
+        timer.start();
+        request.start();
+        request.waitForFinished();
 
-    qint64 elapsed = timer.elapsed();
-    qDebug() << "Fetch completed in" << elapsed << "ms";
+        qint64 elapsed = timer.elapsed();
+        qDebug() << i << ": Fetch completed in" << elapsed << "ms";
+    }
 
-    timer.start();
-    request.start();
-    request.waitForFinished();
+    // Skip relationships
+    QContactFetchHint hint;
+    hint.setOptimizationHints(QContactFetchHint::NoRelationships);
+    request.setFetchHint(hint);
 
-    elapsed = timer.elapsed();
-    qDebug() << "second elapsed in" << elapsed << "ms";
+    for (int i = 0; i < 3; ++i) {
+        QElapsedTimer timer;
+        timer.start();
+        request.start();
+        request.waitForFinished();
+
+        qint64 elapsed = timer.elapsed();
+        qDebug() << i << ": No-relationships fetch completed in" << elapsed << "ms";
+    }
+
+    // Reduce data access
+    hint.setDetailDefinitionsHint(QStringList() << QContactName::DefinitionName << QContactAddress::DefinitionName);
+    request.setFetchHint(hint);
+
+    for (int i = 0; i < 3; ++i) {
+        QElapsedTimer timer;
+        timer.start();
+        request.start();
+        request.waitForFinished();
+
+        qint64 elapsed = timer.elapsed();
+        qDebug() << i << ": Reduced data fetch completed in" << elapsed << "ms";
+    }
+
+    // Reduce number of results
+    hint.setMaxCountHint(request.contacts().count() / 8);
+    request.setFetchHint(hint);
+
+    for (int i = 0; i < 3; ++i) {
+        QElapsedTimer timer;
+        timer.start();
+        request.start();
+        request.waitForFinished();
+
+        qint64 elapsed = timer.elapsed();
+        qDebug() << i << ": Max count fetch completed in" << elapsed << "ms";
+    }
 
     return 0;
 }

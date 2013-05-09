@@ -39,6 +39,11 @@
 #include "qcontactchangeset.h"
 
 QTM_USE_NAMESPACE
+
+Q_DECLARE_METATYPE(QList<QContactLocalId>)
+
+static bool registered = qRegisterMetaType<QList<QContactLocalId> >();
+
 // Eventually these will make it into qtestcase.h
 // but we might need to tweak the timeout values here.
 #ifndef QTRY_COMPARE
