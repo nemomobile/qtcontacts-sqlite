@@ -68,6 +68,8 @@
 
 #include <QtDebug>
 
+static const int ReportBatchSize = 50;
+
 enum FieldType {
     StringField = 0,
     StringListField,
@@ -1249,7 +1251,9 @@ QContactManager::Error ContactReader::queryContacts(
     }
 
     do {
-        for (int i = 0; i < 50 && query.next(); ++i) {
+        int contactCount = contacts->count();
+
+        for (int i = 0; i < ReportBatchSize && query.next(); ++i) {
             QContactLocalId contactId = query.value(0).toUInt();
             QContact contact;
 
@@ -1293,13 +1297,6 @@ QContactManager::Error ContactReader::queryContacts(
             if (!favorite.isEmpty())
                 contact.saveDetail(&favorite);
 
-            for (int j = 0; j < tables.count(); ++j) {
-                Table &table = tables[j];
-                if (table.query.isValid() && table.currentId == contactId) {
-                    table.read(contactId, &contact, &table.query, table.currentId);
-                }
-            }
-
             // XXX TODO: fetch hint - if "don't fetch relationships" is specified, skip this!
             QList<QContactRelationship> currContactRelationships;
             QList<QContactRelationship> ccfrels;
@@ -1311,6 +1308,20 @@ QContactManager::Error ContactReader::queryContacts(
 
             contacts->append(contact);
         }
+
+        for (int j = 0; j < tables.count(); ++j) {
+            Table &table = tables[j];
+            QList<QContact>::iterator it = contacts->begin() + contactCount;
+            for (QList<QContact>::iterator end = contacts->end(); it != end; ++it) {
+                QContact &contact(*it);
+                QContactLocalId contactId = contact.localId() - 1;
+
+                if (table.query.isValid() && (table.currentId == contactId)) {
+                    table.read(contactId, &contact, &table.query, table.currentId);
+                }
+            }
+        }
+
         contactsAvailable(*contacts);
     } while (query.isValid());
 
@@ -1366,7 +1377,7 @@ QContactManager::Error ContactReader::readContactIds(
     }
 
     do {
-        for (int i = 0; i < 50 && query.next(); ++i) {
+        for (int i = 0; i < ReportBatchSize && query.next(); ++i) {
             contactIds->append(query.value(0).toUInt() + 1);
         }
         contactIdsAvailable(*contactIds);
