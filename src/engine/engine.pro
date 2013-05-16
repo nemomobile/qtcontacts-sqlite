@@ -14,6 +14,7 @@ DEFINES += 'QTCONTACTS_SQLITE_DATABASE_DIR=\'\"/home/nemo/.local/share/data/qtco
 DEFINES += 'QTCONTACTS_SQLITE_DATABASE_NAME=\'\"contacts.db\"\''
 
 HEADERS += \
+        semaphore_p.h \
         contactsdatabase.h \
         contactsengine.h \
         contactnotifier.h \
@@ -21,6 +22,7 @@ HEADERS += \
         contactwriter.h
 
 SOURCES += \
+        semaphore_p.cpp \
         contactsdatabase.cpp \
         contactsengine.cpp \
         contactsplugin.cpp \
