@@ -135,6 +135,7 @@ private:
     QSqlQuery m_findRelatedForAggregate;
     QSqlQuery m_findLocalForAggregate;
     QSqlQuery m_findAggregateForContact;
+    QSqlQuery m_findMatchForContact;
     QSqlQuery m_selectAggregateContactIds;
     QSqlQuery m_orphanAggregateIds;
     QSqlQuery m_checkContactExists;

@@ -1241,7 +1241,7 @@ void tst_QContactManager::update()
     /* Save a new contact first */
     int contactCount = cm->contacts().size();
     QContactDetailDefinition nameDef = cm->detailDefinition(QContactName::DefinitionName, QContactType::TypeContact);
-    QContact alice = createContact(nameDef, "AliceUpdate", "inWonderlandUpdate", "1234567");
+    QContact alice = createContact(nameDef, "AliceUpdate", "inWonderlandUpdate", "2345678");
     QVERIFY(cm->saveContact(&alice));
     QVERIFY(cm->error() == QContactManager::NoError);
     contactCount += 1; // added a new contact.
