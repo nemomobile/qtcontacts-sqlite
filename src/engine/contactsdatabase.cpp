@@ -55,7 +55,9 @@ static const char *createContactsTable =
         "\n contactId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
         "\n displayLabel TEXT,"
         "\n firstName TEXT,"
+        "\n lowerFirstName TEXT,"
         "\n lastName TEXT,"
+        "\n lowerLastName TEXT,"
         "\n middleName TEXT,"
         "\n prefix TEXT,"
         "\n suffix TEXT,"
@@ -104,7 +106,8 @@ static const char *createEmailAddressesTable =
         "\n CREATE TABLE EmailAddresses ("
         "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
         "\n contactId INTEGER KEY,"
-        "\n emailAddress TEXT);";
+        "\n emailAddress TEXT,"
+        "\n lowerEmailAddress TEXT);";
 
 static const char *createGlobalPresencesTable =
         "\n CREATE TABLE GlobalPresences ("
@@ -131,7 +134,8 @@ static const char *createNicknamesTable =
         "\n CREATE TABLE Nicknames ("
         "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
         "\n contactId INTEGER KEY,"
-        "\n nickname TEXT);";
+        "\n nickname TEXT,"
+        "\n lowerNickname TEXT);";
 
 static const char *createNotesTable =
         "\n CREATE TABLE Notes ("
@@ -144,6 +148,7 @@ static const char *createOnlineAccountsTable =
         "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
         "\n contactId INTEGER KEY,"
         "\n accountUri TEXT,"
+        "\n lowerAccountUri TEXT,"
         "\n protocol TEXT,"
         "\n serviceProvider TEXT,"
         "\n capabilities TEXT,"
@@ -266,18 +271,111 @@ static const char *createRemoveTrigger =
 
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
 static const char *createLocalSelfContact =
-        "\n INSERT INTO Contacts (contactId, displayLabel, firstName, lastName, middleName, prefix, suffix, customLabel, syncTarget, created, modified, gender, isFavorite) VALUES (1, '', '', '', '', '', '', '', 'local', '', '', '', 0);";
+        "\n INSERT INTO Contacts ("
+        "\n contactId,"
+        "\n displayLabel,"
+        "\n firstName,"
+        "\n lowerFirstName,"
+        "\n lastName,"
+        "\n lowerLastName,"
+        "\n middleName,"
+        "\n prefix,"
+        "\n suffix,"
+        "\n customLabel,"
+        "\n syncTarget,"
+        "\n created,"
+        "\n modified,"
+        "\n gender,"
+        "\n isFavorite)"
+        "\n VALUES ("
+        "\n 1,"
+        "\n '',"
+        "\n '',"
+        "\n '',"
+        "\n '',"
+        "\n '',"
+        "\n '',"
+        "\n '',"
+        "\n '',"
+        "\n '',"
+        "\n 'local',"
+        "\n '',"
+        "\n '',"
+        "\n '',"
+        "\n 0);";
 static const char *createAggregateSelfContact =
-        "\n INSERT INTO Contacts (contactId, displayLabel, firstName, lastName, middleName, prefix, suffix, customLabel, syncTarget, created, modified, gender, isFavorite) VALUES (2, '', '', '', '', '', '', '', 'aggregate', '', '', '', 0);";
+        "\n INSERT INTO Contacts ("
+        "\n contactId,"
+        "\n displayLabel,"
+        "\n firstName,"
+        "\n lowerFirstName,"
+        "\n lastName,"
+        "\n lowerLastName,"
+        "\n middleName,"
+        "\n prefix,"
+        "\n suffix,"
+        "\n customLabel,"
+        "\n syncTarget,"
+        "\n created,"
+        "\n modified,"
+        "\n gender,"
+        "\n isFavorite)"
+        "\n VALUES ("
+        "\n 2,"
+        "\n '',"
+        "\n '',"
+        "\n '',"
+        "\n '',"
+        "\n '',"
+        "\n '',"
+        "\n '',"
+        "\n '',"
+        "\n '',"
+        "\n 'aggregate',"
+        "\n '',"
+        "\n '',"
+        "\n '',"
+        "\n 0);";
 static const char *createSelfContactRelationship =
         "\n INSERT INTO Relationships (firstId, secondId, type) VALUES (2, 1, 'Aggregates');";
 #else
 static const char *createLocalSelfContact =
-        "\n INSERT INTO Contacts (contactId, displayLabel, firstName, lastName, middleName, prefix, suffix, customLabel, syncTarget, created, modified, gender, isFavorite) VALUES (2, '', '', '', '', '', '', '', 'local', '', '', '', 0);";
+        "\n INSERT INTO Contacts ("
+        "\n contactId,"
+        "\n displayLabel,"
+        "\n firstName,"
+        "\n lowerFirstName,"
+        "\n lastName,"
+        "\n lowerLastName,"
+        "\n middleName,"
+        "\n prefix,"
+        "\n suffix,"
+        "\n customLabel,"
+        "\n syncTarget,"
+        "\n created,"
+        "\n modified,"
+        "\n gender,"
+        "\n isFavorite)"
+        "\n VALUES ("
+        "\n 2,"
+        "\n '',"
+        "\n '',"
+        "\n '',"
+        "\n '',"
+        "\n '',"
+        "\n '',"
+        "\n '',"
+        "\n '',"
+        "\n '',"
+        "\n 'local',"
+        "\n '',"
+        "\n '',"
+        "\n '',"
+        "\n 0);";
 #endif
 
 static const char *createContactsIndex =
-        "\n CREATE INDEX ContactsIndex ON Contacts(syncTarget, firstName, lastName);";
+        "\n CREATE INDEX ContactsIndex ON Contacts(syncTarget, lowerFirstName, lowerLastName);";
 
 static const char *createRelationshipsIndex =
         "\n CREATE INDEX RelationshipsIndex ON Relationships(firstId, secondId);";
@@ -286,10 +384,13 @@ static const char *createPhoneNumbersIndex =
         "\n CREATE INDEX PhoneNumbersIndex ON PhoneNumbers(normalizedNumber);";
 
 static const char *createEmailAddressesIndex =
-        "\n CREATE INDEX EmailAddressesIndex ON EmailAddresses(emailAddress);";
+        "\n CREATE INDEX EmailAddressesIndex ON EmailAddresses(lowerEmailAddress);";
 
 static const char *createOnlineAccountsIndex =
-        "\n CREATE INDEX OnlineAccountsIndex ON OnlineAccounts(accountUri);";
+        "\n CREATE INDEX OnlineAccountsIndex ON OnlineAccounts(lowerAccountUri);";
+
+static const char *createNicknamesIndex =
+        "\n CREATE INDEX NicknamesIndex ON Nicknames(lowerNickname);";
 
 static const char *createTables[] =
 {
@@ -327,7 +428,8 @@ static const char *createTables[] =
     createRelationshipsIndex,
     createPhoneNumbersIndex,
     createEmailAddressesIndex,
-    createOnlineAccountsIndex
+    createOnlineAccountsIndex,
+    createNicknamesIndex
 };
 
 template <typename T, int N> static int lengthOf(const T(&)[N]) { return N; }

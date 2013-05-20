@@ -59,17 +59,17 @@ static const char *findAggregateForContact =
 
 static const char *findMatchForContact =
         "\n SELECT Matches.contactId, sum(Matches.score) AS total FROM ("
-        "\n   SELECT contactId, 3 as score FROM EmailAddresses WHERE emailAddress != '' AND lower(emailAddress) IN ( :email )"
+        "\n   SELECT contactId, 3 as score FROM EmailAddresses WHERE lowerEmailAddress IN ( :email )"
         "\n   UNION"
-        "\n   SELECT contactId, 3 as score FROM PhoneNumbers WHERE normalizedNumber != '' AND normalizedNumber IN ( :number )"
+        "\n   SELECT contactId, 3 as score FROM PhoneNumbers WHERE normalizedNumber IN ( :number )"
         "\n   UNION"
-        "\n   SELECT contactId, 3 as score FROM OnlineAccounts WHERE accountUri != '' AND lower(accountUri) IN ( :uri )"
+        "\n   SELECT contactId, 3 as score FROM OnlineAccounts WHERE lowerAccountUri IN ( :uri )"
         "\n   UNION"
-        "\n   SELECT contactId, 2 as score FROM Contacts WHERE (firstName != '' AND lower(firstName) = :first) OR (lastName != '' AND lower(lastName) = :last)"
+        "\n   SELECT contactId, 2 as score FROM Contacts WHERE (lowerFirstName != '' AND lowerFirstName = :first) OR (lowerLastName != '' AND lowerLastName = :last)"
         "\n   UNION"
-        "\n   SELECT contactId, 1 as score FROM Contacts WHERE firstName != '' AND lower(firstName) LIKE :firstPartial"
+        "\n   SELECT contactId, 1 as score FROM Contacts WHERE lowerFirstName != '' AND lowerFirstName LIKE :firstPartial"
         "\n   UNION"
-        "\n   SELECT contactId, 1 as score FROM Nicknames WHERE nickname != '' AND lower(nickname) = :nick"
+        "\n   SELECT contactId, 1 as score FROM Nicknames WHERE lowerNickname != '' AND lowerNickname = :nick"
         "\n ) AS Matches"
         "\n JOIN Contacts ON Contacts.contactId = Matches.contactId"
         "\n WHERE Contacts.syncTarget = 'aggregate'"
@@ -102,7 +102,9 @@ static const char *insertContact =
         "\n INSERT INTO Contacts ("
         "\n  displayLabel,"
         "\n  firstName,"
+        "\n  lowerFirstName,"
         "\n  lastName,"
+        "\n  lowerLastName,"
         "\n  middleName,"
         "\n  prefix,"
         "\n  suffix,"
@@ -115,7 +117,9 @@ static const char *insertContact =
         "\n VALUES ("
         "\n  :displayLabel,"
         "\n  :firstName,"
+        "\n  :lowerFirstName,"
         "\n  :lastName,"
+        "\n  :lowerLastName,"
         "\n  :middleName,"
         "\n  :prefix,"
         "\n  :suffix,"
@@ -130,7 +134,9 @@ static const char *updateContact =
         "\n UPDATE Contacts SET"
         "\n  displayLabel = :displayLabel,"
         "\n  firstName = :firstName,"
+        "\n  lowerFirstName = :lowerFirstName,"
         "\n  lastName = :lastName,"
+        "\n  lowerLastName = :lowerLastName,"
         "\n  middleName = :middleName,"
         "\n  prefix = :prefix,"
         "\n  suffix = :suffix,"
@@ -217,10 +223,12 @@ static const char *insertBirthday =
 static const char *insertEmailAddress =
         "\n INSERT INTO EmailAddresses ("
         "\n  contactId,"
-        "\n  emailAddress)"
+        "\n  emailAddress,"
+        "\n  lowerEmailAddress)"
         "\n VALUES ("
         "\n  :contactId,"
-        "\n  :emailAddress)";
+        "\n  :emailAddress,"
+        "\n  :lowerEmailAddress)";
 
 static const char *insertGlobalPresence =
         "\n INSERT INTO GlobalPresences ("
@@ -255,10 +263,12 @@ static const char *insertHobby =
 static const char *insertNickname =
         "\n INSERT INTO Nicknames ("
         "\n  contactId,"
-        "\n  nickname)"
+        "\n  nickname,"
+        "\n  lowerNickname)"
         "\n VALUES ("
         "\n  :contactId,"
-        "\n  :nickname)";
+        "\n  :nickname,"
+        "\n  :lowerNickname)";
 
 static const char *insertNote =
         "\n INSERT INTO Notes ("
@@ -272,6 +282,7 @@ static const char *insertOnlineAccount =
         "\n INSERT INTO OnlineAccounts ("
         "\n  contactId,"
         "\n  accountUri,"
+        "\n  lowerAccountUri,"
         "\n  protocol,"
         "\n  serviceProvider,"
         "\n  capabilities,"
@@ -282,6 +293,7 @@ static const char *insertOnlineAccount =
         "\n VALUES ("
         "\n  :contactId,"
         "\n  :accountUri,"
+        "\n  :lowerAccountUri,"
         "\n  :protocol,"
         "\n  :serviceProvider,"
         "\n  :capabilities,"
@@ -2245,7 +2257,7 @@ QContactManager::Error ContactWriter::update(QContact *contact, const QStringLis
 #endif
 
     bindContactDetails(*contact, m_updateContact);
-    m_updateContact.bindValue(12, contactId);
+    m_updateContact.bindValue(14, contactId);
     if (!m_updateContact.exec()) {
         qWarning() << "Failed to update contact";
         qWarning() << m_updateContact.lastError();
@@ -2313,27 +2325,29 @@ void ContactWriter::bindContactDetails(const QContact &contact, QSqlQuery &query
 
     QContactName name = contact.detail<QContactName>();
     query.bindValue(1, name.variantValue(QContactName::FieldFirstName));
-    query.bindValue(2, name.variantValue(QContactName::FieldLastName));
-    query.bindValue(3, name.variantValue(QContactName::FieldMiddleName));
-    query.bindValue(4, name.variantValue(QContactName::FieldPrefix));
-    query.bindValue(5, name.variantValue(QContactName::FieldSuffix));
-    query.bindValue(6, name.variantValue(QContactName::FieldCustomLabel));
+    query.bindValue(2, name.value<QString>(QContactName::FieldFirstName).toLower());
+    query.bindValue(3, name.variantValue(QContactName::FieldLastName));
+    query.bindValue(4, name.value<QString>(QContactName::FieldLastName).toLower());
+    query.bindValue(5, name.variantValue(QContactName::FieldMiddleName));
+    query.bindValue(6, name.variantValue(QContactName::FieldPrefix));
+    query.bindValue(7, name.variantValue(QContactName::FieldSuffix));
+    query.bindValue(8, name.variantValue(QContactName::FieldCustomLabel));
 
     QContactSyncTarget starget = contact.detail<QContactSyncTarget>();
     QString stv = starget.syncTarget();
     if (stv.isEmpty())
         stv = QLatin1String("local"); // by default, it is a "local device" contact.
-    query.bindValue(7, stv);
+    query.bindValue(9, stv);
 
     QContactTimestamp timestamp = contact.detail<QContactTimestamp>();
-    query.bindValue(8, timestamp.variantValue(QContactTimestamp::FieldCreationTimestamp));
-    query.bindValue(9, timestamp.variantValue(QContactTimestamp::FieldModificationTimestamp));
+    query.bindValue(10, timestamp.variantValue(QContactTimestamp::FieldCreationTimestamp));
+    query.bindValue(11, timestamp.variantValue(QContactTimestamp::FieldModificationTimestamp));
 
     QContactGender gender = contact.detail<QContactGender>();
-    query.bindValue(10, gender.variantValue(QContactGender::FieldGender));
+    query.bindValue(12, gender.variantValue(QContactGender::FieldGender));
 
     QContactFavorite favorite = contact.detail<QContactFavorite>();
-    query.bindValue(11, favorite.isFavorite());
+    query.bindValue(13, favorite.isFavorite());
 }
 
 QSqlQuery &ContactWriter::bindDetail(QContactLocalId contactId, const QContactAddress &detail)
@@ -2384,6 +2398,7 @@ QSqlQuery &ContactWriter::bindDetail(QContactLocalId contactId, const QContactEm
     typedef QContactEmailAddress T;
     m_insertEmailAddress.bindValue(0, contactId);
     m_insertEmailAddress.bindValue(1, detail.variantValue(T::FieldEmailAddress));
+    m_insertEmailAddress.bindValue(2, detail.value<QString>(T::FieldEmailAddress).toLower());
     return m_insertEmailAddress;
 }
 
@@ -2408,6 +2423,7 @@ QSqlQuery &ContactWriter::bindDetail(QContactLocalId contactId, const QContactNi
     typedef QContactNickname T;
     m_insertNickname.bindValue(0, contactId);
     m_insertNickname.bindValue(1, detail.variantValue(T::FieldNickname));
+    m_insertNickname.bindValue(2, detail.value<QString>(T::FieldNickname).toLower());
     return m_insertNickname;
 }
 
@@ -2424,13 +2440,14 @@ QSqlQuery &ContactWriter::bindDetail(QContactLocalId contactId, const QContactOn
     typedef QContactOnlineAccount T;
     m_insertOnlineAccount.bindValue(0, contactId);
     m_insertOnlineAccount.bindValue(1, detail.variantValue(T::FieldAccountUri));
-    m_insertOnlineAccount.bindValue(2, detail.variantValue(T::FieldProtocol));
-    m_insertOnlineAccount.bindValue(3, detail.variantValue(T::FieldServiceProvider));
-    m_insertOnlineAccount.bindValue(4, detail.variantValue(T::FieldCapabilities));
-    m_insertOnlineAccount.bindValue(5, detail.subTypes().join(QLatin1String(";")));
-    m_insertOnlineAccount.bindValue(6, detail.variantValue("AccountPath"));
-    m_insertOnlineAccount.bindValue(7, detail.variantValue("AccountIconPath"));
-    m_insertOnlineAccount.bindValue(8, detail.variantValue("Enabled"));
+    m_insertOnlineAccount.bindValue(2, detail.value<QString>(T::FieldAccountUri).toLower());
+    m_insertOnlineAccount.bindValue(3, detail.variantValue(T::FieldProtocol));
+    m_insertOnlineAccount.bindValue(4, detail.variantValue(T::FieldServiceProvider));
+    m_insertOnlineAccount.bindValue(5, detail.variantValue(T::FieldCapabilities));
+    m_insertOnlineAccount.bindValue(6, detail.subTypes().join(QLatin1String(";")));
+    m_insertOnlineAccount.bindValue(7, detail.variantValue("AccountPath"));
+    m_insertOnlineAccount.bindValue(8, detail.variantValue("AccountIconPath"));
+    m_insertOnlineAccount.bindValue(9, detail.variantValue("Enabled"));
     return m_insertOnlineAccount;
 }
 

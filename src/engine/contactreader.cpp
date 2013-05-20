@@ -220,6 +220,7 @@ static void setValues(QContactEmailAddress *detail, QSqlQuery *query, const int 
     typedef QContactEmailAddress T;
 
     setValue(detail, T::FieldEmailAddress, query->value(offset + 0));
+    // ignore lowerEmailAddress
 }
 
 static const FieldInfo guidFields[] =
@@ -256,6 +257,7 @@ static void setValues(QContactNickname *detail, QSqlQuery *query, const int offs
     typedef QContactNickname T;
 
     setValue(detail, T::FieldNickname, query->value(offset + 0));
+    // ignore lowerNickname
 }
 
 static const FieldInfo noteFields[] =
@@ -287,13 +289,14 @@ static void setValues(QContactOnlineAccount *detail, QSqlQuery *query, const int
     typedef QContactOnlineAccount T;
 
     setValue(detail, T::FieldAccountUri     , query->value(offset + 0));
-    setValue(detail, T::FieldProtocol       , query->value(offset + 1));
-    setValue(detail, T::FieldServiceProvider, query->value(offset + 2));
-    setValue(detail, T::FieldCapabilities   , query->value(offset + 3).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
-    setValue(detail, T::FieldSubTypes       , query->value(offset + 4).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
-    setValue(detail, "AccountPath"          , query->value(offset + 5));
-    setValue(detail, "AccountIconPath"      , query->value(offset + 6));
-    setValue(detail, "Enabled"              , query->value(offset + 7));
+    // ignore lowerAccountUri
+    setValue(detail, T::FieldProtocol       , query->value(offset + 2));
+    setValue(detail, T::FieldServiceProvider, query->value(offset + 3));
+    setValue(detail, T::FieldCapabilities   , query->value(offset + 4).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
+    setValue(detail, T::FieldSubTypes       , query->value(offset + 5).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
+    setValue(detail, "AccountPath"          , query->value(offset + 6));
+    setValue(detail, "AccountIconPath"      , query->value(offset + 7));
+    setValue(detail, "Enabled"              , query->value(offset + 8));
 }
 
 static const FieldInfo organizationFields[] =
@@ -534,6 +537,28 @@ static const DetailInfo detailInfo[] =
     DEFINE_DETAIL(QContactGlobalPresence, GlobalPresences, presenceFields     , true)
 };
 
+static QString fieldName(const char *table, const char *field)
+{
+    return QString::fromLatin1(table ? table : "Contacts").append(QChar('.')).append(QString::fromLatin1(field));
+}
+
+static QHash<QString, QString> getCaseInsensitiveColumnNames()
+{
+    QHash<QString, QString> names;
+    names.insert(fieldName("Contacts", "firstName"), QString::fromLatin1("lowerFirstName"));
+    names.insert(fieldName("Contacts", "lastName"), QString::fromLatin1("lowerLastName"));
+    names.insert(fieldName("EmailAddresses", "emailAddress"), QString::fromLatin1("lowerEmailAddress"));
+    names.insert(fieldName("OnlineAccounts", "accountUri"), QString::fromLatin1("lowerAccountUri"));
+    names.insert(fieldName("Nicknames", "nickname"), QString::fromLatin1("lowerNickname"));
+    return names;
+}
+
+static QString caseInsensitiveColumnName(const char *table, const char *column)
+{
+    static QHash<QString, QString> columnNames(getCaseInsensitiveColumnNames());
+    return columnNames.value(fieldName(table, column));
+}
+
 static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bindings, bool *failed)
 {
     if (filter.matchFlags() & QContactFilter::MatchKeypadCollation) {
@@ -568,9 +593,18 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
             bool useNormalizedNumber = false;
             int globValue = filter.matchFlags() & 7;
 
-            QString comparison = (stringField && !caseSensitive) ? QLatin1String("lower(%1)") : QLatin1String("%1");
+            QString comparison = QLatin1String("%1");
             QString bindValue;
             QString column;
+
+            if (stringField && !caseSensitive) {
+                column = caseInsensitiveColumnName(detail.table, field.column);
+                if (!column.isEmpty()) {
+                    // We don't need to use lower() on the values in this column
+                } else {
+                    comparison = QLatin1String("lower(%1)");
+                }
+            }
 
             if (phoneNumberMatch) {
                 // If the phone number match is on the number field of a phoneNumber detail, then
@@ -587,7 +621,7 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
                     if (!caseSensitive) {
                         bindValue = bindValue.toLower();
                     }
-                    column = QString::fromLatin1("NormalizedNumber");
+                    column = QString::fromLatin1("normalizedNumber");
                 } else {
                     // remove any non-digit characters from the column value when we do our comparison: +,-, ,#,(,) are removed.
                     comparison = QLatin1String("replace(replace(replace(replace(replace(replace(%1, '+', ''), '-', ''), '#', ''), '(', ''), ')', ''), ' ', '')");
@@ -689,7 +723,15 @@ static QString buildWhere(const QContactDetailRangeFilter &filter, QVariantList 
                 
             }
 
-            QString comparisonArg = (stringField && !caseSensitive) ? QString(QLatin1String("lower(%1)")).arg(field.column) : field.column;
+            QString comparisonArg = field.column;
+            if (stringField && !caseSensitive) {
+                comparisonArg = caseInsensitiveColumnName(detail.table, field.column);
+                if (!comparisonArg.isEmpty()) {
+                    // We don't need to use lower() on the values in this column
+                } else {
+                    comparisonArg = QString::fromLatin1("lower(%1)").arg(field.column);
+                }
+            }
             return detail.where().arg(comparison.arg(comparisonArg));
         }
     }
@@ -1339,32 +1381,34 @@ QContactManager::Error ContactReader::queryContacts(
 
             QContactName name;
             setValue(&name, QContactName::FieldFirstName  , query.value(2));
-            setValue(&name, QContactName::FieldLastName   , query.value(3));
-            setValue(&name, QContactName::FieldMiddleName , query.value(4));
-            setValue(&name, QContactName::FieldPrefix     , query.value(5));
-            setValue(&name, QContactName::FieldSuffix     , query.value(6));
-            setValue(&name, QContactName::FieldCustomLabel, query.value(7));
+            // ignore lowerFirstName
+            setValue(&name, QContactName::FieldLastName   , query.value(4));
+            // ignore lowerLastName
+            setValue(&name, QContactName::FieldMiddleName , query.value(6));
+            setValue(&name, QContactName::FieldPrefix     , query.value(7));
+            setValue(&name, QContactName::FieldSuffix     , query.value(8));
+            setValue(&name, QContactName::FieldCustomLabel, query.value(9));
             if (!name.isEmpty())
                 contact.saveDetail(&name);
 
             QContactSyncTarget starget;
-            setValue(&starget, QContactSyncTarget::FieldSyncTarget, query.value(8));
+            setValue(&starget, QContactSyncTarget::FieldSyncTarget, query.value(10));
             if (!starget.isEmpty())
                 contact.saveDetail(&starget);
 
             QContactTimestamp timestamp;
-            setValue(&timestamp, QContactTimestamp::FieldCreationTimestamp    , query.value(9));
-            setValue(&timestamp, QContactTimestamp::FieldModificationTimestamp, query.value(10));
+            setValue(&timestamp, QContactTimestamp::FieldCreationTimestamp    , query.value(11));
+            setValue(&timestamp, QContactTimestamp::FieldModificationTimestamp, query.value(12));
             if (!timestamp.isEmpty())
                 contact.saveDetail(&timestamp);
 
             QContactGender gender;
-            setValue(&gender, QContactGender::FieldGender, query.value(11));
+            setValue(&gender, QContactGender::FieldGender, query.value(13));
             if (!gender.isEmpty())
                 contact.saveDetail(&gender);
 
             QContactFavorite favorite;
-            setValue(&favorite, QContactFavorite::FieldFavorite, query.value(12));
+            setValue(&favorite, QContactFavorite::FieldFavorite, query.value(14));
             if (!favorite.isEmpty())
                 contact.saveDetail(&favorite);
 
