@@ -276,6 +276,21 @@ static const char *createLocalSelfContact =
         "\n INSERT INTO Contacts (contactId, displayLabel, firstName, lastName, middleName, prefix, suffix, customLabel, syncTarget, created, modified, gender, isFavorite) VALUES (2, '', '', '', '', '', '', '', 'local', '', '', '', 0);";
 #endif
 
+static const char *createContactsIndex =
+        "\n CREATE INDEX ContactsIndex ON Contacts(syncTarget, firstName, lastName);";
+
+static const char *createRelationshipsIndex =
+        "\n CREATE INDEX RelationshipsIndex ON Relationships(firstId, secondId);";
+
+static const char *createPhoneNumbersIndex =
+        "\n CREATE INDEX PhoneNumbersIndex ON PhoneNumbers(normalizedNumber);";
+
+static const char *createEmailAddressesIndex =
+        "\n CREATE INDEX EmailAddressesIndex ON EmailAddresses(emailAddress);";
+
+static const char *createOnlineAccountsIndex =
+        "\n CREATE INDEX OnlineAccountsIndex ON OnlineAccounts(accountUri);";
+
 static const char *createTables[] =
 {
     createContactsTable,
@@ -303,11 +318,16 @@ static const char *createTables[] =
     createIdentitiesTable,
     createRelationshipsTable,
     createRemoveTrigger,
-    createLocalSelfContact
+    createLocalSelfContact,
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
-    , createAggregateSelfContact
-    , createSelfContactRelationship
+    createAggregateSelfContact,
+    createSelfContactRelationship,
 #endif
+    createContactsIndex,
+    createRelationshipsIndex,
+    createPhoneNumbersIndex,
+    createEmailAddressesIndex,
+    createOnlineAccountsIndex
 };
 
 template <typename T, int N> static int lengthOf(const T(&)[N]) { return N; }
