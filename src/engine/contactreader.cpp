@@ -589,15 +589,20 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
 
             bool stringField = field.fieldType == StringField;
             bool phoneNumberMatch = filter.matchFlags() & QContactFilter::MatchPhoneNumber;
-            bool caseSensitive = filter.matchFlags() & QContactFilter::MatchCaseSensitive;
             bool useNormalizedNumber = false;
             int globValue = filter.matchFlags() & 7;
+
+            // We need to perform case-insensitive matching if MatchFixedString is specified (unless
+            // CaseSensitive is also specified)
+            bool caseInsensitive = stringField &&
+                                   filter.matchFlags() & QContactFilter::MatchFixedString &&
+                                   (filter.matchFlags() & QContactFilter::MatchCaseSensitive) == 0;
 
             QString comparison = QLatin1String("%1");
             QString bindValue;
             QString column;
 
-            if (stringField && !caseSensitive) {
+            if (caseInsensitive) {
                 column = caseInsensitiveColumnName(detail.table, field.column);
                 if (!column.isEmpty()) {
                     // We don't need to use lower() on the values in this column
@@ -618,14 +623,14 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
                 if (useNormalizedNumber) {
                     // Normalize the input for comparison
                     bindValue = ContactsEngine::normalizedPhoneNumber(filter.value().toString());
-                    if (!caseSensitive) {
+                    if (caseInsensitive) {
                         bindValue = bindValue.toLower();
                     }
                     column = QString::fromLatin1("normalizedNumber");
                 } else {
                     // remove any non-digit characters from the column value when we do our comparison: +,-, ,#,(,) are removed.
                     comparison = QLatin1String("replace(replace(replace(replace(replace(replace(%1, '+', ''), '-', ''), '#', ''), '(', ''), ')', ''), ' ', '')");
-                    QString tempValue = caseSensitive ? filter.value().toString() : filter.value().toString().toLower();
+                    QString tempValue = caseInsensitive ? filter.value().toString().toLower() : filter.value().toString();
                     for (int i = 0; i < tempValue.size(); ++i) {
                         QChar current = tempValue.at(i).toLower();
                         if (current.isDigit()) {
@@ -634,7 +639,7 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
                     }
                 }
             } else {
-                bindValue = caseSensitive ? filter.value().toString() : filter.value().toString().toLower();
+                bindValue = caseInsensitive ? filter.value().toString().toLower() : filter.value().toString();
             }
 
             if (stringField && (globValue == QContactFilter::MatchStartsWith)) {
@@ -655,7 +660,7 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
                     comparison += QLatin1String(" GLOB ?");
                     bindings->append(bindValue);
                 } else {
-                    comparison += (stringField && !caseSensitive) ? QLatin1String(" = lower(?)") : QLatin1String(" = ?");
+                    comparison += caseInsensitive ? QLatin1String(" = lower(?)") : QLatin1String(" = ?");
                     bindings->append(bindValue);
                 }
             }
@@ -691,11 +696,14 @@ static QString buildWhere(const QContactDetailRangeFilter &filter, QVariantList 
 
             QString comparison;
             bool stringField = field.fieldType == StringField;
-            bool caseSensitive = filter.matchFlags() & QContactFilter::MatchCaseSensitive;
+            bool caseInsensitive = stringField &&
+                                   filter.matchFlags() & QContactFilter::MatchFixedString &&
+                                   (filter.matchFlags() & QContactFilter::MatchCaseSensitive) == 0;
+
             bool needsAnd = false;
             if (filter.minValue().isValid()) {
                 bindings->append(filter.minValue());
-                if (stringField && !caseSensitive) {
+                if (caseInsensitive) {
                     comparison = (filter.rangeFlags() & QContactDetailRangeFilter::ExcludeLower)
                             ? QString(QLatin1String("%1 > lower(?)"))
                             : QString(QLatin1String("%1 >= lower(?)"));
@@ -711,7 +719,7 @@ static QString buildWhere(const QContactDetailRangeFilter &filter, QVariantList 
                 if (needsAnd)
                     comparison += QLatin1String(" AND ");
                 bindings->append(filter.maxValue());
-                if (stringField && !caseSensitive) {
+                if (caseInsensitive) {
                     comparison += (filter.rangeFlags() & QContactDetailRangeFilter::IncludeUpper)
                             ? QString(QLatin1String("%1 <= lower(?)"))
                             : QString(QLatin1String("%1 < lower(?)"));
@@ -724,7 +732,7 @@ static QString buildWhere(const QContactDetailRangeFilter &filter, QVariantList 
             }
 
             QString comparisonArg = field.column;
-            if (stringField && !caseSensitive) {
+            if (caseInsensitive) {
                 comparisonArg = caseInsensitiveColumnName(detail.table, field.column);
                 if (!comparisonArg.isEmpty()) {
                     // We don't need to use lower() on the values in this column

@@ -4580,12 +4580,12 @@ void tst_QContactManager::searchSensitivity()
 
     QContactDetailFilter sensitiveMatch;
     sensitiveMatch.setDetailDefinitionName(QContactName::DefinitionName, QContactName::FieldFirstName);
-    sensitiveMatch.setMatchFlags(QContactFilter::MatchCaseSensitive);
+    sensitiveMatch.setMatchFlags(QContactFilter::MatchFixedString | QContactFilter::MatchCaseSensitive);
     sensitiveMatch.setValue("Ada");
 
     QContactDetailFilter sensitiveMismatch;
     sensitiveMismatch.setDetailDefinitionName(QContactName::DefinitionName, QContactName::FieldFirstName);
-    sensitiveMismatch.setMatchFlags(QContactFilter::MatchCaseSensitive);
+    sensitiveMismatch.setMatchFlags(QContactFilter::MatchFixedString | QContactFilter::MatchCaseSensitive);
     sensitiveMismatch.setValue("adA");
 
     int originalCount[6];
@@ -4606,8 +4606,7 @@ void tst_QContactManager::searchSensitivity()
     QCOMPARE(m.contactIds().count(), currCount+1);
 
     QCOMPARE(m.contactIds(exactMatch).count(), originalCount[0] + 1);
-    // This suggests we're wrongly ignoring case-sensitivity here:
-    //QCOMPARE(m.contactIds(exactMismatch).count(), originalCount[1]);
+    QCOMPARE(m.contactIds(exactMismatch).count(), originalCount[1]);
     QCOMPARE(m.contactIds(insensitiveMatch).count(), originalCount[2] + 1);
     QCOMPARE(m.contactIds(insensitiveMismatch).count(), originalCount[3] + 1);
     QCOMPARE(m.contactIds(sensitiveMatch).count(), originalCount[4] + 1);
