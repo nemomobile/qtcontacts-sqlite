@@ -219,6 +219,7 @@ private slots:
     void lateDeletion();
     void compareVariant();
     void constituentOfSelf();
+    void searchSensitivity();
 
 #if defined(USE_VERSIT_PLZ)
     void partialSave();
@@ -1241,7 +1242,7 @@ void tst_QContactManager::update()
     /* Save a new contact first */
     int contactCount = cm->contacts().size();
     QContactDetailDefinition nameDef = cm->detailDefinition(QContactName::DefinitionName, QContactType::TypeContact);
-    QContact alice = createContact(nameDef, "AliceUpdate", "inWonderlandUpdate", "1234567");
+    QContact alice = createContact(nameDef, "AliceUpdate", "inWonderlandUpdate", "2345678");
     QVERIFY(cm->saveContact(&alice));
     QVERIFY(cm->error() == QContactManager::NoError);
     contactCount += 1; // added a new contact.
@@ -4553,6 +4554,64 @@ void tst_QContactManager::constituentOfSelf()
     QCOMPARE(self.detail<QContactGlobalPresence>().presenceState(), presence.presenceState());
 }
 
+void tst_QContactManager::searchSensitivity()
+{
+    QContactManager m;
+
+    QContactDetailFilter exactMatch;
+    exactMatch.setDetailDefinitionName(QContactName::DefinitionName, QContactName::FieldFirstName);
+    exactMatch.setMatchFlags(QContactFilter::MatchExactly);
+    exactMatch.setValue("Ada");
+
+    QContactDetailFilter exactMismatch;
+    exactMismatch.setDetailDefinitionName(QContactName::DefinitionName, QContactName::FieldFirstName);
+    exactMismatch.setMatchFlags(QContactFilter::MatchExactly);
+    exactMismatch.setValue("adA");
+
+    QContactDetailFilter insensitiveMatch;
+    insensitiveMatch.setDetailDefinitionName(QContactName::DefinitionName, QContactName::FieldFirstName);
+    insensitiveMatch.setMatchFlags(QContactFilter::MatchFixedString);
+    insensitiveMatch.setValue("Ada");
+
+    QContactDetailFilter insensitiveMismatch;
+    insensitiveMismatch.setDetailDefinitionName(QContactName::DefinitionName, QContactName::FieldFirstName);
+    insensitiveMismatch.setMatchFlags(QContactFilter::MatchFixedString);
+    insensitiveMismatch.setValue("adA");
+
+    QContactDetailFilter sensitiveMatch;
+    sensitiveMatch.setDetailDefinitionName(QContactName::DefinitionName, QContactName::FieldFirstName);
+    sensitiveMatch.setMatchFlags(QContactFilter::MatchFixedString | QContactFilter::MatchCaseSensitive);
+    sensitiveMatch.setValue("Ada");
+
+    QContactDetailFilter sensitiveMismatch;
+    sensitiveMismatch.setDetailDefinitionName(QContactName::DefinitionName, QContactName::FieldFirstName);
+    sensitiveMismatch.setMatchFlags(QContactFilter::MatchFixedString | QContactFilter::MatchCaseSensitive);
+    sensitiveMismatch.setValue("adA");
+
+    int originalCount[6];
+    originalCount[0] = m.contactIds(exactMatch).count();
+    originalCount[1] = m.contactIds(exactMismatch).count();
+    originalCount[2] = m.contactIds(insensitiveMatch).count();
+    originalCount[3] = m.contactIds(insensitiveMismatch).count();
+    originalCount[4] = m.contactIds(sensitiveMatch).count();
+    originalCount[5] = m.contactIds(sensitiveMismatch).count();
+
+    QContactDetailDefinition nameDef = m.detailDefinition(QContactName::DefinitionName, QContactType::TypeContact);
+    QContact ada = createContact(nameDef, "Ada", "Lovelace", "9876543");
+    int currCount = m.contactIds().count();
+    QVERIFY(m.saveContact(&ada));
+    QVERIFY(m.error() == QContactManager::NoError);
+    QVERIFY(!ada.id().managerUri().isEmpty());
+    QVERIFY(ada.id().localId() != 0);
+    QCOMPARE(m.contactIds().count(), currCount+1);
+
+    QCOMPARE(m.contactIds(exactMatch).count(), originalCount[0] + 1);
+    QCOMPARE(m.contactIds(exactMismatch).count(), originalCount[1]);
+    QCOMPARE(m.contactIds(insensitiveMatch).count(), originalCount[2] + 1);
+    QCOMPARE(m.contactIds(insensitiveMismatch).count(), originalCount[3] + 1);
+    QCOMPARE(m.contactIds(sensitiveMatch).count(), originalCount[4] + 1);
+    QCOMPARE(m.contactIds(sensitiveMismatch).count(), originalCount[5]);
+}
 
 QTEST_MAIN(tst_QContactManager)
 #include "tst_qcontactmanager.moc"

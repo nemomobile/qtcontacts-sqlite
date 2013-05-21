@@ -58,6 +58,28 @@ static const char *findLocalForAggregate =
 static const char *findAggregateForContact =
         "\n SELECT DISTINCT firstId FROM Relationships WHERE type = 'Aggregates' AND secondId = :localId";
 
+static const char *findMatchForContact =
+        "\n SELECT Matches.contactId, sum(Matches.score) AS total FROM ("
+        "\n   SELECT contactId, 3 as score FROM EmailAddresses WHERE lowerEmailAddress IN ( :email )"
+        "\n   UNION"
+        "\n   SELECT contactId, 3 as score FROM PhoneNumbers WHERE normalizedNumber IN ( :number )"
+        "\n   UNION"
+        "\n   SELECT contactId, 3 as score FROM OnlineAccounts WHERE lowerAccountUri IN ( :uri )"
+        "\n   UNION"
+        "\n   SELECT contactId, 3 as score FROM Contacts WHERE lowerFirstName != '' AND lowerFirstName = :first AND (lowerLastName == '' OR lowerLastName = :last)"
+        "\n   UNION"
+        "\n   SELECT contactId, 2 as score FROM Contacts WHERE lowerFirstName != '' AND lowerFirstName LIKE :firstPartial AND (lowerLastName == '' OR lowerLastName = :last)"
+        "\n   UNION"
+        "\n   SELECT contactId, 2 as score FROM Contacts WHERE lowerFirstName = '' AND lowerLastName != '' AND lowerLastName = :last"
+        "\n   UNION"
+        "\n   SELECT contactId, 1 as score FROM Nicknames WHERE lowerNickname != '' AND lowerNickname = :nick"
+        "\n ) AS Matches"
+        "\n JOIN Contacts ON Contacts.contactId = Matches.contactId"
+        "\n WHERE Contacts.syncTarget = 'aggregate'"
+        "\n GROUP BY Matches.contactId"
+        "\n ORDER BY total DESC"
+        "\n LIMIT 1";
+
 static const char *selectAggregateContactIds =
         "\n SELECT contactId FROM Contacts WHERE syncTarget = 'aggregate' AND contactId = :possibleAggregateId";
 
@@ -78,7 +100,9 @@ static const char *insertContact =
         "\n INSERT INTO Contacts ("
         "\n  displayLabel,"
         "\n  firstName,"
+        "\n  lowerFirstName,"
         "\n  lastName,"
+        "\n  lowerLastName,"
         "\n  middleName,"
         "\n  prefix,"
         "\n  suffix,"
@@ -91,7 +115,9 @@ static const char *insertContact =
         "\n VALUES ("
         "\n  :displayLabel,"
         "\n  :firstName,"
+        "\n  :lowerFirstName,"
         "\n  :lastName,"
+        "\n  :lowerLastName,"
         "\n  :middleName,"
         "\n  :prefix,"
         "\n  :suffix,"
@@ -106,7 +132,9 @@ static const char *updateContact =
         "\n UPDATE Contacts SET"
         "\n  displayLabel = :displayLabel,"
         "\n  firstName = :firstName,"
+        "\n  lowerFirstName = :lowerFirstName,"
         "\n  lastName = :lastName,"
+        "\n  lowerLastName = :lowerLastName,"
         "\n  middleName = :middleName,"
         "\n  prefix = :prefix,"
         "\n  suffix = :suffix,"
@@ -193,10 +221,12 @@ static const char *insertBirthday =
 static const char *insertEmailAddress =
         "\n INSERT INTO EmailAddresses ("
         "\n  contactId,"
-        "\n  emailAddress)"
+        "\n  emailAddress,"
+        "\n  lowerEmailAddress)"
         "\n VALUES ("
         "\n  :contactId,"
-        "\n  :emailAddress)";
+        "\n  :emailAddress,"
+        "\n  :lowerEmailAddress)";
 
 static const char *insertGlobalPresence =
         "\n INSERT INTO GlobalPresences ("
@@ -231,10 +261,12 @@ static const char *insertHobby =
 static const char *insertNickname =
         "\n INSERT INTO Nicknames ("
         "\n  contactId,"
-        "\n  nickname)"
+        "\n  nickname,"
+        "\n  lowerNickname)"
         "\n VALUES ("
         "\n  :contactId,"
-        "\n  :nickname)";
+        "\n  :nickname,"
+        "\n  :lowerNickname)";
 
 static const char *insertNote =
         "\n INSERT INTO Notes ("
@@ -248,6 +280,7 @@ static const char *insertOnlineAccount =
         "\n INSERT INTO OnlineAccounts ("
         "\n  contactId,"
         "\n  accountUri,"
+        "\n  lowerAccountUri,"
         "\n  protocol,"
         "\n  serviceProvider,"
         "\n  capabilities,"
@@ -258,6 +291,7 @@ static const char *insertOnlineAccount =
         "\n VALUES ("
         "\n  :contactId,"
         "\n  :accountUri,"
+        "\n  :lowerAccountUri,"
         "\n  :protocol,"
         "\n  :serviceProvider,"
         "\n  :capabilities,"
@@ -431,6 +465,7 @@ ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &d
     , m_findRelatedForAggregate(prepare(findRelatedForAggregate, database))
     , m_findLocalForAggregate(prepare(findLocalForAggregate, database))
     , m_findAggregateForContact(prepare(findAggregateForContact, database))
+    , m_findMatchForContact(prepare(findMatchForContact, database))
     , m_selectAggregateContactIds(prepare(selectAggregateContactIds, database))
     , m_orphanAggregateIds(prepare(orphanAggregateIds, database))
     , m_checkContactExists(prepare(checkContactExists, database))
@@ -1902,175 +1937,97 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
 }
 
 /*
-    Basic match/null/conflict detail detection
-*/
-#define CLAMP_MATCH_LIKELIHOOD(value) (value > 10) ? 10 : (value < 0) ? 0 : value
-template<typename T>
-int detailMatch(const QContact &first, const QContact &second)
-{
-    QList<T> fdets = first.details<T>();
-    QList<T> sdets = second.details<T>();
-
-    if (fdets.size() == 0 || sdets.size() == 0)
-        return 0; // no matches, but no conflicts.
-
-    foreach (const T &ft, fdets) {
-        foreach (const T &st, sdets) {
-            if (detailsEquivalent(ft, st)) {
-                return 1; // match!
-            }
-        }
-    }
-
-    return -1; // conflict!
-}
-
-/*
-    Returns a value from 0 to 10 inclusive which defines the likelihood that
-    the \a first contact refers to the same real-life entity as the \a second
-    contact.  This function will return 10 if the contacts are definitely the
-    same, and 0 if they are definitely different.
-
-    The criteria is as follows:
-
-    10) The first and last name match exactly AND either the phone number
-        matches OR the email address matches.
-    9)  The last name matches exactly and the first name matches by fragment
-        AND either the phone number matches OR the email address matches.
-    8)  The last name matches exactly and the first name matches by fragment,
-        AND the phone number doesn't match BUT no email address exists AND
-        at least one online account address matches
-    7)  The last name matches exactly and the first name matches by fragment,
-        AND the phone number doesn't match BUT no email address exists AND
-        no contradictory online account addresses exist (eg, different MSN
-        addresses).
-    7)  The last name of one is empty, and the first name matches exactly,
-        AND the phone number matches OR the email address matches.
-    6)  ...
-
-    Note: this function will always return 0 if there exists an "IsNot"
-    relationship between the two (which must be manually added if the user
-    manually unlinks the contacts).
-*/
-static int matchLikelihood(const QContact &contact, const QContact &aggregator)
-{
-    int retn = 10;
-
-    QList<QContactRelationship> srels = aggregator.relationships(QLatin1String("IsNot")); // special "Unlink" relationship
-    foreach (const QContactRelationship &r, srels) {
-        if (r.first() == contact.id() || r.second() == contact.id()) {
-            return 0; // have a manually added "IsNot" relationship between them.
-        }
-    }
-
-
-    // XXX TODO: Should also load each of the contacts Aggregated by the aggregator.
-    // If any of them have the same sync target as this contact, then we should also
-    // return zero.
-
-
-    // do heuristic matching
-    QContactName fName = contact.detail<QContactName>();
-    QContactName sName = aggregator.detail<QContactName>();
-    if (!fName.lastName().isEmpty() && !sName.lastName().isEmpty()
-            && fName.lastName().toLower() == sName.lastName().toLower()) {
-        // last name matches.  no reduction in match likelihood.
-    } else if (fName.lastName().isEmpty() || sName.lastName().isEmpty()) {
-        retn -= 2; // at least one of them has no last name.  Decrease likelihood, but still possible match
-    } else {
-        retn -= 6; // last names don't match.  Drastically decrease likelihood.
-    }
-
-    if (!fName.firstName().isEmpty() && !sName.firstName().isEmpty()
-            && fName.firstName().toLower() == sName.firstName().toLower()) {
-        // first name matches.  no reduction in match likelihood.
-    } else if (!fName.firstName().isEmpty() && !sName.firstName().isEmpty()
-            && (fName.firstName().toLower().startsWith(sName.firstName().toLower())
-            || sName.firstName().toLower().startsWith(fName.firstName().toLower()))) {
-        retn -= 1; // first name has start-fragment match
-    } else {
-        retn -= 3; // first name doesn't match.
-    }
-
-    int phMatch = detailMatch<QContactPhoneNumber>(contact, aggregator);
-    int emMatch = detailMatch<QContactEmailAddress>(contact, aggregator);
-    int oaMatch = detailMatch<QContactOnlineAccount>(contact, aggregator);
-    retn += oaMatch; // if an online account matches, improve our likelihood.
-    if (phMatch > 0)
-        return CLAMP_MATCH_LIKELIHOOD(retn); // matched phone number - whatever the current match likelihood is, return it.
-    if (emMatch > 0)
-        return CLAMP_MATCH_LIKELIHOOD(retn); // matched email address - whatever the current match likelihood is, return it.
-
-    if (phMatch == 0 && emMatch == 0)
-        retn -= 1; // no matches, but no conflicts
-    if (phMatch < 0)
-        retn -= 2; // conflicting phone number
-    if (emMatch < 0)
-        retn -= 2; // conflicting email address
-
-    return (CLAMP_MATCH_LIKELIHOOD(retn));
-}
-
-/*
-    Searches through the list of aggregate contacts \a aggregates for a
-    contact which represents the same real-life entity as the contact \a c.
-
-    If such a contact is found, it sets the \a index to the index into the
-    list at which it was found, and returns that contact.
-
-    If no such contact is found, it will return a new, empty contact and
-    \a index will be set to -1.
-*/
-static QContact findMatch(const QContact &c, const QList<QContact> &aggregates, int *index)
-{
-    static const int MATCH_THRESHOLD = 7;
-    for (int i = 0; i < aggregates.size(); ++i) {
-        QContact a = aggregates.at(i);
-        if (matchLikelihood(c, a) >= MATCH_THRESHOLD) {
-            *index = i;
-            return a;
-        }
-    }
-
-    *index = -1;
-    return QContact();
-}
-
-/*
    This function is called when a new contact is created.  The
    aggregate contacts are searched for a match, and the matching
    one updated if it exists; or a new aggregate is created.
 */
 QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact, const QStringList &definitionMask, bool withinTransaction)
 {
-    // 1) read all aggregates
-    // 2) search for match
-    // 3) if exists, update the existing aggregate (by default, non-clobber:
+    // 1) search for match
+    // 2) if exists, update the existing aggregate (by default, non-clobber:
     //    only update empty fields of details, or promote non-existent details.  Never delete or replace details.)
-    // 4) otherwise, create new aggregate, consisting of all details of contact, return.
-
-    QContactFetchHint fetchHint;
-    fetchHint.setDetailDefinitionsHint(definitionMask);
-
-    QList<QContact> allAggregates;
-    QContactManager::Error err = m_reader->readContacts(QLatin1String("CreateAggregate"),
-                                                        &allAggregates,
-                                                        QContactFilter(),
-                                                        QContactSortOrder(),
-                                                        fetchHint);
-
-    if (err != QContactManager::NoError) {
-        qWarning() << "Could not read aggregate contacts during creation aggregation";
-        return err;
-    }
+    // 3) otherwise, create new aggregate, consisting of all details of contact, return.
 
     QMap<int, QContactManager::Error> errorMap;
     QList<QContact> saveContactList;
     QList<QContactRelationship> saveRelationshipList;
 
-    int index = -1;
-    QContact matchingAggregate = findMatch(*contact, allAggregates, &index);
-    bool found = index >= 0;
+    QString firstName;
+    QString lastName;
+    QString nickname;
+    QStringList phoneNumbers;
+    QStringList emailAddresses;
+    QStringList accountUris;
+
+    QContactLocalId contactId = contact->localId();
+
+    foreach (const QContactName &detail, contact->details<QContactName>()) {
+        firstName = detail.firstName().toLower();
+        lastName = detail.lastName().toLower();
+        break;
+    }
+    foreach (const QContactNickname &detail, contact->details<QContactNickname>()) {
+        nickname = detail.nickname().toLower();
+        break;
+    }
+    foreach (const QContactPhoneNumber &detail, contact->details<QContactPhoneNumber>()) {
+        phoneNumbers.append(ContactsEngine::normalizedPhoneNumber(detail.number()));
+    }
+    foreach (const QContactEmailAddress &detail, contact->details<QContactEmailAddress>()) {
+        emailAddresses.append(detail.emailAddress().toLower());
+    }
+    foreach (const QContactOnlineAccount &detail, contact->details<QContactOnlineAccount>()) {
+        accountUris.append(detail.accountUri().toLower());
+    }
+
+    static const QLatin1Char Percent('%');
+
+    // Use a simple match algorithm, looking for exact matches on fields that should be individual,
+    // or accumulating points for name matches (including partial matches of first name).
+
+    m_findMatchForContact.bindValue(":id", contactId);
+    m_findMatchForContact.bindValue(":first", firstName);
+    m_findMatchForContact.bindValue(":firstPartial", firstName.prepend(Percent).append(Percent));
+    m_findMatchForContact.bindValue(":last", lastName);
+    m_findMatchForContact.bindValue(":nick", nickname);
+    m_findMatchForContact.bindValue(":number", phoneNumbers.join(","));
+    m_findMatchForContact.bindValue(":email", emailAddresses.join(","));
+    m_findMatchForContact.bindValue(":uri", accountUris.join(","));
+
+    QContact matchingAggregate;
+    bool found = false;
+
+    if (!m_findMatchForContact.exec()) {
+        qWarning() << m_findMatchForContact.lastError();
+        return QContactManager::UnspecifiedError;
+    }
+    if (m_findMatchForContact.next()) {
+        QContactLocalId aggregateId = m_findMatchForContact.value(0).toUInt() + 1;
+        quint32 score = m_findMatchForContact.value(1).toUInt();
+        m_findMatchForContact.finish();
+
+        // Any match on a presumed-to-be-individual value (email address/account URI/phone number) is enough
+        static const quint32 MinimumMatchScore = 3;
+
+        if (score >= MinimumMatchScore) {
+            QList<QContactLocalId> readIds;
+            readIds.append(aggregateId);
+
+            QContactFetchHint hint;
+            hint.setOptimizationHints(QContactFetchHint::NoRelationships);
+
+            QList<QContact> readList;
+            QContactManager::Error readError = m_reader->readContacts(QLatin1String("CreateAggregate"), &readList, readIds, hint);
+            if (readError != QContactManager::NoError || readList.size() < 1) {
+                qWarning() << "Failed to read aggregate contact" << aggregateId << "during regenerate";
+                return QContactManager::UnspecifiedError;
+            }
+
+            matchingAggregate = readList.at(0);
+            found = true;
+        }
+    }
+    m_findMatchForContact.finish();
 
     // whether it's an existing or new contact, we promote details.
     // XXX TODO: promote relationships!
@@ -2088,7 +2045,7 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
 
     // now save in database.
     saveContactList.append(matchingAggregate);
-    err = save(&saveContactList, QStringList(), 0, &errorMap, withinTransaction, true); // we're updating (or creating) the aggregate
+    QContactManager::Error err = save(&saveContactList, QStringList(), 0, &errorMap, withinTransaction, true); // we're updating (or creating) the aggregate
     if (err != QContactManager::NoError) {
         if (!found) {
             qWarning() << "Could not create new aggregate contact";
@@ -2250,6 +2207,7 @@ QContactManager::Error ContactWriter::create(QContact *contact, const QStringLis
 {
 #ifndef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     Q_UNUSED(withinTransaction)
+    Q_UNUSED(withinAggregateUpdate)
 #endif
     QContactManager::Error writeErr = enforceDetailConstraints(contact);
     if (writeErr != QContactManager::NoError) {
@@ -2282,8 +2240,6 @@ QContactManager::Error ContactWriter::create(QContact *contact, const QStringLis
                 writeErr = updateOrCreateAggregate(contact, definitionMask, withinTransaction);
             }
         }
-#else
-        Q_UNUSED(withinAggregateUpdate)
 #endif
     }
 
@@ -2353,7 +2309,7 @@ QContactManager::Error ContactWriter::update(QContact *contact, const QStringLis
 #endif
 
     bindContactDetails(*contact, m_updateContact);
-    m_updateContact.bindValue(12, contactId);
+    m_updateContact.bindValue(14, contactId);
     if (!m_updateContact.exec()) {
         qWarning() << "Failed to update contact";
         qWarning() << m_updateContact.lastError();
@@ -2421,27 +2377,29 @@ void ContactWriter::bindContactDetails(const QContact &contact, QSqlQuery &query
 
     QContactName name = contact.detail<QContactName>();
     query.bindValue(1, name.variantValue(QContactName::FieldFirstName));
-    query.bindValue(2, name.variantValue(QContactName::FieldLastName));
-    query.bindValue(3, name.variantValue(QContactName::FieldMiddleName));
-    query.bindValue(4, name.variantValue(QContactName::FieldPrefix));
-    query.bindValue(5, name.variantValue(QContactName::FieldSuffix));
-    query.bindValue(6, name.variantValue(QContactName::FieldCustomLabel));
+    query.bindValue(2, name.value<QString>(QContactName::FieldFirstName).toLower());
+    query.bindValue(3, name.variantValue(QContactName::FieldLastName));
+    query.bindValue(4, name.value<QString>(QContactName::FieldLastName).toLower());
+    query.bindValue(5, name.variantValue(QContactName::FieldMiddleName));
+    query.bindValue(6, name.variantValue(QContactName::FieldPrefix));
+    query.bindValue(7, name.variantValue(QContactName::FieldSuffix));
+    query.bindValue(8, name.variantValue(QContactName::FieldCustomLabel));
 
     QContactSyncTarget starget = contact.detail<QContactSyncTarget>();
     QString stv = starget.syncTarget();
     if (stv.isEmpty())
         stv = QLatin1String("local"); // by default, it is a "local device" contact.
-    query.bindValue(7, stv);
+    query.bindValue(9, stv);
 
     QContactTimestamp timestamp = contact.detail<QContactTimestamp>();
-    query.bindValue(8, timestamp.variantValue(QContactTimestamp::FieldCreationTimestamp));
-    query.bindValue(9, timestamp.variantValue(QContactTimestamp::FieldModificationTimestamp));
+    query.bindValue(10, timestamp.variantValue(QContactTimestamp::FieldCreationTimestamp));
+    query.bindValue(11, timestamp.variantValue(QContactTimestamp::FieldModificationTimestamp));
 
     QContactGender gender = contact.detail<QContactGender>();
-    query.bindValue(10, gender.variantValue(QContactGender::FieldGender));
+    query.bindValue(12, gender.variantValue(QContactGender::FieldGender));
 
     QContactFavorite favorite = contact.detail<QContactFavorite>();
-    query.bindValue(11, favorite.isFavorite());
+    query.bindValue(13, favorite.isFavorite());
 }
 
 QSqlQuery &ContactWriter::bindDetail(QContactLocalId contactId, const QContactAddress &detail)
@@ -2492,6 +2450,7 @@ QSqlQuery &ContactWriter::bindDetail(QContactLocalId contactId, const QContactEm
     typedef QContactEmailAddress T;
     m_insertEmailAddress.bindValue(0, contactId);
     m_insertEmailAddress.bindValue(1, detail.variantValue(T::FieldEmailAddress));
+    m_insertEmailAddress.bindValue(2, detail.value<QString>(T::FieldEmailAddress).toLower());
     return m_insertEmailAddress;
 }
 
@@ -2516,6 +2475,7 @@ QSqlQuery &ContactWriter::bindDetail(QContactLocalId contactId, const QContactNi
     typedef QContactNickname T;
     m_insertNickname.bindValue(0, contactId);
     m_insertNickname.bindValue(1, detail.variantValue(T::FieldNickname));
+    m_insertNickname.bindValue(2, detail.value<QString>(T::FieldNickname).toLower());
     return m_insertNickname;
 }
 
@@ -2532,13 +2492,14 @@ QSqlQuery &ContactWriter::bindDetail(QContactLocalId contactId, const QContactOn
     typedef QContactOnlineAccount T;
     m_insertOnlineAccount.bindValue(0, contactId);
     m_insertOnlineAccount.bindValue(1, detail.variantValue(T::FieldAccountUri));
-    m_insertOnlineAccount.bindValue(2, detail.variantValue(T::FieldProtocol));
-    m_insertOnlineAccount.bindValue(3, detail.variantValue(T::FieldServiceProvider));
-    m_insertOnlineAccount.bindValue(4, detail.variantValue(T::FieldCapabilities));
-    m_insertOnlineAccount.bindValue(5, detail.subTypes().join(QLatin1String(";")));
-    m_insertOnlineAccount.bindValue(6, detail.variantValue("AccountPath"));
-    m_insertOnlineAccount.bindValue(7, detail.variantValue("AccountIconPath"));
-    m_insertOnlineAccount.bindValue(8, detail.variantValue("Enabled"));
+    m_insertOnlineAccount.bindValue(2, detail.value<QString>(T::FieldAccountUri).toLower());
+    m_insertOnlineAccount.bindValue(3, detail.variantValue(T::FieldProtocol));
+    m_insertOnlineAccount.bindValue(4, detail.variantValue(T::FieldServiceProvider));
+    m_insertOnlineAccount.bindValue(5, detail.variantValue(T::FieldCapabilities));
+    m_insertOnlineAccount.bindValue(6, detail.subTypes().join(QLatin1String(";")));
+    m_insertOnlineAccount.bindValue(7, detail.variantValue("AccountPath"));
+    m_insertOnlineAccount.bindValue(8, detail.variantValue("AccountIconPath"));
+    m_insertOnlineAccount.bindValue(9, detail.variantValue("Enabled"));
     return m_insertOnlineAccount;
 }
 
