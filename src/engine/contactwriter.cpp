@@ -75,11 +75,6 @@ static const char *findMatchForContact =
         "\n ) AS Matches"
         "\n JOIN Contacts ON Contacts.contactId = Matches.contactId"
         "\n WHERE Contacts.syncTarget = 'aggregate'"
-        "\n AND Matches.contactId NOT IN ("
-        "\n   SELECT secondId FROM Relationships WHERE firstId = :id AND type = 'IsNot'"
-        "\n   UNION"
-        "\n   SELECT firstId FROM Relationships WHERE secondId = :id AND type = 'IsNot'"
-        "\n )"
         "\n GROUP BY Matches.contactId"
         "\n ORDER BY total DESC"
         "\n LIMIT 1";
