@@ -57,6 +57,7 @@
 
 QTM_USE_NAMESPACE
 
+class ProcessMutex;
 class ContactsEngine;
 class ContactReader;
 class ContactWriter
@@ -132,6 +133,7 @@ private:
 
     const ContactsEngine &m_engine;
     QSqlDatabase m_database;
+    ProcessMutex *m_databaseMutex;
     QSqlQuery m_findRelatedForAggregate;
     QSqlQuery m_findLocalForAggregate;
     QSqlQuery m_findAggregateForContact;
