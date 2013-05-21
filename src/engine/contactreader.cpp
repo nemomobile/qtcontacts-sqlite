@@ -1180,7 +1180,7 @@ QString expandWhere(const QString &where, const QContactFilter &filter)
     }
 #else
     if (strippedWhere.isEmpty()) {
-        if (!includesSelfContactId(filter)) {
+        if (!includesSelfContactId) {
             return QLatin1String("WHERE Contacts.contactId > 2");
         } else {
             return QString();

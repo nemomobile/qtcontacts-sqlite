@@ -441,6 +441,10 @@ void tst_QContactManagerFiltering::detailStringFiltering()
     QContactDetailFilter df;
     df.setDetailDefinitionName(defname, fieldname);
     df.setValue(value);
+    if ((matchflags & QContactFilter::MatchCaseSensitive) == 0) {
+        // Case insensitivity only applies to MatchFixedString
+        matchflags |= QContactFilter::MatchFixedString;
+    }
     df.setMatchFlags(QContactFilter::MatchFlags(matchflags));
 
     if (cm->managerName() == "memory") {
@@ -983,7 +987,12 @@ void tst_QContactManagerFiltering::rangeFiltering()
     QFETCH(QString, expected);
 
     QContactDetailRangeFilter::RangeFlags rangeflags = (QContactDetailRangeFilter::RangeFlags)rangeflagsi;
+
     QContactFilter::MatchFlags matchflags = (QContactFilter::MatchFlags) matchflagsi;
+    if ((matchflags & QContactFilter::MatchCaseSensitive) == 0) {
+        // Case insensitivity only applies to MatchFixedString
+        matchflags |= QContactFilter::MatchFixedString;
+    }
 
     QList<QContactLocalId> contacts = contactsAddedToManagers.values(cm);
     QList<QContactLocalId> ids;
@@ -1740,8 +1749,10 @@ void tst_QContactManagerFiltering::sorting_data()
         newMRow("first descending, cs, binary collation", manager) << manager << namedef << firstname << desc << false << 0 << cs << "hjkiefgdcba" << "efg";
         newMRow("last ascending, cs, binary collation", manager) << manager << namedef << lastname << asc << false << 0 << cs << "bacdefgikjh" << "hijk";
         newMRow("last descending, cs, binary collation", manager) << manager << namedef << lastname << desc << false << 0 << cs << "gfedcabhijk" << "hijk";
-        newMRow("display label insensitive, binary collation", manager) << manager << dldef << dlfld << asc << false << 0 << ci << "bcdefgaijhk" << "efg"; // the display label is synthesized so that A has "Sir" at the start of it (instead of "Aaron").
-        newMRow("display label sensitive, binary collation", manager) << manager << dldef << dlfld << asc << false << 0 << cs << "bcdefgaikjh" << "efg";
+
+        // Note - the current display label algorithm follows that of nemo-qml-plugin-contacts, and does not include prefix
+        //newMRow("display label insensitive, binary collation", manager) << manager << dldef << dlfld << asc << false << 0 << ci << "bcdefgaijhk" << "efg"; // the display label is synthesized so that A has "Sir" at the start of it (instead of "Aaron").
+        //newMRow("display label sensitive, binary collation", manager) << manager << dldef << dlfld << asc << false << 0 << cs << "bcdefgaikjh" << "efg";
     }
 }
 
