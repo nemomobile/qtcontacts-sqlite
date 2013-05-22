@@ -392,6 +392,9 @@ static const char *createOnlineAccountsIndex =
 static const char *createNicknamesIndex =
         "\n CREATE INDEX NicknamesIndex ON Nicknames(lowerNickname);";
 
+static const char *createTpMetadataIndex =
+        "\n CREATE INDEX TpMetadataIndex ON TpMetadata(telepathyId, accountId);";
+
 static const char *createTables[] =
 {
     createContactsTable,
@@ -429,7 +432,8 @@ static const char *createTables[] =
     createPhoneNumbersIndex,
     createEmailAddressesIndex,
     createOnlineAccountsIndex,
-    createNicknamesIndex
+    createNicknamesIndex,
+    createTpMetadataIndex
 };
 
 template <typename T, int N> static int lengthOf(const T(&)[N]) { return N; }
