@@ -62,34 +62,11 @@ class Job
 {
 public:
     Job()
-        : m_next(this)
-        , m_previous(this)
     {
     }
 
     virtual ~Job()
     {
-        m_previous->m_next = m_next;
-        m_next->m_previous = m_previous;
-    }
-
-    void erase()
-    {
-        m_previous->m_next = m_next;
-        m_next->m_previous = m_previous;
-
-        m_next = this;
-        m_previous = this;
-    }
-
-    Job *next()
-    {
-        return m_next;
-    }
-
-    Job *previous()
-    {
-        return m_previous;
     }
 
     virtual QContactAbstractRequest *request() = 0;
@@ -104,109 +81,6 @@ public:
     virtual void contactIdsAvailable(const QList<QContactLocalId> &) {}
 
     virtual QString description() const = 0;
-
-private:
-    Job *m_next;
-    Job *m_previous;
-
-    friend class JobList;
-};
-
-class JobList : private Job
-{
-public:
-    JobList &operator =(JobList &job)
-    {
-        Q_ASSERT(m_next == this);
-        Q_ASSERT(m_previous == this);
-
-        if (!job.isEmpty()) {
-            m_next = job.m_next;
-            m_previous = job.m_previous;
-            m_next->m_previous = this;
-            m_previous->m_next = this;
-            job.m_next = &job;
-            job.m_previous = &job;
-        }
-        return *this;
-    }
-
-    Job *takeFirst()
-    {
-        Job * const first = m_next;
-        first->erase();
-        return first;
-    }
-
-    Job *takeLast()
-    {
-        Job * const last = m_previous;
-        last->erase();
-        return last;
-    }
-
-    Job *first()
-    {
-        return m_next;
-    }
-
-    Job *end()
-    {
-        return this;
-    }
-
-    void append(Job *job)
-    {
-        job->erase();
-
-        m_previous->m_next = job;
-        m_next->m_previous = m_previous;
-
-        job->m_next = this;
-        job->m_previous = m_previous;
-        m_previous = job;
-    }
-
-    void prepend(Job *job)
-    {
-        job->erase();
-
-        m_previous->m_next = m_next;
-        m_next->m_previous = job;
-
-        job->m_next = m_next;
-        job->m_previous = this;
-        m_next = job;
-    }
-
-    bool isEmpty() const
-    {
-        return m_next == this;
-    }
-
-    QContactAbstractRequest *request()
-    {
-        return 0;
-    }
-
-    void clear()
-    {
-    }
-
-    void execute(const ContactsEngine &, QSqlDatabase &, ContactReader *, ContactWriter *&)
-    {
-        Q_ASSERT(!"Called execute on JobList");
-    }
-
-    void updateState(QContactAbstractRequest::State)
-    {
-        Q_ASSERT(!"Called update on JobList");
-    }
-
-    QString description() const
-    {
-        return QString::fromLatin1("Job List");
-    }
 };
 
 template <typename T>
@@ -635,9 +509,10 @@ public:
     bool requestDestroyed(QContactAbstractRequest *request)
     {
         QMutexLocker locker(&m_mutex);
-        for (Job *job = m_pendingJobs.first(); job != m_pendingJobs.end(); job = job->next()) {
-            if (job->request() == request) {
-                delete job;
+        for (QList<Job*>::iterator it = m_pendingJobs.begin(); it != m_pendingJobs.end(); it++) {
+            if ((*it)->request() == request) {
+                delete *it;
+                m_pendingJobs.erase(it);
                 return true;
             }
         }
@@ -647,15 +522,18 @@ public:
             return false;
         }
 
-        for (Job *job = m_finishedJobs.first(); job != m_finishedJobs.end(); job = job->next()) {
-            if (job->request() == request) {
-                delete job;
+        for (QList<Job*>::iterator it = m_finishedJobs.begin(); it != m_finishedJobs.end(); it++) {
+            if ((*it)->request() == request) {
+                delete *it;
+                m_finishedJobs.erase(it);
                 return false;
             }
         }
-        for (Job *job = m_cancelledJobs.first(); job != m_cancelledJobs.end(); job = job->next()) {
-            if (job->request() == request) {
-                delete job;
+
+        for (QList<Job*>::iterator it = m_cancelledJobs.begin(); it != m_cancelledJobs.end(); it++) {
+            if ((*it)->request() == request) {
+                delete *it;
+                m_cancelledJobs.erase(it);
                 return false;
             }
         }
@@ -665,9 +543,10 @@ public:
     bool cancelRequest(QContactAbstractRequest *request)
     {
         QMutexLocker locker(&m_mutex);
-        for (Job *job = m_pendingJobs.first(); job != m_pendingJobs.end(); job = job->next()) {
-            if (job->request() == request) {
-                m_cancelledJobs.append(job);
+        for (QList<Job*>::iterator it = m_pendingJobs.begin(); it != m_pendingJobs.end(); it++) {
+            if ((*it)->request() == request) {
+                m_cancelledJobs.append(*it);
+                m_pendingJobs.erase(it);
                 return true;
             }
         }
@@ -690,13 +569,14 @@ public:
                     // wait for the current job to updateState.
                     if (!m_finishedWait.wait(&m_mutex, timeout))
                         return false;
-                } else for (Job *job = m_pendingJobs.first(); job != m_pendingJobs.end(); job = job->next()) {
+                } else for (int i = 0; i < m_pendingJobs.size(); i++) {
+                    Job *job = m_pendingJobs[i];
                     if (job->request() == request) {
                         // If the job is pending, move it to the front of the queue and wait for
                         // the current job to end.
                         QElapsedTimer timer;
                         timer.start();
-                        m_pendingJobs.prepend(job);
+                        m_pendingJobs.move(i, 0);
                         if (!m_finishedWait.wait(&m_mutex, timeout))
                             return false;
                         timeout -= timer.elapsed();
@@ -712,10 +592,10 @@ public:
                     break;
             }
 
-            for (Job *job = m_finishedJobs.first(); job != m_finishedJobs.end(); job = job->next()) {
-                if (job->request() == request) {
-                    job->erase();
-                    finishedJob = job;
+            for (QList<Job*>::iterator it = m_finishedJobs.begin(); it != m_finishedJobs.end(); it++) {
+                if ((*it)->request() == request) {
+                    m_finishedJobs.erase(it);
+                    finishedJob = *it;
                     break;
                 }
             }
@@ -724,10 +604,11 @@ public:
             finishedJob->updateState(QContactAbstractRequest::FinishedState);
             delete finishedJob;
             return true;
-        } else for (Job *job = m_cancelledJobs.first(); job != m_cancelledJobs.end(); job = job->next()) {
-            if (job->request() == request) {
-                job->updateState(QContactAbstractRequest::CanceledState);
-                delete job;
+        } else for (QList<Job*>::iterator it = m_cancelledJobs.begin(); it != m_cancelledJobs.end(); it++) {
+            if ((*it)->request() == request) {
+                (*it)->updateState(QContactAbstractRequest::CanceledState);
+                delete *it;
+                m_cancelledJobs.erase(it);
                 return true;
             }
         }
@@ -759,11 +640,16 @@ public:
     bool event(QEvent *event)
     {
         if (event->type() == QEvent::UpdateRequest) {
-            JobList finishedJobs;
+            QList<Job*> finishedJobs;
+            QList<Job*> cancelledJobs;
             Job *currentJob;
             {
                 QMutexLocker locker(&m_mutex);
                 finishedJobs = m_finishedJobs;
+                cancelledJobs = m_cancelledJobs;
+                m_finishedJobs.clear();
+                m_cancelledJobs.clear();
+
                 currentJob = m_currentJob;
                 m_updatePending = false;
             }
@@ -774,8 +660,8 @@ public:
                 delete job;
             }
 
-            while (!m_cancelledJobs.isEmpty()) {
-                Job *job = m_cancelledJobs.takeFirst();
+            while (!cancelledJobs.isEmpty()) {
+                Job *job = cancelledJobs.takeFirst();
                 job->updateState(QContactAbstractRequest::CanceledState);
                 delete job;
             }
@@ -792,9 +678,9 @@ private:
     QMutex m_mutex;
     QWaitCondition m_wait;
     QWaitCondition m_finishedWait;
-    JobList m_pendingJobs;
-    JobList m_finishedJobs;
-    JobList m_cancelledJobs;
+    QList<Job*> m_pendingJobs;
+    QList<Job*> m_finishedJobs;
+    QList<Job*> m_cancelledJobs;
     Job *m_currentJob;
     ContactsEngine *m_engine;
     bool m_updatePending;
