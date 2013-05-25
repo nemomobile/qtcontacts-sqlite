@@ -11,6 +11,13 @@ BuildRequires: pkgconfig(QtSql)
 BuildRequires: pkgconfig(QtDBus)
 BuildRequires: pkgconfig(QtContacts)
 
+Provides: qtcontacts-tracker > 4.19.2
+Obsoletes: qtcontacts-tracker <= 4.19.2
+Provides: libqtcontacts-tracker-extensions > 4.19.2
+Obsoletes: libqtcontacts-tracker-extensions <= 4.19.2
+Provides: libcubi > 0.1.17
+Obsoletes: libcubi <= 0.1.17
+
 %description
 %{summary}.
 
