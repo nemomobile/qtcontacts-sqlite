@@ -594,8 +594,8 @@ public:
 
             for (QList<Job*>::iterator it = m_finishedJobs.begin(); it != m_finishedJobs.end(); it++) {
                 if ((*it)->request() == request) {
-                    m_finishedJobs.erase(it);
                     finishedJob = *it;
+                    m_finishedJobs.erase(it);
                     break;
                 }
             }
