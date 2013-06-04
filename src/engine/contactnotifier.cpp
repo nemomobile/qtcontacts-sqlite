@@ -41,84 +41,94 @@
 #define NOTIFIER_PATH "/org/nemomobile/contacts/sqlite"
 #define NOTIFIER_INTERFACE "org.nemomobile.contacts.sqlite"
 
-Q_DECLARE_METATYPE(QVector<QContactLocalId>)
+Q_DECLARE_METATYPE(QVector<quint32>)
 
 namespace ContactNotifier
 {
 
 void initialize()
 {
-    qDBusRegisterMetaType<QVector<QContactLocalId> >();
+    qDBusRegisterMetaType<QVector<quint32> >();
 }
 
-void contactsAdded(const QList<QContactLocalId> &contactIds)
+QVector<quint32> idVector(const QList<QContactIdType> &contactIds)
+{
+    QVector<quint32> ids;
+    ids.reserve(contactIds.size());
+    foreach (const QContactIdType &id, contactIds) {
+        ids.append(ContactId::databaseId(id));
+    }
+    return ids;
+}
+
+void contactsAdded(const QList<QContactIdType> &contactIds)
 {
     if (!contactIds.isEmpty()) {
         QDBusMessage message = QDBusMessage::createSignal(
                     QLatin1String(NOTIFIER_PATH),
                     QLatin1String(NOTIFIER_INTERFACE),
                     QLatin1String("contactsAdded"));
-        message.setArguments(QVariantList() << QVariant::fromValue(contactIds.toVector()));
+        message.setArguments(QVariantList() << QVariant::fromValue(idVector(contactIds)));
         QDBusConnection::sessionBus().send(message);
     }
 }
 
-void contactsChanged(const QList<QContactLocalId> &contactIds)
+void contactsChanged(const QList<QContactIdType> &contactIds)
 {
     if (!contactIds.isEmpty()) {
         QDBusMessage message = QDBusMessage::createSignal(
                     QLatin1String(NOTIFIER_PATH),
                     QLatin1String(NOTIFIER_INTERFACE),
                     QLatin1String("contactsChanged"));
-        message.setArguments(QVariantList() << QVariant::fromValue(contactIds.toVector()));
+        message.setArguments(QVariantList() << QVariant::fromValue(idVector(contactIds)));
         QDBusConnection::sessionBus().send(message);
     }
 }
 
-void contactsRemoved(const QList<QContactLocalId> &contactIds)
+void contactsRemoved(const QList<QContactIdType> &contactIds)
 {
     if (!contactIds.isEmpty()) {
         QDBusMessage message = QDBusMessage::createSignal(
                     QLatin1String(NOTIFIER_PATH),
                     QLatin1String(NOTIFIER_INTERFACE),
                     QLatin1String("contactsRemoved"));
-        message.setArguments(QVariantList() << QVariant::fromValue(contactIds.toVector()));
+        message.setArguments(QVariantList() << QVariant::fromValue(idVector(contactIds)));
         QDBusConnection::sessionBus().send(message);
     }
 }
 
-void selfContactIdChanged(QContactLocalId oldId, QContactLocalId newId)
+void selfContactIdChanged(QContactIdType oldId, QContactIdType newId)
 {
     if (oldId != newId) {
         QDBusMessage message = QDBusMessage::createSignal(
                     QLatin1String(NOTIFIER_PATH),
                     QLatin1String(NOTIFIER_INTERFACE),
                     QLatin1String("selfContactIdChanged"));
-        message.setArguments(QVariantList() << oldId << newId);
+        message.setArguments(QVariantList() << QVariant::fromValue(ContactId::databaseId(oldId)) << QVariant::fromValue(ContactId::databaseId(newId)));
         QDBusConnection::sessionBus().send(message);
     }
 }
 
-void relationshipsAdded(const QSet<QContactLocalId> &contactIds)
+void relationshipsAdded(const QSet<QContactIdType> &contactIds)
 {
     if (!contactIds.isEmpty()) {
         QDBusMessage message = QDBusMessage::createSignal(
                     QLatin1String(NOTIFIER_PATH),
                     QLatin1String(NOTIFIER_INTERFACE),
                     QLatin1String("relationshipsAdded"));
-        message.setArguments(QVariantList() << QVariant::fromValue(contactIds.toList().toVector()));
+        message.setArguments(QVariantList() << QVariant::fromValue(idVector(contactIds.toList())));
         QDBusConnection::sessionBus().send(message);
     }
 }
 
-void relationshipsRemoved(const QSet<QContactLocalId> &contactIds)
+void relationshipsRemoved(const QSet<QContactIdType> &contactIds)
 {
     if (!contactIds.isEmpty()) {
         QDBusMessage message = QDBusMessage::createSignal(
                     QLatin1String(NOTIFIER_PATH),
                     QLatin1String(NOTIFIER_INTERFACE),
                     QLatin1String("relationshipsRemoved"));
-        message.setArguments(QVariantList() << QVariant::fromValue(contactIds.toList().toVector()));
+        message.setArguments(QVariantList() << QVariant::fromValue(idVector(contactIds.toList())));
         QDBusConnection::sessionBus().send(message);
     }
 }

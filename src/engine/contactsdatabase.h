@@ -35,6 +35,8 @@
 #include <QSqlDatabase>
 #include <QContactDetail>
 
+#include <QtGlobal>
+
 class ContactsDatabase
 {
 public:
@@ -48,14 +50,17 @@ public:
 private:
 };
 
-
-QTM_BEGIN_NAMESPACE
+BEGIN_CONTACTS_NAMESPACE
 class QContactTpMetadata : public QContactDetail
 {
 public:
+#ifdef USING_QTPIM
+    Q_DECLARE_CUSTOM_CONTACT_DETAIL(QContactTpMetadata)
+#else
     Q_DECLARE_CUSTOM_CONTACT_DETAIL(QContactTpMetadata, "TpMetadata")
+#endif
 };
-QTM_END_NAMESPACE
+END_CONTACTS_NAMESPACE
 
 
 #endif

@@ -31,87 +31,24 @@
 
 #define QT_STATICPLUGIN
 
-#include <QtTest/QtTest>
-#include <QtGlobal>
-#include <QtCore/qnumeric.h>
+#include "../../util.h"
+#include "constants_p.h"
 
-#include "qtcontacts.h"
-#include "qcontactchangeset.h"
+static const QString aggregatesRelationship(relationshipString(QContactRelationship::Aggregates));
 
-QTM_USE_NAMESPACE
+namespace {
 
-Q_DECLARE_METATYPE(QList<QContactLocalId>)
-
-static bool registered = qRegisterMetaType<QList<QContactLocalId> >();
-
-// Eventually these will make it into qtestcase.h
-// but we might need to tweak the timeout values here.
-#ifndef QTRY_COMPARE
-#define QTRY_COMPARE(__expr, __expected) \
-    do { \
-        const int __step = 50; \
-        const int __timeout = 5000; \
-        if ((__expr) != (__expected)) { \
-            QTest::qWait(0); \
-        } \
-        for (int __i = 0; __i < __timeout && ((__expr) != (__expected)); __i+=__step) { \
-            QTest::qWait(__step); \
-        } \
-        QCOMPARE(__expr, __expected); \
-    } while(0)
+#ifdef USING_QTPIM
+static const char *addedAccumulationSlot = SLOT(addAccumulationSlot(QList<QContactId>));
+static const char *changedAccumulationSlot = SLOT(chgAccumulationSlot(QList<QContactId>));
+static const char *removedAccumulationSlot = SLOT(remAccumulationSlot(QList<QContactId>));
+#else
+static const char *addedAccumulationSlot = SLOT(addAccumulationSlot(QList<QContactLocalId>));
+static const char *changedAccumulationSlot = SLOT(chgAccumulationSlot(QList<QContactLocalId>));
+static const char *removedAccumulationSlot = SLOT(remAccumulationSlot(QList<QContactLocalId>));
 #endif
 
-#ifndef QTRY_VERIFY
-#define QTRY_VERIFY(__expr) \
-        do { \
-        const int __step = 50; \
-        const int __timeout = 5000; \
-        if (!(__expr)) { \
-            QTest::qWait(0); \
-        } \
-        for (int __i = 0; __i < __timeout && !(__expr); __i+=__step) { \
-            QTest::qWait(__step); \
-        } \
-        QVERIFY(__expr); \
-    } while(0)
-#endif
-
-
-#define QTRY_WAIT(code, __expr) \
-        do { \
-        const int __step = 50; \
-        const int __timeout = 5000; \
-        if (!(__expr)) { \
-            QTest::qWait(0); \
-        } \
-        for (int __i = 0; __i < __timeout && !(__expr); __i+=__step) { \
-            do { code } while(0); \
-            QTest::qWait(__step); \
-        } \
-    } while(0)
-
-#define QTRY_COMPARE_SIGNALS_LOCALID_COUNT(__signalSpy, __expectedCount) \
-    do { \
-        int __spiedSigCount = 0; \
-        const int __step = 50; \
-        const int __timeout = 5000; \
-        for (int __i = 0; __i < __timeout; __i+=__step) { \
-            /* accumulate added from signals */ \
-            __spiedSigCount = 0; \
-            const QList<QList<QVariant> > __spiedSignals = __signalSpy; \
-            foreach (const QList<QVariant> &__arguments, __spiedSignals) { \
-                foreach (QContactLocalId __localId, __arguments.first().value<QList<QContactLocalId> >()) { \
-                    QVERIFY(__localId!=0); \
-                    __spiedSigCount++; \
-                } \
-            } \
-            if(__spiedSigCount == __expectedCount) { \
-                break; \
-            } \
-            QTest::qWait(__step); \
-        } \
-        QCOMPARE(__spiedSigCount, __expectedCount); \
-    } while(0)
+}
 
 class tst_Aggregation : public QObject
 {
@@ -128,9 +65,15 @@ public slots:
     void cleanup();
 
 public slots:
+#ifdef USING_QTPIM
+    void addAccumulationSlot(const QList<QContactIdType> &ids);
+    void chgAccumulationSlot(const QList<QContactIdType> &ids);
+    void remAccumulationSlot(const QList<QContactIdType> &ids);
+#else
     void addAccumulationSlot(const QList<QContactLocalId> &ids);
     void chgAccumulationSlot(const QList<QContactLocalId> &ids);
     void remAccumulationSlot(const QList<QContactLocalId> &ids);
+#endif
 
 private slots:
     void createSingleLocal();
@@ -157,19 +100,19 @@ private slots:
 
 private:
     QContactManager *m_cm;
-    QList<QContactLocalId> m_addAccumulatedIds;
-    QList<QContactLocalId> m_chgAccumulatedIds;
-    QList<QContactLocalId> m_remAccumulatedIds;
-    QList<QContactLocalId> m_createdIds;
+    QList<QContactIdType> m_addAccumulatedIds;
+    QList<QContactIdType> m_chgAccumulatedIds;
+    QList<QContactIdType> m_remAccumulatedIds;
+    QList<QContactIdType> m_createdIds;
 };
 
 tst_Aggregation::tst_Aggregation()
     : m_cm(new QContactManager(QLatin1String("org.nemomobile.contacts.sqlite")))
 {
     QTest::qWait(250); // creating self contact etc will cause some signals to be emitted.  ignore them.
-    connect(m_cm, SIGNAL(contactsAdded(QList<QContactLocalId>)), this, SLOT(addAccumulationSlot(QList<QContactLocalId>)));
-    connect(m_cm, SIGNAL(contactsChanged(QList<QContactLocalId>)), this, SLOT(chgAccumulationSlot(QList<QContactLocalId>)));
-    connect(m_cm, SIGNAL(contactsRemoved(QList<QContactLocalId>)), this, SLOT(remAccumulationSlot(QList<QContactLocalId>)));
+    connect(m_cm, contactsAddedSignal, this, addedAccumulationSlot);
+    connect(m_cm, contactsChangedSignal, this, changedAccumulationSlot);
+    connect(m_cm, contactsRemovedSignal, this, removedAccumulationSlot);
 }
 
 tst_Aggregation::~tst_Aggregation()
@@ -178,6 +121,7 @@ tst_Aggregation::~tst_Aggregation()
 
 void tst_Aggregation::initTestCase()
 {
+    registerIdType();
 }
 
 void tst_Aggregation::init()
@@ -203,18 +147,18 @@ void tst_Aggregation::cleanup()
     QTest::qWait(50);
 }
 
-void tst_Aggregation::addAccumulationSlot(const QList<QContactLocalId> &ids)
+void tst_Aggregation::addAccumulationSlot(const QList<QContactIdType> &ids)
 {
     m_addAccumulatedIds.append(ids);
     m_createdIds.append(ids);
 }
 
-void tst_Aggregation::chgAccumulationSlot(const QList<QContactLocalId> &ids)
+void tst_Aggregation::chgAccumulationSlot(const QList<QContactIdType> &ids)
 {
     m_chgAccumulatedIds.append(ids);
 }
 
-void tst_Aggregation::remAccumulationSlot(const QList<QContactLocalId> &ids)
+void tst_Aggregation::remAccumulationSlot(const QList<QContactIdType> &ids)
 {
     m_remAccumulatedIds.append(ids);
 }
@@ -222,13 +166,13 @@ void tst_Aggregation::remAccumulationSlot(const QList<QContactLocalId> &ids)
 void tst_Aggregation::createSingleLocal()
 {
     QContactDetailFilter allSyncTargets;
-    allSyncTargets.setDetailDefinitionName(QContactSyncTarget::DefinitionName, QContactSyncTarget::FieldSyncTarget);
+    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
 
     int aggCount = m_cm->contactIds().size();
     int allCount = m_cm->contactIds(allSyncTargets).size();
 
     // set up some signal spies
-    QSignalSpy addSpy(m_cm, SIGNAL(contactsAdded(QList<QContactLocalId>)));
+    QSignalSpy addSpy(m_cm, contactsAddedSignal);
     int addSpyCount = 0;
 
     // now add a new local contact (no synctarget specified == automatically local)
@@ -248,7 +192,7 @@ void tst_Aggregation::createSingleLocal()
     QVERIFY(m_cm->saveContact(&alice));
     QTRY_VERIFY(addSpy.count() > addSpyCount);
     QTRY_COMPARE(m_addAccumulatedIds.size(), 2); // should have added local + aggregate
-    QVERIFY(m_addAccumulatedIds.contains(alice.id().localId()));
+    QVERIFY(m_addAccumulatedIds.contains(ContactId::apiId(alice)));
     addSpyCount = addSpy.count();
 
     QCOMPARE(m_cm->contactIds().size(), aggCount + 1); // 1 extra aggregate contact
@@ -283,20 +227,20 @@ void tst_Aggregation::createSingleLocal()
 
     QVERIFY(foundLocalAlice);
     QVERIFY(foundAggregateAlice);
-    QVERIFY(localAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::First).contains(aggregateAlice.id()));
-    QVERIFY(aggregateAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::Second).contains(localAlice.id()));
+    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
 }
 
 void tst_Aggregation::createMultipleLocal()
 {
     QContactDetailFilter allSyncTargets;
-    allSyncTargets.setDetailDefinitionName(QContactSyncTarget::DefinitionName, QContactSyncTarget::FieldSyncTarget);
+    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
 
     int aggCount = m_cm->contactIds().size();
     int allCount = m_cm->contactIds(allSyncTargets).size();
 
     // set up some signal spies
-    QSignalSpy addSpy(m_cm, SIGNAL(contactsAdded(QList<QContactLocalId>)));
+    QSignalSpy addSpy(m_cm, contactsAddedSignal);
     int addSpyCount = 0;
 
     // now add two new local contacts (no synctarget specified == automatically local)
@@ -326,8 +270,8 @@ void tst_Aggregation::createMultipleLocal()
     QTRY_VERIFY(addSpy.count() > addSpyCount); // should have added local + aggregate for each
     alice = saveList.at(0); bob = saveList.at(1);
     QTRY_COMPARE(m_addAccumulatedIds.size(), 4);
-    QVERIFY(m_addAccumulatedIds.contains(alice.id().localId()));
-    QVERIFY(m_addAccumulatedIds.contains(bob.id().localId()));
+    QVERIFY(m_addAccumulatedIds.contains(ContactId::apiId(alice)));
+    QVERIFY(m_addAccumulatedIds.contains(ContactId::apiId(bob)));
     addSpyCount = addSpy.count();
 
     QCOMPARE(m_cm->contactIds().size(), aggCount + 2); // 2 extra aggregate contacts
@@ -380,14 +324,14 @@ void tst_Aggregation::createMultipleLocal()
     QVERIFY(foundAggregateAlice);
     QVERIFY(foundLocalBob);
     QVERIFY(foundAggregateBob);
-    QVERIFY(localAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::First).contains(aggregateAlice.id()));
-    QVERIFY(aggregateAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::Second).contains(localAlice.id()));
-    QVERIFY(!localAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::First).contains(aggregateBob.id()));
-    QVERIFY(!aggregateAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::Second).contains(localBob.id()));
-    QVERIFY(localBob.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::First).contains(aggregateBob.id()));
-    QVERIFY(aggregateBob.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::Second).contains(localBob.id()));
-    QVERIFY(!localBob.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::First).contains(aggregateAlice.id()));
-    QVERIFY(!aggregateBob.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::Second).contains(localAlice.id()));
+    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
+    QVERIFY(!relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateBob.id()));
+    QVERIFY(!relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localBob.id()));
+    QVERIFY(relatedContactIds(localBob.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateBob.id()));
+    QVERIFY(relatedContactIds(aggregateBob.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localBob.id()));
+    QVERIFY(!relatedContactIds(localBob.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(!relatedContactIds(aggregateBob.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
 }
 
 void tst_Aggregation::createSingleLocalAndSingleSync()
@@ -397,14 +341,14 @@ void tst_Aggregation::createSingleLocalAndSingleSync()
     // It should be related to the aggregate created for the sync.
 
     QContactDetailFilter allSyncTargets;
-    allSyncTargets.setDetailDefinitionName(QContactSyncTarget::DefinitionName, QContactSyncTarget::FieldSyncTarget);
+    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
 
     int aggCount = m_cm->contactIds().size();
     int allCount = m_cm->contactIds(allSyncTargets).size();
 
     // set up some signal spies
-    QSignalSpy addSpy(m_cm, SIGNAL(contactsAdded(QList<QContactLocalId>)));
-    QSignalSpy chgSpy(m_cm, SIGNAL(contactsChanged(QList<QContactLocalId>)));
+    QSignalSpy addSpy(m_cm, contactsAddedSignal);
+    QSignalSpy chgSpy(m_cm, contactsChangedSignal);
     int addSpyCount = 0;
     int chgSpyCount = 0;
 
@@ -429,7 +373,7 @@ void tst_Aggregation::createSingleLocalAndSingleSync()
     QVERIFY(m_cm->saveContact(&alice));
     QTRY_VERIFY(addSpy.count() > addSpyCount); // should have added local + aggregate
     QTRY_COMPARE(m_addAccumulatedIds.size(), 2);
-    QVERIFY(m_addAccumulatedIds.contains(alice.id().localId()));
+    QVERIFY(m_addAccumulatedIds.contains(ContactId::apiId(alice)));
     addSpyCount = addSpy.count();
 
     QCOMPARE(m_cm->contactIds().size(), aggCount + 1); // 1 extra aggregate contact
@@ -466,8 +410,8 @@ void tst_Aggregation::createSingleLocalAndSingleSync()
 
     QVERIFY(foundLocalAlice);
     QVERIFY(foundAggregateAlice);
-    QVERIFY(localAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::First).contains(aggregateAlice.id()));
-    QVERIFY(aggregateAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::Second).contains(localAlice.id()));
+    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
 
     // now add the doppleganger from another sync source
     QContact syncAlice;
@@ -502,10 +446,10 @@ void tst_Aggregation::createSingleLocalAndSingleSync()
     QTRY_VERIFY(chgSpy.count() > chgSpyCount); // should have updated the aggregate
     QTRY_COMPARE(m_addAccumulatedIds.size(), 3);
     QTRY_COMPARE(m_chgAccumulatedIds.size(), 1); // the aggregate should have been updated (with the hobby)
-    QVERIFY(m_addAccumulatedIds.contains(localAlice.id().localId()));
-    QVERIFY(m_addAccumulatedIds.contains(aggregateAlice.id().localId()));
-    QVERIFY(m_addAccumulatedIds.contains(syncAlice.id().localId()));
-    QVERIFY(m_chgAccumulatedIds.contains(aggregateAlice.id().localId()));
+    QVERIFY(m_addAccumulatedIds.contains(ContactId::apiId(localAlice)));
+    QVERIFY(m_addAccumulatedIds.contains(ContactId::apiId(aggregateAlice)));
+    QVERIFY(m_addAccumulatedIds.contains(ContactId::apiId(syncAlice)));
+    QVERIFY(m_chgAccumulatedIds.contains(ContactId::apiId(aggregateAlice)));
     addSpyCount = addSpy.count();
 
     QCOMPARE(m_cm->contactIds().size(), aggCount); // no extra aggregate contact
@@ -528,16 +472,16 @@ void tst_Aggregation::createSingleLocalAndSingleSync()
                 && currPhn.number() == QLatin1String("34567")
                 && currEm.emailAddress() == QLatin1String("alice@test.com")) {
             if (currSt.syncTarget() == QLatin1String("local")) {
-                QCOMPARE(curr.detail<QContactHobby>().value(QContactHobby::FieldHobby), QString()); // local shouldn't get it
+                QCOMPARE(curr.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby), QString()); // local shouldn't get it
                 localAlice = curr;
                 foundLocalAlice = true;
             } else if (currSt.syncTarget() == QLatin1String("test")) {
-                QCOMPARE(curr.detail<QContactHobby>().value(QContactHobby::FieldHobby), QLatin1String("tennis")); // came from here
+                QCOMPARE(curr.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby), QLatin1String("tennis")); // came from here
                 testAlice = curr;
                 foundTestAlice = true;
             } else {
                 QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
-                QCOMPARE(curr.detail<QContactHobby>().value(QContactHobby::FieldHobby), QLatin1String("tennis")); // aggregated to here
+                QCOMPARE(curr.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby), QLatin1String("tennis")); // aggregated to here
                 aggregateAlice = curr;
                 foundAggregateAlice = true;
             }
@@ -547,23 +491,23 @@ void tst_Aggregation::createSingleLocalAndSingleSync()
     QVERIFY(foundLocalAlice);
     QVERIFY(foundTestAlice);
     QVERIFY(foundAggregateAlice);
-    QVERIFY(localAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::First).contains(aggregateAlice.id()));
-    QVERIFY(testAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::First).contains(aggregateAlice.id()));
-    QVERIFY(aggregateAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::Second).contains(localAlice.id()));
-    QVERIFY(aggregateAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::Second).contains(testAlice.id()));
+    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(testAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(testAlice.id()));
 }
 
 void tst_Aggregation::updateSingleLocal()
 {
     QContactDetailFilter allSyncTargets;
-    allSyncTargets.setDetailDefinitionName(QContactSyncTarget::DefinitionName, QContactSyncTarget::FieldSyncTarget);
+    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
 
     int aggCount = m_cm->contactIds().size();
     int allCount = m_cm->contactIds(allSyncTargets).size();
 
     // set up some signal spies
-    QSignalSpy addSpy(m_cm, SIGNAL(contactsAdded(QList<QContactLocalId>)));
-    QSignalSpy chgSpy(m_cm, SIGNAL(contactsChanged(QList<QContactLocalId>)));
+    QSignalSpy addSpy(m_cm, contactsAddedSignal);
+    QSignalSpy chgSpy(m_cm, contactsChangedSignal);
     int addSpyCount = 0;
     int chgSpyCount = 0;
 
@@ -588,7 +532,7 @@ void tst_Aggregation::updateSingleLocal()
     QVERIFY(m_cm->saveContact(&alice));
     QTRY_VERIFY(addSpy.count() > addSpyCount);
     QTRY_COMPARE(m_addAccumulatedIds.size(), 2); // should have added local + aggregate
-    QVERIFY(m_addAccumulatedIds.contains(alice.id().localId()));
+    QVERIFY(m_addAccumulatedIds.contains(ContactId::apiId(alice)));
     addSpyCount = addSpy.count();
 
     QCOMPARE(m_cm->contactIds().size(), aggCount + 1); // 1 extra aggregate contact
@@ -625,8 +569,8 @@ void tst_Aggregation::updateSingleLocal()
 
     QVERIFY(foundLocalAlice);
     QVERIFY(foundAggregateAlice);
-    QVERIFY(localAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::First).contains(aggregateAlice.id()));
-    QVERIFY(aggregateAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::Second).contains(localAlice.id()));
+    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
 
     // now update alice.  The aggregate should get updated also.
     QContactEmailAddress ae; // add an email address.
@@ -641,18 +585,18 @@ void tst_Aggregation::updateSingleLocal()
     m_chgAccumulatedIds.clear();
     QVERIFY(m_cm->saveContact(&localAlice));
     QTRY_VERIFY(chgSpy.count() > chgSpyCount);
-    QTRY_VERIFY(m_chgAccumulatedIds.contains(localAlice.id().localId()));
-    QTRY_VERIFY(m_chgAccumulatedIds.contains(aggregateAlice.id().localId()));
+    QTRY_VERIFY(m_chgAccumulatedIds.contains(ContactId::apiId(localAlice)));
+    QTRY_VERIFY(m_chgAccumulatedIds.contains(ContactId::apiId(aggregateAlice)));
 
     // reload them, and compare.
-    localAlice = m_cm->contact(localAlice.id().localId());
-    aggregateAlice = m_cm->contact(aggregateAlice.id().localId());
-    QCOMPARE(localAlice.detail<QContactEmailAddress>().value(QContactEmailAddress::FieldEmailAddress), QLatin1String("alice4@test.com"));
-    QCOMPARE(aggregateAlice.detail<QContactEmailAddress>().value(QContactEmailAddress::FieldEmailAddress), QLatin1String("alice4@test.com"));
-    QCOMPARE(localAlice.detail<QContactPhoneNumber>().value(QContactPhoneNumber::FieldNumber), QLatin1String("4444"));
-    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().value(QContactPhoneNumber::FieldNumber), QLatin1String("4444"));
-    QVERIFY(localAlice.detail<QContactHobby>().value(QContactHobby::FieldHobby).isEmpty());
-    QVERIFY(aggregateAlice.detail<QContactHobby>().value(QContactHobby::FieldHobby).isEmpty());
+    localAlice = m_cm->contact(retrievalId(localAlice));
+    aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
+    QCOMPARE(localAlice.detail<QContactEmailAddress>().value<QString>(QContactEmailAddress::FieldEmailAddress), QString::fromLatin1("alice4@test.com"));
+    QCOMPARE(aggregateAlice.detail<QContactEmailAddress>().value<QString>(QContactEmailAddress::FieldEmailAddress), QString::fromLatin1("alice4@test.com"));
+    QCOMPARE(localAlice.detail<QContactPhoneNumber>().value<QString>(QContactPhoneNumber::FieldNumber), QString::fromLatin1("4444"));
+    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().value<QString>(QContactPhoneNumber::FieldNumber), QString::fromLatin1("4444"));
+    QVERIFY(localAlice.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby).isEmpty());
+    QVERIFY(aggregateAlice.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby).isEmpty());
     QCOMPARE(localAlice.details<QContactEmailAddress>().size(), 1);
     QCOMPARE(localAlice.details<QContactPhoneNumber>().size(), 1);
     QCOMPARE(localAlice.details<QContactHobby>().size(), 0);
@@ -668,28 +612,28 @@ void tst_Aggregation::updateSingleLocal()
     QVERIFY(localAlice.removeDetail(&aph)); // removed, but since we don't include phone number in the definitionMask, shouldn't be applied
     QList<QContact> saveList;
     saveList << localAlice;
-    QVERIFY(m_cm->saveContacts(&saveList, QStringList() << QContactEmailAddress::DefinitionName));
+    QVERIFY(m_cm->saveContacts(&saveList, DetailList() << detailType<QContactEmailAddress>()));
 
     // reload them, and compare.
-    localAlice = m_cm->contact(localAlice.id().localId());
-    aggregateAlice = m_cm->contact(aggregateAlice.id().localId());
-    QCOMPARE(localAlice.detail<QContactEmailAddress>().value(QContactEmailAddress::FieldEmailAddress), QLatin1String("alice4@test4.com"));
-    QCOMPARE(aggregateAlice.detail<QContactEmailAddress>().value(QContactEmailAddress::FieldEmailAddress), QLatin1String("alice4@test4.com"));
-    QCOMPARE(localAlice.detail<QContactPhoneNumber>().value(QContactPhoneNumber::FieldNumber), QLatin1String("4444"));
-    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().value(QContactPhoneNumber::FieldNumber), QLatin1String("4444"));
+    localAlice = m_cm->contact(retrievalId(localAlice));
+    aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
+    QCOMPARE(localAlice.detail<QContactEmailAddress>().value<QString>(QContactEmailAddress::FieldEmailAddress), QString::fromLatin1("alice4@test4.com"));
+    QCOMPARE(aggregateAlice.detail<QContactEmailAddress>().value<QString>(QContactEmailAddress::FieldEmailAddress), QString::fromLatin1("alice4@test4.com"));
+    QCOMPARE(localAlice.detail<QContactPhoneNumber>().value<QString>(QContactPhoneNumber::FieldNumber), QString::fromLatin1("4444"));
+    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().value<QString>(QContactPhoneNumber::FieldNumber), QString::fromLatin1("4444"));
 }
 
 void tst_Aggregation::updateSingleAggregate()
 {
     QContactDetailFilter allSyncTargets;
-    allSyncTargets.setDetailDefinitionName(QContactSyncTarget::DefinitionName, QContactSyncTarget::FieldSyncTarget);
+    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
 
     int aggCount = m_cm->contactIds().size();
     int allCount = m_cm->contactIds(allSyncTargets).size();
 
     // set up some signal spies
-    QSignalSpy addSpy(m_cm, SIGNAL(contactsAdded(QList<QContactLocalId>)));
-    QSignalSpy chgSpy(m_cm, SIGNAL(contactsChanged(QList<QContactLocalId>)));
+    QSignalSpy addSpy(m_cm, contactsAddedSignal);
+    QSignalSpy chgSpy(m_cm, contactsChangedSignal);
     int addSpyCount = 0;
     int chgSpyCount = 0;
 
@@ -714,7 +658,7 @@ void tst_Aggregation::updateSingleAggregate()
     QVERIFY(m_cm->saveContact(&alice));
     QTRY_VERIFY(addSpy.count() > addSpyCount);
     QTRY_COMPARE(m_addAccumulatedIds.size(), 2); // should have added local + aggregate
-    QVERIFY(m_addAccumulatedIds.contains(alice.id().localId()));
+    QVERIFY(m_addAccumulatedIds.contains(ContactId::apiId(alice)));
     addSpyCount = addSpy.count();
 
     QCOMPARE(m_cm->contactIds().size(), aggCount + 1); // 1 extra aggregate contact
@@ -751,8 +695,8 @@ void tst_Aggregation::updateSingleAggregate()
 
     QVERIFY(foundLocalAlice);
     QVERIFY(foundAggregateAlice);
-    QVERIFY(localAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::First).contains(aggregateAlice.id()));
-    QVERIFY(aggregateAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::Second).contains(localAlice.id()));
+    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
 
     // now update aggregate alice.  We expect the changes to "down promoted" to the local contact!
     QContactEmailAddress ae; // add an email address
@@ -767,18 +711,18 @@ void tst_Aggregation::updateSingleAggregate()
     m_chgAccumulatedIds.clear();
     QVERIFY(m_cm->saveContact(&aggregateAlice));
     QTRY_VERIFY(chgSpy.count() > chgSpyCount);
-    QTRY_VERIFY(m_chgAccumulatedIds.contains(localAlice.id().localId()));
-    QTRY_VERIFY(m_chgAccumulatedIds.contains(aggregateAlice.id().localId()));
+    QTRY_VERIFY(m_chgAccumulatedIds.contains(ContactId::apiId(localAlice)));
+    QTRY_VERIFY(m_chgAccumulatedIds.contains(ContactId::apiId(aggregateAlice)));
 
     // reload them, and compare.
-    localAlice = m_cm->contact(localAlice.id().localId());
-    aggregateAlice = m_cm->contact(aggregateAlice.id().localId());
-    QCOMPARE(localAlice.detail<QContactEmailAddress>().value(QContactEmailAddress::FieldEmailAddress), QLatin1String("alice5@test.com"));
-    QCOMPARE(aggregateAlice.detail<QContactEmailAddress>().value(QContactEmailAddress::FieldEmailAddress), QLatin1String("alice5@test.com"));
-    QCOMPARE(localAlice.detail<QContactPhoneNumber>().value(QContactPhoneNumber::FieldNumber), QLatin1String("555"));
-    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().value(QContactPhoneNumber::FieldNumber), QLatin1String("555"));
-    QVERIFY(localAlice.detail<QContactHobby>().value(QContactHobby::FieldHobby).isEmpty());
-    QVERIFY(aggregateAlice.detail<QContactHobby>().value(QContactHobby::FieldHobby).isEmpty());
+    localAlice = m_cm->contact(retrievalId(localAlice));
+    aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
+    QCOMPARE(localAlice.detail<QContactEmailAddress>().value<QString>(QContactEmailAddress::FieldEmailAddress), QLatin1String("alice5@test.com"));
+    QCOMPARE(aggregateAlice.detail<QContactEmailAddress>().value<QString>(QContactEmailAddress::FieldEmailAddress), QLatin1String("alice5@test.com"));
+    QCOMPARE(localAlice.detail<QContactPhoneNumber>().value<QString>(QContactPhoneNumber::FieldNumber), QLatin1String("555"));
+    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().value<QString>(QContactPhoneNumber::FieldNumber), QLatin1String("555"));
+    QVERIFY(localAlice.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby).isEmpty());
+    QVERIFY(aggregateAlice.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby).isEmpty());
     QCOMPARE(localAlice.details<QContactEmailAddress>().size(), 1);
     QCOMPARE(localAlice.details<QContactPhoneNumber>().size(), 1);
     QCOMPARE(localAlice.details<QContactHobby>().size(), 0);
@@ -835,9 +779,9 @@ void tst_Aggregation::updateAggregateOfLocalAndSync()
 
     // now grab the aggregate alice
     QContactRelationshipFilter aggf;
-    aggf.setRelatedContactId(alice.id());
+    setFilterContact(aggf, alice);
     aggf.setRelatedContactRole(QContactRelationship::Second);
-    aggf.setRelationshipType(QContactRelationship::Aggregates);
+    setFilterType(aggf, QContactRelationship::Aggregates);
     QList<QContact> allAggregatesOfAlice = m_cm->contacts(aggf);
     QCOMPARE(allAggregatesOfAlice.size(), 1);
     QContact aggregateAlice = allAggregatesOfAlice.at(0);
@@ -871,15 +815,15 @@ void tst_Aggregation::updateAggregateOfLocalAndSync()
     QVERIFY(m_cm->saveContact(&aggregateAlice));
 
     // regenerate and ensure we get what we expect.
-    aggregateAlice = m_cm->contact(aggregateAlice.id().localId());
+    aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
     QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().size(), 1);  // modified, comes from the local contact
     QCOMPARE(aggregateAlice.details<QContactEmailAddress>().size(), 2); // modified local, now have two different values
     QCOMPARE(aggregateAlice.details<QContactHobby>().size(), 1);        // couldn't remove, comes from the sync contact
     QCOMPARE(aggregateAlice.details<QContactNote>().size(), 1);         // couldn't modify, comes from the sync contact
 
-    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().value(QContactPhoneNumber::FieldNumber), QLatin1String("11115"));
-    QCOMPARE(aggregateAlice.detail<QContactHobby>().value(QContactHobby::FieldHobby), QLatin1String("tennis"));
-    QCOMPARE(aggregateAlice.detail<QContactNote>().value(QContactNote::FieldNote), QLatin1String("noteworthy note"));
+    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().value<QString>(QContactPhoneNumber::FieldNumber), QString::fromLatin1("11115"));
+    QCOMPARE(aggregateAlice.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby), QString::fromLatin1("tennis"));
+    QCOMPARE(aggregateAlice.detail<QContactNote>().value<QString>(QContactNote::FieldNote), QString::fromLatin1("noteworthy note"));
     QList<QContactEmailAddress> aaems = aggregateAlice.details<QContactEmailAddress>(); // order is undefined.
     if (aaems.at(0).emailAddress() == QLatin1String("aliceP@test.com")) {
         QCOMPARE(aaems.at(1).emailAddress(), QLatin1String("aliceP2@test.com"));
@@ -892,7 +836,7 @@ void tst_Aggregation::updateAggregateOfLocalAndSync()
 void tst_Aggregation::promotionToSingleLocal()
 {
     QContactDetailFilter allSyncTargets;
-    allSyncTargets.setDetailDefinitionName(QContactSyncTarget::DefinitionName, QContactSyncTarget::FieldSyncTarget);
+    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
 
     // first, save a sync target alice.  This should generate an aggregate, but not a local.
     QContact syncAlice;
@@ -943,8 +887,8 @@ void tst_Aggregation::promotionToSingleLocal()
     QVERIFY(!foundLocalAlice); // shouldn't have created a local
     QVERIFY(foundSyncAlice);
     QVERIFY(foundAggregateAlice); // should have created an aggregate
-    QVERIFY(syncAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::First).contains(aggregateAlice.id()));
-    QVERIFY(aggregateAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::Second).contains(syncAlice.id()));
+    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(syncAlice.id()));
 
     // now we favoritify the aggregate contact.
     // this should cause the creation of a local contact.
@@ -997,10 +941,10 @@ void tst_Aggregation::promotionToSingleLocal()
     QVERIFY(foundAggregateAlice);
 
     // ensure they're related as required.
-    QVERIFY(localAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::First).contains(aggregateAlice.id()));
-    QVERIFY(aggregateAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::Second).contains(localAlice.id()));
-    QVERIFY(syncAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::First).contains(aggregateAlice.id()));
-    QVERIFY(aggregateAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::Second).contains(syncAlice.id()));
+    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
+    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(syncAlice.id()));
 
     // finally, save a phone number in the aggregate.
     // this should get downpromoted to the local.
@@ -1055,10 +999,10 @@ void tst_Aggregation::promotionToSingleLocal()
     QVERIFY(foundAggregateAlice);
 
     // ensure they're related as required.
-    QVERIFY(localAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::First).contains(aggregateAlice.id()));
-    QVERIFY(aggregateAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::Second).contains(localAlice.id()));
-    QVERIFY(syncAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::First).contains(aggregateAlice.id()));
-    QVERIFY(aggregateAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::Second).contains(syncAlice.id()));
+    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
+    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(syncAlice.id()));
 
     // now unfavorite aggregate alice.  ensure that it propagates properly.
     afav = aggregateAlice.detail<QContactFavorite>();
@@ -1109,7 +1053,7 @@ void tst_Aggregation::promotionToSingleLocal()
 void tst_Aggregation::uniquenessConstraints()
 {
     QContactDetailFilter allSyncTargets;
-    allSyncTargets.setDetailDefinitionName(QContactSyncTarget::DefinitionName, QContactSyncTarget::FieldSyncTarget);
+    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
 
     // create a valid local contact.  An aggregate should be generated.
     QContact localAlice;
@@ -1160,7 +1104,7 @@ void tst_Aggregation::uniquenessConstraints()
     afav.setFavorite(true);
     QVERIFY(aggregateAlice.saveDetail(&afav));   // should update the existing.
     QVERIFY(m_cm->saveContact(&aggregateAlice)); // should succeed.
-    QVERIFY(m_cm->contact(aggregateAlice.id().localId()).detail<QContactFavorite>().isFavorite());
+    QVERIFY(m_cm->contact(retrievalId(aggregateAlice)).detail<QContactFavorite>().isFavorite());
 
     // test uniqueness constraint of name detail.
     QVERIFY(aggregateAlice.details<QContactName>().size() == 1);
@@ -1178,7 +1122,7 @@ void tst_Aggregation::uniquenessConstraints()
 
     // test uniqueness (and read-only) constraint of sync target.
     QVERIFY(aggregateAlice.details<QContactSyncTarget>().size() == 1);
-    QCOMPARE(aggregateAlice.detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget), QLatin1String("aggregate"));
+    QCOMPARE(aggregateAlice.detail<QContactSyncTarget>().value<QString>(QContactSyncTarget::FieldSyncTarget), QString::fromLatin1("aggregate"));
     QContactSyncTarget ast;
     ast.setSyncTarget("uniqueness");
     QVERIFY(aggregateAlice.saveDetail(&ast));
@@ -1220,9 +1164,9 @@ void tst_Aggregation::uniquenessConstraints()
     ats.setLastModified(testDt);
     QVERIFY(aggregateAlice.saveDetail(&ats));
     QVERIFY(m_cm->saveContact(&aggregateAlice));
-    QCOMPARE(m_cm->contact(aggregateAlice.id().localId()).detail<QContactTimestamp>().lastModified(), testDt);
+    QCOMPARE(m_cm->contact(retrievalId(aggregateAlice)).detail<QContactTimestamp>().lastModified(), testDt);
     if (hasCreatedTs) {
-        QCOMPARE(m_cm->contact(aggregateAlice.id().localId()).detail<QContactTimestamp>().created(), testDt);
+        QCOMPARE(m_cm->contact(retrievalId(aggregateAlice)).detail<QContactTimestamp>().created(), testDt);
     }
 
     // test uniqueness constraint of guid detail.  Guid is a bit special, as it's not in the main table.
@@ -1248,7 +1192,7 @@ void tst_Aggregation::uniquenessConstraints()
 void tst_Aggregation::removeSingleLocal()
 {
     QContactDetailFilter allSyncTargets;
-    allSyncTargets.setDetailDefinitionName(QContactSyncTarget::DefinitionName, QContactSyncTarget::FieldSyncTarget);
+    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
 
     int aggCount = m_cm->contactIds().size();
     int allCount = m_cm->contactIds(allSyncTargets).size();
@@ -1256,8 +1200,8 @@ void tst_Aggregation::removeSingleLocal()
     int oldAllCount = allCount;
 
     // set up some signal spies
-    QSignalSpy addSpy(m_cm, SIGNAL(contactsAdded(QList<QContactLocalId>)));
-    QSignalSpy remSpy(m_cm, SIGNAL(contactsRemoved(QList<QContactLocalId>)));
+    QSignalSpy addSpy(m_cm, contactsAddedSignal);
+    QSignalSpy remSpy(m_cm, contactsRemovedSignal);
     int addSpyCount = 0;
     int remSpyCount = 0;
 
@@ -1278,7 +1222,7 @@ void tst_Aggregation::removeSingleLocal()
     QVERIFY(m_cm->saveContact(&alice));
     QTRY_VERIFY(addSpy.count() > addSpyCount);
     QTRY_COMPARE(m_addAccumulatedIds.size(), 2); // should have added local + aggregate
-    QVERIFY(m_addAccumulatedIds.contains(alice.id().localId()));
+    QVERIFY(m_addAccumulatedIds.contains(ContactId::apiId(alice)));
     addSpyCount = addSpy.count();
 
     QCOMPARE(m_cm->contactIds().size(), aggCount + 1); // 1 extra aggregate contact
@@ -1313,8 +1257,8 @@ void tst_Aggregation::removeSingleLocal()
 
     QVERIFY(foundLocalAlice);
     QVERIFY(foundAggregateAlice);
-    QVERIFY(localAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::First).contains(aggregateAlice.id()));
-    QVERIFY(aggregateAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::Second).contains(localAlice.id()));
+    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
 
     // now add another local contact.
     QContact bob;
@@ -1334,20 +1278,20 @@ void tst_Aggregation::removeSingleLocal()
     // now remove local alice.  We expect that the "orphan" aggregate alice will also be removed.
     remSpyCount = remSpy.count();
     m_remAccumulatedIds.clear();
-    QVERIFY(m_cm->removeContact(localAlice.id().localId()));
+    QVERIFY(m_cm->removeContact(removalId(localAlice)));
     QTRY_VERIFY(remSpy.count() > remSpyCount);
-    QTRY_VERIFY(m_remAccumulatedIds.contains(localAlice.id().localId()));
-    QTRY_VERIFY(m_remAccumulatedIds.contains(aggregateAlice.id().localId()));
+    QTRY_VERIFY(m_remAccumulatedIds.contains(ContactId::apiId(localAlice)));
+    QTRY_VERIFY(m_remAccumulatedIds.contains(ContactId::apiId(aggregateAlice)));
 
     // alice's aggregate contact should have been removed, bob's should not have.
     QCOMPARE(m_cm->contactIds().size(), (aggCount-1));
 
     // but bob should not have been removed.
-    QVERIFY(m_cm->contactIds(allSyncTargets).contains(bob.id().localId()));
+    QVERIFY(m_cm->contactIds(allSyncTargets).contains(ContactId::apiId(bob)));
     QList<QContact> stillExisting = m_cm->contacts(allSyncTargets);
     bool foundBob = false;
     foreach (const QContact &c, stillExisting) {
-        if (c.id().localId() == bob.id().localId()) {
+        if (c.id() == bob.id()) {
             foundBob = true;
             break;
         }
@@ -1355,8 +1299,8 @@ void tst_Aggregation::removeSingleLocal()
     QVERIFY(foundBob);
 
     // now remove bob.
-    QVERIFY(m_cm->removeContact(bob.id().localId()));
-    QVERIFY(!m_cm->contactIds(allSyncTargets).contains(bob.id().localId()));
+    QVERIFY(m_cm->removeContact(removalId(bob)));
+    QVERIFY(!m_cm->contactIds(allSyncTargets).contains(ContactId::apiId(bob)));
 
     // should be back to our original counts
     int newAggCount = m_cm->contactIds().size();
@@ -1368,7 +1312,7 @@ void tst_Aggregation::removeSingleLocal()
 void tst_Aggregation::removeSingleAggregate()
 {
     QContactDetailFilter allSyncTargets;
-    allSyncTargets.setDetailDefinitionName(QContactSyncTarget::DefinitionName, QContactSyncTarget::FieldSyncTarget);
+    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
 
     int aggCount = m_cm->contactIds().size();
     int allCount = m_cm->contactIds(allSyncTargets).size();
@@ -1376,8 +1320,8 @@ void tst_Aggregation::removeSingleAggregate()
     int oldAllCount = allCount;
 
     // set up some signal spies
-    QSignalSpy addSpy(m_cm, SIGNAL(contactsAdded(QList<QContactLocalId>)));
-    QSignalSpy remSpy(m_cm, SIGNAL(contactsRemoved(QList<QContactLocalId>)));
+    QSignalSpy addSpy(m_cm, contactsAddedSignal);
+    QSignalSpy remSpy(m_cm, contactsRemovedSignal);
     int addSpyCount = 0;
     int remSpyCount = 0;
 
@@ -1398,7 +1342,7 @@ void tst_Aggregation::removeSingleAggregate()
     QVERIFY(m_cm->saveContact(&alice));
     QTRY_VERIFY(addSpy.count() > addSpyCount);
     QTRY_COMPARE(m_addAccumulatedIds.size(), 2); // should have added local + aggregate
-    QVERIFY(m_addAccumulatedIds.contains(alice.id().localId()));
+    QVERIFY(m_addAccumulatedIds.contains(ContactId::apiId(alice)));
     addSpyCount = addSpy.count();
 
     QCOMPARE(m_cm->contactIds().size(), aggCount + 1); // 1 extra aggregate contact
@@ -1433,8 +1377,8 @@ void tst_Aggregation::removeSingleAggregate()
 
     QVERIFY(foundLocalAlice);
     QVERIFY(foundAggregateAlice);
-    QVERIFY(localAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::First).contains(aggregateAlice.id()));
-    QVERIFY(aggregateAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::Second).contains(localAlice.id()));
+    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
 
     // now add another local contact.
     QContact bob;
@@ -1454,20 +1398,20 @@ void tst_Aggregation::removeSingleAggregate()
     // now remove aggregate alice.  We expect that the "orphan" local alice will also be removed.
     remSpyCount = remSpy.count();
     m_remAccumulatedIds.clear();
-    QVERIFY(m_cm->removeContact(aggregateAlice.id().localId()));
+    QVERIFY(m_cm->removeContact(removalId(aggregateAlice)));
     QTRY_VERIFY(remSpy.count() > remSpyCount);
-    QTRY_VERIFY(m_remAccumulatedIds.contains(localAlice.id().localId()));
-    QTRY_VERIFY(m_remAccumulatedIds.contains(aggregateAlice.id().localId()));
+    QTRY_VERIFY(m_remAccumulatedIds.contains(ContactId::apiId(localAlice)));
+    QTRY_VERIFY(m_remAccumulatedIds.contains(ContactId::apiId(aggregateAlice)));
 
     // alice's aggregate contact should have been removed, bob's should not have.
     QCOMPARE(m_cm->contactIds().size(), (aggCount-1));
 
     // but bob should not have been removed.
-    QVERIFY(m_cm->contactIds(allSyncTargets).contains(bob.id().localId()));
+    QVERIFY(m_cm->contactIds(allSyncTargets).contains(ContactId::apiId(bob)));
     QList<QContact> stillExisting = m_cm->contacts(allSyncTargets);
     bool foundBob = false;
     foreach (const QContact &c, stillExisting) {
-        if (c.id().localId() == bob.id().localId()) {
+        if (c.id() == bob.id()) {
             foundBob = true;
             break;
         }
@@ -1475,8 +1419,8 @@ void tst_Aggregation::removeSingleAggregate()
     QVERIFY(foundBob);
 
     // now remove bob.
-    QVERIFY(m_cm->removeContact(bob.id().localId()));
-    QVERIFY(!m_cm->contactIds(allSyncTargets).contains(bob.id().localId()));
+    QVERIFY(m_cm->removeContact(removalId(bob)));
+    QVERIFY(!m_cm->contactIds(allSyncTargets).contains(ContactId::apiId(bob)));
 
     // should be back to our original counts
     int newAggCount = m_cm->contactIds().size();
@@ -1495,14 +1439,14 @@ void tst_Aggregation::regenerateAggregate()
     // (which in this case, is just the local contact).
 
     QContactDetailFilter allSyncTargets;
-    allSyncTargets.setDetailDefinitionName(QContactSyncTarget::DefinitionName, QContactSyncTarget::FieldSyncTarget);
+    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
 
     int aggCount = m_cm->contactIds().size();
     int allCount = m_cm->contactIds(allSyncTargets).size();
 
     // set up some signal spies
-    QSignalSpy addSpy(m_cm, SIGNAL(contactsAdded(QList<QContactLocalId>)));
-    QSignalSpy chgSpy(m_cm, SIGNAL(contactsChanged(QList<QContactLocalId>)));
+    QSignalSpy addSpy(m_cm, contactsAddedSignal);
+    QSignalSpy chgSpy(m_cm, contactsChangedSignal);
     int addSpyCount = 0;
     int chgSpyCount = 0;
 
@@ -1527,7 +1471,7 @@ void tst_Aggregation::regenerateAggregate()
     QVERIFY(m_cm->saveContact(&alice));
     QTRY_VERIFY(addSpy.count() > addSpyCount); // should have added local + aggregate
     QTRY_COMPARE(m_addAccumulatedIds.size(), 2);
-    QVERIFY(m_addAccumulatedIds.contains(alice.id().localId()));
+    QVERIFY(m_addAccumulatedIds.contains(ContactId::apiId(alice)));
     addSpyCount = addSpy.count();
 
     QCOMPARE(m_cm->contactIds().size(), aggCount + 1); // 1 extra aggregate contact
@@ -1564,8 +1508,8 @@ void tst_Aggregation::regenerateAggregate()
 
     QVERIFY(foundLocalAlice);
     QVERIFY(foundAggregateAlice);
-    QVERIFY(localAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::First).contains(aggregateAlice.id()));
-    QVERIFY(aggregateAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::Second).contains(localAlice.id()));
+    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
 
     // now add the doppleganger from another sync source
     QContact syncAlice;
@@ -1600,10 +1544,10 @@ void tst_Aggregation::regenerateAggregate()
     QTRY_VERIFY(chgSpy.count() > chgSpyCount); // should have updated the aggregate
     QTRY_COMPARE(m_addAccumulatedIds.size(), 3);
     QTRY_COMPARE(m_chgAccumulatedIds.size(), 1); // the aggregate should have been updated (with the hobby)
-    QVERIFY(m_addAccumulatedIds.contains(localAlice.id().localId()));
-    QVERIFY(m_addAccumulatedIds.contains(aggregateAlice.id().localId()));
-    QVERIFY(m_addAccumulatedIds.contains(syncAlice.id().localId()));
-    QVERIFY(m_chgAccumulatedIds.contains(aggregateAlice.id().localId()));
+    QVERIFY(m_addAccumulatedIds.contains(ContactId::apiId(localAlice)));
+    QVERIFY(m_addAccumulatedIds.contains(ContactId::apiId(aggregateAlice)));
+    QVERIFY(m_addAccumulatedIds.contains(ContactId::apiId(syncAlice)));
+    QVERIFY(m_chgAccumulatedIds.contains(ContactId::apiId(aggregateAlice)));
     addSpyCount = addSpy.count();
 
     QCOMPARE(m_cm->contactIds().size(), aggCount); // no extra aggregate contact
@@ -1626,16 +1570,16 @@ void tst_Aggregation::regenerateAggregate()
                 && currPhn.number() == QLatin1String("88888")
                 && currEm.emailAddress() == QLatin1String("alice8@test.com")) {
             if (currSt.syncTarget() == QLatin1String("local")) {
-                QCOMPARE(curr.detail<QContactHobby>().value(QContactHobby::FieldHobby), QString()); // local shouldn't get it
+                QCOMPARE(curr.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby), QString()); // local shouldn't get it
                 localAlice = curr;
                 foundLocalAlice = true;
             } else if (currSt.syncTarget() == QLatin1String("test")) {
-                QCOMPARE(curr.detail<QContactHobby>().value(QContactHobby::FieldHobby), QLatin1String("tennis")); // came from here
+                QCOMPARE(curr.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby), QLatin1String("tennis")); // came from here
                 testAlice = curr;
                 foundTestAlice = true;
             } else {
                 QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
-                QCOMPARE(curr.detail<QContactHobby>().value(QContactHobby::FieldHobby), QLatin1String("tennis")); // aggregated to here
+                QCOMPARE(curr.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby), QLatin1String("tennis")); // aggregated to here
                 aggregateAlice = curr;
                 foundAggregateAlice = true;
             }
@@ -1645,18 +1589,18 @@ void tst_Aggregation::regenerateAggregate()
     QVERIFY(foundLocalAlice);
     QVERIFY(foundTestAlice);
     QVERIFY(foundAggregateAlice);
-    QVERIFY(localAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::First).contains(aggregateAlice.id()));
-    QVERIFY(testAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::First).contains(aggregateAlice.id()));
-    QVERIFY(aggregateAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::Second).contains(localAlice.id()));
-    QVERIFY(aggregateAlice.relatedContacts(QContactRelationship::Aggregates, QContactRelationship::Second).contains(testAlice.id()));
+    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(testAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(testAlice.id()));
 
     // now remove the "test" sync contact
-    QVERIFY(m_cm->removeContact(testAlice.id().localId()));
-    QVERIFY(!m_cm->contactIds(allSyncTargets).contains(testAlice.id().localId())); // should have been removed
+    QVERIFY(m_cm->removeContact(removalId(testAlice)));
+    QVERIFY(!m_cm->contactIds(allSyncTargets).contains(ContactId::apiId(testAlice))); // should have been removed
 
     // but the other contacts should NOT have been removed
-    QVERIFY(m_cm->contactIds(allSyncTargets).contains(localAlice.id().localId()));
-    QVERIFY(m_cm->contactIds(allSyncTargets).contains(aggregateAlice.id().localId()));
+    QVERIFY(m_cm->contactIds(allSyncTargets).contains(ContactId::apiId(localAlice)));
+    QVERIFY(m_cm->contactIds(allSyncTargets).contains(ContactId::apiId(aggregateAlice)));
 
     // reload them, and ensure that the "hobby" detail has been removed from the aggregate
     allContacts = m_cm->contacts(allSyncTargets);
@@ -1671,12 +1615,12 @@ void tst_Aggregation::regenerateAggregate()
                 && currPhn.number() == QLatin1String("88888")
                 && currEm.emailAddress() == QLatin1String("alice8@test.com")) {
             if (currSt.syncTarget() == QLatin1String("local")) {
-                QCOMPARE(curr.detail<QContactHobby>().value(QContactHobby::FieldHobby), QString());
+                QCOMPARE(curr.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby), QString());
                 localAlice = curr;
                 foundLocalAlice = true;
             } else {
                 QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
-                QCOMPARE(curr.detail<QContactHobby>().value(QContactHobby::FieldHobby), QString());
+                QCOMPARE(curr.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby), QString());
                 aggregateAlice = curr;
                 foundAggregateAlice = true;
             }
@@ -1687,7 +1631,7 @@ void tst_Aggregation::regenerateAggregate()
 void tst_Aggregation::detailUris()
 {
     QContactDetailFilter allSyncTargets;
-    allSyncTargets.setDetailDefinitionName(QContactSyncTarget::DefinitionName, QContactSyncTarget::FieldSyncTarget);
+    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
 
     // save alice.  Some details will have a detailUri or linkedDetailUris
     QContact alice;
@@ -1824,7 +1768,7 @@ void tst_Aggregation::correctDetails()
     m_cm->saveContacts(&saveList);
 
     QContactDetailFilter allSyncTargets;
-    allSyncTargets.setDetailDefinitionName(QContactSyncTarget::DefinitionName, QContactSyncTarget::FieldSyncTarget);
+    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
     QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
 
     QVERIFY(allContacts.size() >= saveList.size()); // at least that amount, maybe more (aggregates)
@@ -1885,21 +1829,21 @@ void tst_Aggregation::customSemantics()
     an.setFirstName("Alice");
     alice.saveDetail(&an);
     QContactAvatar aa;
-    aa.setImageUrl(QUrl(QString(QLatin1String("test.png"))));
-    aa.setValue(QLatin1String("AvatarMetadata"), "cover");
+    aa.setImageUrl(QUrl(QString::fromLatin1("test.png")));
+    aa.setValue(QContactAvatar__FieldAvatarMetadata, "cover");
     alice.saveDetail(&aa);
     QVERIFY(m_cm->saveContact(&alice));
-    QContact aliceReloaded = m_cm->contact(alice.id().localId());
-    QCOMPARE(aliceReloaded.detail<QContactName>().value(QContactName::FieldFirstName), QLatin1String("Alice"));
-    QCOMPARE(QUrl(aliceReloaded.detail<QContactAvatar>().value(QContactAvatar::FieldImageUrl)).toString(), QUrl(QString(QLatin1String("test.png"))).toString());
-    QCOMPARE(aliceReloaded.detail<QContactAvatar>().value(QLatin1String("AvatarMetadata")), QLatin1String("cover"));
+    QContact aliceReloaded = m_cm->contact(retrievalId(alice));
+    QCOMPARE(aliceReloaded.detail<QContactName>().value<QString>(QContactName::FieldFirstName), QLatin1String("Alice"));
+    QCOMPARE(QUrl(aliceReloaded.detail<QContactAvatar>().value<QString>(QContactAvatar::FieldImageUrl)).toString(), QUrl(QString::fromLatin1("test.png")).toString());
+    QCOMPARE(aliceReloaded.detail<QContactAvatar>().value<QString>(QContactAvatar__FieldAvatarMetadata), QLatin1String("cover"));
 
     // 2 - test the self contact semantics
-    QCOMPARE(m_cm->selfContactId(), QContactLocalId(3));
-    QVERIFY(!m_cm->setSelfContactId(alice.id().localId()));
+    QCOMPARE(m_cm->selfContactId(), ContactId::apiId(2));
+    QVERIFY(!m_cm->setSelfContactId(ContactId::apiId(alice)));
 
     // cleanup.
-    m_cm->removeContact(alice.id().localId());
+    m_cm->removeContact(removalId(alice));
 }
 
 QTEST_MAIN(tst_Aggregation)

@@ -51,6 +51,8 @@
 
 #include "qcontactmanager.h"
 
+#include "util.h"
+
 //
 //  W A R N I N G
 //  -------------
@@ -62,7 +64,8 @@
 // We mean it.
 //
 
-QTM_BEGIN_NAMESPACE
+BEGIN_CONTACTS_NAMESPACE
+
 class QContact;
 class QContactManagerDataHolder
 {
@@ -82,9 +85,9 @@ public:
                 qDebug() << "Saving contacts for" << mgrUri;
                 QList<QContact> contacts = cm->contacts();
                 savedContacts.insert(cm->managerName(),contacts);
-                QList<QContactLocalId> ids;
+                QList<QContactIdType> ids;
                 foreach(const QContact& contact, contacts)
-                    ids.append(contact.localId());
+                    ids.append(retrievalId(contact));
                 cm->removeContacts(ids, 0);
                 delete cm;
             }
@@ -108,7 +111,7 @@ private:
     QMap<QString, QList<QContact> > savedContacts;
 };
 
-QTM_END_NAMESPACE
+END_CONTACTS_NAMESPACE
 
 #endif
 

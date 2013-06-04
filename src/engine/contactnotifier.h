@@ -32,21 +32,23 @@
 #ifndef QTCONTACTSSQLITE_CONTACTNOTIFIER_H
 #define QTCONTACTSSQLITE_CONTACTNOTIFIER_H
 
+#include "contactid_p.h"
+
 #include <QContact>
 #include <QObject>
 #include <QSet>
 
-QTM_USE_NAMESPACE
+USE_CONTACTS_NAMESPACE
 
 namespace ContactNotifier
 {
     void initialize();
-    void contactsAdded(const QList<QContactLocalId> &contactIds);
-    void contactsChanged(const QList<QContactLocalId> &contactIds);
-    void contactsRemoved(const QList<QContactLocalId> &contactIds);
-    void selfContactIdChanged(QContactLocalId oldId, QContactLocalId newId);
-    void relationshipsAdded(const QList<QContactLocalId> &contactIds);
-    void relationshipsRemoved(const QList<QContactLocalId> &contactIds);
+    void contactsAdded(const QList<QContactIdType> &contactIds);
+    void contactsChanged(const QList<QContactIdType> &contactIds);
+    void contactsRemoved(const QList<QContactIdType> &contactIds);
+    void selfContactIdChanged(QContactIdType oldId, QContactIdType newId);
+    void relationshipsAdded(const QList<QContactIdType> &contactIds);
+    void relationshipsRemoved(const QList<QContactIdType> &contactIds);
 
     bool connect(const char *name, const char *signature, QObject *receiver, const char *slot);
 }

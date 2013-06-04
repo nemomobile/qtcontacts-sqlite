@@ -37,10 +37,10 @@
 #include <QContact>
 #include <QContactManager>
 
-
+#include "contactid_p.h"
 #include "contactsdatabase.h"
 
-QTM_USE_NAMESPACE
+USE_CONTACTS_NAMESPACE
 
 class ContactReader
 {
@@ -58,16 +58,16 @@ public:
     QContactManager::Error readContacts(
             const QString &table,
             QList<QContact> *contacts,
-            const QList<QContactLocalId> &contactIds,
+            const QList<QContactIdType> &contactIds,
             const QContactFetchHint &fetchHint);
 
     QContactManager::Error readContactIds(
-            QList<QContactLocalId> *contactIds,
+            QList<QContactIdType> *contactIds,
             const QContactFilter &filter,
             const QList<QContactSortOrder> &order);
 
     QContactManager::Error getIdentity(
-            ContactsDatabase::Identity identity, QContactLocalId *contactId);
+            ContactsDatabase::Identity identity, QContactIdType *contactId);
 
     QContactManager::Error readRelationships(
             QList<QContactRelationship> *relationships,
@@ -80,7 +80,7 @@ protected:
             const QString &table, QList<QContact> *contacts, const QContactFetchHint &fetchHint);
 
     virtual void contactsAvailable(const QList<QContact> &contacts);
-    virtual void contactIdsAvailable(const QList<QContactLocalId> &contactIds);
+    virtual void contactIdsAvailable(const QList<QContactIdType> &contactIds);
 
 private:
     QSqlDatabase m_database;

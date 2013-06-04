@@ -39,7 +39,7 @@
 
 #include <QtDebug>
 
-QTM_USE_NAMESPACE
+USE_CONTACTS_NAMESPACE
 
 static const char *setupEncoding =
         "\n PRAGMA encoding = \"UTF-16\";";
@@ -531,4 +531,8 @@ QSqlQuery ContactsDatabase::prepare(const char *statement, const QSqlDatabase &d
     return query;
 }
 
+#ifdef USING_QTPIM
+const QContactDetail::DetailType QContactTpMetadata::Type(static_cast<QContactDetail::DetailType>(QContactDetail::TypeVersion + 1));
+#else
 Q_IMPLEMENT_CUSTOM_CONTACT_DETAIL(QContactTpMetadata, "TpMetadata");
+#endif

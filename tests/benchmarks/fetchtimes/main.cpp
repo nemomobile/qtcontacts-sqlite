@@ -37,7 +37,7 @@
 #include <QElapsedTimer>
 #include <QtDebug>
 
-QTM_USE_NAMESPACE
+USE_CONTACTS_NAMESPACE
 
 int main(int argc, char  *argv[])
 {
@@ -74,7 +74,11 @@ int main(int argc, char  *argv[])
     }
 
     // Reduce data access
+#ifdef USING_QTPIM
+    hint.setDetailTypesHint(QList<QContactDetail::DetailType>() << QContactName::Type << QContactAddress::Type);
+#else
     hint.setDetailDefinitionsHint(QStringList() << QContactName::DefinitionName << QContactAddress::DefinitionName);
+#endif
     request.setFetchHint(hint);
 
     for (int i = 0; i < 3; ++i) {
