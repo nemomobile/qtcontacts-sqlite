@@ -172,12 +172,6 @@ private slots:
     void detailPhoneNumberFiltering();
     void detailPhoneNumberFiltering_data();
 
-#if 0 // nemo sqlite backend doesn't support actions
-    void actionPlugins();
-    void actionFiltering();
-    void actionFiltering_data();
-#endif
-
     void detailVariantFiltering();
     void detailVariantFiltering_data();
 
@@ -258,28 +252,6 @@ void tst_QContactManagerFiltering::initTestCase()
             qFatal("returned list different from saved contacts list!");
         }
     }
-
-#if 0 // don't test actions with nemo sqlite backend as we don't support them
-    qDebug() << "Finished preparing each manager for test!  About to load test actions:";
-    QServiceManager sm;
-    QStringList allServices = sm.findServices();
-    foreach(const QString& serv, allServices) {
-        if (serv.startsWith("tst_qcontactmanagerfiltering:")) {
-            if (!sm.removeService(serv)) {
-                qDebug() << " tst_qca: ctor: cleaning up test service" << serv << "failed:" << sm.error();
-            }
-        }
-    }
-    QStringList myServices;
-    myServices << "BooleanAction" << "DateAction" << "IntegerAction" << "NumberAction" << "PhoneNumberAction";
-    foreach (const QString& serv, myServices) {
-        QString builtPath = QCoreApplication::applicationDirPath() + "/plugins/contacts/xmldata/" + serv.toLower() + "service.xml";
-        if (!sm.addService(builtPath)) {
-            qDebug() << " tst_qca: ctor: unable to add" << serv << "service:" << sm.error();
-        }
-    }
-    qDebug() << "Done!";
-#endif
 }
 
 void tst_QContactManagerFiltering::cleanupTestCase()
@@ -309,19 +281,6 @@ void tst_QContactManagerFiltering::cleanupTestCase()
 
     // And restore old contacts
     managerDataHolder.reset(0);
-
-#if 0 // don't test actions with nemo sqlite backend as we don't support them
-    // clean up any actions/services.
-    QServiceManager sm;
-    QStringList allServices = sm.findServices();
-    foreach(const QString& serv, allServices) {
-        if (serv.startsWith("tst_qcontactmanagerfiltering:")) {
-            if (!sm.removeService(serv)) {
-                qDebug() << " tst_qca: ctor: cleaning up test service" << serv << "failed:" << sm.error();
-            }
-        }
-    }
-#endif
 }
 
 QString tst_QContactManagerFiltering::convertIds(QList<QContactIdType> allIds, QList<QContactIdType> ids, QChar minimumContact, QChar maximumContact)
@@ -468,9 +427,6 @@ void tst_QContactManagerFiltering::detailStringFiltering_data()
             newMRow("Phone number = 555, starts with", manager) << manager << phonenumber << number << QVariant("555") <<  (int) QContactFilter::MatchStartsWith << "ab";
             newMRow("Phone number = 1212, ends with", manager) << manager << phonenumber << number << QVariant("1212") << (int) QContactFilter::MatchEndsWith << "a";
             newMRow("Phone number = 555-1212, match phone number", manager) << manager << phonenumber << number << QVariant("555-1212") << (int) QContactFilter::MatchPhoneNumber << "a"; // hyphens will be ignored by the match algorithm
-#if 0 // nemo sqlite backend doesn't support MatchKeypadCollation filtering
-            newMRow("Phone number = 555, keypad collation", manager) << manager << phonenumber << number << QVariant("555") << (int) (QContactFilter::MatchKeypadCollation | QContactFilter::MatchStartsWith) << "ab";
-#endif
 #ifdef DETAIL_DEFINITION_SUPPORTED
         }
 #endif
@@ -542,24 +498,10 @@ void tst_QContactManagerFiltering::detailPhoneNumberFiltering_data()
 
     TypeIdentifier phoneDef = detailType<QContactPhoneNumber>();
     FieldIdentifier phoneField = QContactPhoneNumber::FieldNumber;
-    TypeIdentifier nameDef = detailType<QContactName>();
-    FieldIdentifier nameField = QContactName::FieldFirstName; // just test the first name.
 
     // purely to test phone number filtering.
     for (int i = 0; i < managers.size(); i++) {
         QContactManager *manager = managers.at(i);
-
-#if 0 // nemo sqlite backend doesn't support MatchKeypadCollation filtering
-        // first, keypad collation testing (ITU-T / T9 testing)
-        QTest::newRow("t9 aaron") << manager << nameDef << nameField << QVariant(QString("22766")) << (int)(QContactFilter::MatchKeypadCollation) << "a";
-        QTest::newRow("t9 bob") << manager << nameDef << nameField << QVariant(QString("262")) << (int)(QContactFilter::MatchKeypadCollation) << "b";
-        QTest::newRow("t9 john") << manager << nameDef << nameField << QVariant(QString("5646")) << (int)(QContactFilter::MatchKeypadCollation) << "efg";
-        QTest::newRow("t9 bo") << manager << nameDef << nameField << QVariant(QString("26")) << (int)(QContactFilter::MatchKeypadCollation | QContactFilter::MatchStartsWith) << "bc"; // bob, boris
-        QTest::newRow("t9 zzzz") << manager << nameDef << nameField << QVariant(QString("9999")) << (int)(QContactFilter::MatchKeypadCollation) << ""; // nobody.
-#else
-        Q_UNUSED(nameDef)
-        Q_UNUSED(nameField)
-#endif
 
 #ifndef USING_QTPIM
         if (!manager->detailDefinitions().contains(detailType<QContactPhoneNumber>()))
@@ -2174,123 +2116,6 @@ void tst_QContactManagerFiltering::multiSorting()
 
     QCOMPARE(output, expected);
 }
-
-#if 0 // nemo sqlite backend doesn't support actions
-void tst_QContactManagerFiltering::actionPlugins()
-{
-    QStringList actions = QContactAction::availableActions();
-    QVERIFY(actions.contains("Boolean"));
-    QVERIFY(actions.contains("Number"));
-
-    /* Ignore the version if the vendor is not set */
-    actions = QContactAction::availableActions(QString());
-    QVERIFY(actions.contains("Boolean"));
-    QVERIFY(actions.contains("Number"));
-
-    actions = QContactAction::availableActions("NumberCo");
-    QVERIFY(actions.contains("Number"));
-    QVERIFY(!actions.contains("Boolean"));
-
-    actions = QContactAction::availableActions("IntegerCo");
-    QVERIFY(actions.contains("Number"));
-    QVERIFY(!actions.contains("Boolean"));
-
-    actions = QContactAction::availableActions("BooleanCo");
-    QVERIFY(!actions.contains("Number"));
-    QVERIFY(actions.contains("Boolean"));
-
-    actions = QContactAction::availableActions("IntegerCo");
-    QVERIFY(actions.contains("Number"));
-    QVERIFY(!actions.contains("Boolean"));
-
-    actions = QContactAction::availableActions("BooleanCo");
-    QVERIFY(!actions.contains("Number"));
-    QVERIFY(actions.contains("Boolean"));
-}
-
-void tst_QContactManagerFiltering::actionFiltering_data()
-{
-    QTest::addColumn<QContactManager *>("cm");
-    QTest::addColumn<QString>("actionName");
-    QTest::addColumn<QString>("expected");
-
-    QString es;
-
-    for (int i = 0; i < managers.size(); i++) {
-        QContactManager *manager = managers.at(i);
-        FieldSelector booleanDefAndFieldNames = defAndFieldNamesForTypePerManager.value(manager).value("Bool");
-        FieldSelector integerDefAndFieldNames = defAndFieldNamesForTypePerManager.value(manager).value("Integer");
-        FieldSelector dateDefAndFieldNames = defAndFieldNamesForTypePerManager.value(manager).value("Date");
-
-        newMRow("bad actionname", manager) << manager << "No such action"  << "";
-
-        QString expected;
-        if ( (!integerDefAndFieldNames.first.isEmpty() && !integerDefAndFieldNames.second.isEmpty())
-             ||
-             (!booleanDefAndFieldNames.first.isEmpty() && !booleanDefAndFieldNames.second.isEmpty()) ){
-                 expected = "abcd";
-        } else if (!dateDefAndFieldNames.first.isEmpty() && !dateDefAndFieldNames.second.isEmpty()) {
-            expected = "abd";
-        } else {
-            /* contact a,b have phone number, so at least phone number action can match them */
-            expected = "ab";
-        }
-
-        QTest::newRow("empty (any action matches)") << manager << es << expected;
-
-        if (!integerDefAndFieldNames.first.isEmpty() && !integerDefAndFieldNames.second.isEmpty()) {
-            newMRow("Number", manager) << manager << "NumberAction" << "abcd";
-            QTest::newRow("Number (NumberCo)") << manager << "NumberAction" << "abcd";
-        }
-
-        if (!booleanDefAndFieldNames.first.isEmpty() && !booleanDefAndFieldNames.second.isEmpty()) {
-            /* Boolean testing */
-            newMRow("Boolean action", manager) << manager << "BooleanAction" << "a";
-            newMRow("BooleanCo", manager) << manager << es << "a";
-        }
-
-        if (!booleanDefAndFieldNames.first.isEmpty() && !booleanDefAndFieldNames.second.isEmpty()) {
-            newMRow("Boolean action matching true", manager) << manager << es << "a";
-            newMRow("Boolean action matching false", manager) << manager << es << es;
-        }
-
-        /* Recursive filtering */
-        QTest::newRow("Recursive action 1") << manager << "IntersectionRecursive" << es;
-        QTest::newRow("Recursive action 2") << manager << "UnionRecursive" << es;
-        QTest::newRow("Recursive action 3") << manager << "PairRecursive" << es;
-        QTest::newRow("Recursive action 4") << manager << "AnotherPairRecursive" << es;
-        QTest::newRow("Recursive action 5") << manager << "Recursive" << es;
-    }
-}
-
-void tst_QContactManagerFiltering::actionFiltering()
-{
-    QFETCH(QContactManager*, cm);
-    QFETCH(QString, actionName);
-    QFETCH(QString, expected);
-
-    // only test the memory engine - action filtering + service framework plugin loading
-    // codepaths are tested fully this way since the codepath for other engines is that of
-    // the memory engine, and only the memory engine has the required definitions and fields.
-    if (cm->managerName() != QString(QLatin1String("memory")))
-        return;
-
-    /* Load the definition and field names for the various variant types for the current manager */
-    defAndFieldNamesForTypeForActions = defAndFieldNamesForTypePerManager.value(cm);
-    if (!defAndFieldNamesForTypeForActions.isEmpty()) {
-        QContactActionFilter af;
-        af.setActionName(actionName);
-
-        QList<QContactIdType> ids = cm->contactIds(af);
-        QList<QContactIdType> contacts = contactsAddedToManagers.values(cm);
-
-qDebug() << "   actionName =" << actionName;
-
-        QString output = convertIds(contacts, ids, 'a', 'k'); // don't include the convenience filtering contacts
-        QCOMPARE_UNSORTED(output, expected);
-    }
-}
-#endif
 
 void tst_QContactManagerFiltering::idListFiltering_data()
 {

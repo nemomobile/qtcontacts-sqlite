@@ -128,9 +128,6 @@ private slots:
 
     /* Special test with special data */
     void uriParsing();
-#if 0
-    void nameSynthesis();
-#endif
 #ifdef COMPATIBLE_CONTACT_SUPPORTED
     void compatibleContact();
 #endif
@@ -178,23 +175,11 @@ private slots:
     void contactValidation();
 #endif
     void errorStayingPut();
-#if 0
-    void ctors();
-#endif
     void invalidManager();
-#if 0
-    void memoryManager();
-#endif
     void changeSet();
     void fetchHint();
 #ifdef MUTABLE_SCHEMA_SUPPORTED
     void engineDefaultSchema();
-#endif
-#if 0
-    void errorSemantics();
-#endif
-#if 0
-    void lazyConnections();
 #endif
 
     /* Special test with special data */
@@ -792,110 +777,6 @@ void tst_QContactManager::uriParsing()
         QCOMPARE(parameters, outparameters);
     }
 }
-
-#if 0
-void tst_QContactManager::ctors()
-{
-    /* test the different ctors to make sure we end up with the same uri */
-    QVERIFY(QContactManager::availableManagers().count() > 1); // invalid + something else
-    QVERIFY(QContactManager::availableManagers().contains("invalid"));
-    QString defaultStore = QContactManager::availableManagers().value(0);
-    QVERIFY(defaultStore != "invalid");
-
-    qDebug() << "Available managers:" << QContactManager::availableManagers();
-
-    QString defaultStore = QString::fromLatin1(DEFAULT_MANAGER);
-
-    QMap<QString, QString> randomParameters;
-    randomParameters.insert("something", "old");
-    randomParameters.insert("something...", "new");
-    randomParameters.insert("something ", "borrowed");
-    randomParameters.insert(" something", "blue");
-
-    QObject parent;
-
-    QContactManager cm;
-    QContactManager cm2(defaultStore);
-    QContactManager cm3(defaultStore, QMap<QString, QString>());
-    QContactManager cm4(cm.managerUri()); // should fail
-
-    QContactManager cm9b(0); // QObject* ctor, should be same as cm2 etc
-    QContactManager cm9c(&parent); // same as cm2 etc.
-
-    QScopedPointer<QContactManager> cm5(QContactManager::fromUri(QContactManager::buildUri(defaultStore, QMap<QString, QString>())));
-    QScopedPointer<QContactManager> cm6(QContactManager::fromUri(cm.managerUri())); // uri is not a name; should fail.
-    QScopedPointer<QContactManager> cm9(QContactManager::fromUri(QString(), &parent));
-
-    QVERIFY(cm9->parent() == &parent);
-    QVERIFY(cm9b.parent() == 0);
-    QVERIFY(cm9c.parent() == &parent);
-
-
-    /* OLD TEST WAS THIS: */
-    //QCOMPARE(cm.managerUri(), cm2.managerUri());
-    //QCOMPARE(cm.managerUri(), cm3.managerUri());
-    //QCOMPARE(cm.managerUri(), cm5->managerUri());
-    //QCOMPARE(cm.managerUri(), cm6->managerUri());
-    //QCOMPARE(cm.managerUri(), cm9->managerUri());
-    /* NEW TEST IS THIS: Test that the names of the managers are the same */
-    QCOMPARE(cm.managerName(), cm2.managerName());
-    QCOMPARE(cm.managerName(), cm3.managerName());
-    QCOMPARE(cm.managerName(), cm5->managerName());
-    QCOMPARE(cm.managerName(), cm6->managerName());
-    QCOMPARE(cm.managerName(), cm9->managerName());
-    QCOMPARE(cm.managerName(), cm9b.managerName());
-    QCOMPARE(cm.managerName(), cm9c.managerName());
-
-    QVERIFY(cm.managerUri() != cm4.managerUri()); // don't pass a uri to the ctor
-
-    /* Test that we get invalid stores when we do silly things */
-    QContactManager em("non existent");
-    QContactManager em2("non existent", QMap<QString, QString>());
-    QContactManager em3(DEFAULT_MANAGER, randomParameters);
-
-    /* Also invalid, since we don't have one of these anyway */
-    QScopedPointer<QContactManager> em4(QContactManager::fromUri("invalid uri"));
-    QScopedPointer<QContactManager> em5(QContactManager::fromUri(QContactManager::buildUri("nonexistent", QMap<QString, QString>())));
-    QScopedPointer<QContactManager> em6(QContactManager::fromUri(em3.managerUri()));
-
-
-    /*
-     * Sets of stores that should be equivalent:
-     * - 1, 2, 4, 5
-     * - 3, 6
-     */
-
-    /* First some URI testing for equivalent stores */
-    QVERIFY(em.managerUri() == em2.managerUri());
-    QVERIFY(em.managerUri() == em5->managerUri());
-    QVERIFY(em.managerUri() == em4->managerUri());
-    QVERIFY(em2.managerUri() == em4->managerUri());
-    QVERIFY(em2.managerUri() == em5->managerUri());
-    QVERIFY(em4->managerUri() == em5->managerUri());
-
-    QVERIFY(em3.managerUri() == em6->managerUri());
-
-    /* Test the stores that should not be the same */
-    QVERIFY(em.managerUri() != em3.managerUri());
-    QVERIFY(em.managerUri() != em6->managerUri());
-
-    /* now the components */
-    QCOMPARE(em.managerName(), QString("invalid"));
-    QCOMPARE(em2.managerName(), QString("invalid"));
-    QCOMPARE(em3.managerName(), defaultStore);
-    QCOMPARE(em4->managerName(), QString("invalid"));
-    QCOMPARE(em5->managerName(), QString("invalid"));
-    QCOMPARE(em6->managerName(), defaultStore);
-    QCOMPARE(em.managerParameters(), tst_QContactManager_QStringMap());
-    QCOMPARE(em2.managerParameters(), tst_QContactManager_QStringMap());
-    QCOMPARE(em4->managerParameters(), tst_QContactManager_QStringMap());
-    QCOMPARE(em5->managerParameters(), tst_QContactManager_QStringMap());
-    QCOMPARE(em3.managerParameters(), em6->managerParameters()); // memory engine discards the given params, replaces with id.
-
-    // Finally test the platform specific engines are actually the defaults
-    QCOMPARE(defaultStore, QString("org.nemomobile.contacts.sqlite"));
-}
-#endif
 
 void tst_QContactManager::doDump()
 {
@@ -1859,77 +1740,6 @@ void tst_QContactManager::invalidManager()
     QVERIFY(!managerSupportsFeature(manager, "MutableDefinitions"));
 }
 
-#if 0
-void tst_QContactManager::memoryManager()
-{
-    QMap<QString, QString> params;
-    QContactManager m1("memory");
-    params.insert("random", "shouldNotBeUsed");
-    QContactManager m2("memory", params);
-    params.insert("id", "shouldBeUsed");
-    QContactManager m3("memory", params);
-    QContactManager m4("memory", params);
-    params.insert("id", QString(""));
-    QContactManager m5("memory", params); // should be another anonymous
-
-#ifndef USING_QTPIM
-    QVERIFY(managerSupportsFeature(m1, "ActionPreferences"));
-    QVERIFY(managerSupportsFeature(m1, "MutableDefinitions"));
-    QVERIFY(managerSupportsFeature(m1, "Anonymous"));
-#endif
-
-    // add a contact to each of m1, m2, m3
-    QContact c;
-    QContactName nc;
-    nc.setFirstName("John");
-    nc.setLastName("Civilian");
-    c.saveDetail(&nc);
-    m1.saveContact(&c);
-    c.setId(QContactId());
-    QContact c2;
-    QContactName nc2 = c2.detail<QContactName>();
-    c2 = c;
-    nc2.setMiddleName("Public");
-    c2.saveDetail(&nc2);
-    m2.saveContact(&c2);            // save c2 first; c will be given a higher id
-    m2.saveContact(&c);             // save c to m2
-    c.setId(QContactId());
-    nc.setSuffix("MD");
-    c.saveDetail(&nc);
-    m3.saveContact(&c);
-
-    /* test that m1 != m2 != m3 and that m3 == m4 */
-
-    // check the counts are correct - especially note m4 and m3.
-    QCOMPARE(m1.contactIds().count(), 1);
-    QCOMPARE(m2.contactIds().count(), 2);
-    QCOMPARE(m3.contactIds().count(), 1);
-    QCOMPARE(m4.contactIds().count(), 1);
-    QCOMPARE(m5.contactIds().count(), 0);
-
-    // remove c2 from m2 - ensure that this doesn't affect any other manager.
-    m2.removeContact(removalId(c2));
-    QCOMPARE(m1.contactIds().count(), 1);
-    QCOMPARE(m2.contactIds().count(), 1);
-    QCOMPARE(m3.contactIds().count(), 1);
-    QCOMPARE(m4.contactIds().count(), 1);
-    QCOMPARE(m5.contactIds().count(), 0);
-
-    // check that the contacts contained within are different.
-    // note that in the m1->m2 case, only the id will be different!
-    QVERIFY(m1.contact(m1.contactIds().at(0)) != m2.contact(m2.contactIds().at(0)));
-    QVERIFY(m1.contact(m1.contactIds().at(0)) != m3.contact(m3.contactIds().at(0)));
-    QVERIFY(m2.contact(m2.contactIds().at(0)) != m3.contact(m3.contactIds().at(0)));
-    QVERIFY(m3.contact(m3.contactIds().at(0)) == m4.contact(m4.contactIds().at(0)));
-
-    // now, we should be able to remove from m4, and have m3 empty
-    QVERIFY(m4.removeContact(removalId(c)));
-    QCOMPARE(m3.contactIds().count(), 0);
-    QCOMPARE(m4.contactIds().count(), 0);
-    QCOMPARE(m5.contactIds().count(), 0);
-}
-#endif
-
 #if defined(SYMBIAN_BACKEND_S60_VERSION_31) || defined(SYMBIAN_BACKEND_S60_VERSION_32) || defined(SYMBIAN_BACKEND_S60_VERSION_50)
 /* Some symbian-specific unit tests. */
 void tst_QContactManager::symbianManager()
@@ -2180,80 +1990,6 @@ void tst_QContactManager::nameSynthesis_data()
             << false << e;
 
 }
-
-#if 0
-void tst_QContactManager::nameSynthesis()
-{
-    QContactManager cm(DEFAULT_MANAGER);
-
-    QFETCH(QString, expected);
-
-    QFETCH(QString, prefix);
-    QFETCH(QString, first);
-    QFETCH(QString, middle);
-    QFETCH(QString, last);
-    QFETCH(QString, suffix);
-    QFETCH(QString, company);
-
-    QFETCH(QString, secondprefix);
-    QFETCH(QString, secondfirst);
-    QFETCH(QString, secondmiddle);
-    QFETCH(QString, secondlast);
-    QFETCH(QString, secondsuffix);
-    QFETCH(QString, secondcompany);
-
-    QFETCH(bool, addname);
-    QFETCH(bool, addname2);
-    QFETCH(bool, addcompany);
-    QFETCH(bool, addcompany2);
-
-    /* Test the default name synthesis code */
-    QContact c;
-
-    QContactName name, name2;
-    QContactOrganization org, org2;
-
-    name.setPrefix(prefix);
-    name.setFirstName(first);
-    name.setMiddleName(middle);
-    name.setLastName(last);
-    name.setSuffix(suffix);
-
-    name2.setPrefix(secondprefix);
-    name2.setFirstName(secondfirst);
-    name2.setMiddleName(secondmiddle);
-    name2.setLastName(secondlast);
-    name2.setSuffix(secondsuffix);
-
-    org.setName(company);
-    org2.setName(secondcompany);
-
-    if (addname)
-        c.saveDetail(&name);
-    if (addname2)
-        c.saveDetail(&name2);
-    if (addcompany)
-        c.saveDetail(&org);
-    if (addcompany2)
-        c.saveDetail(&org2);
-
-#ifdef USING_QTPIM
-    // Name synthesis is only invoked by saving the contact
-    QVERIFY(cm.saveContact(&c));
-    QCOMPARE(cm.error(), QContactManager::NoError);
-
-    c = cm.contact(retrievalId(c));
-    QVERIFY(ContactId::isValid(c));
-    QString label = c.detail<QContactDisplayLabel>().label();
-
-    cm.removeContact(removalId(c));
-    QCOMPARE(label, expected);
-#else
-    // Finally!
-    QCOMPARE(cm.synthesizedContactDisplayLabel(c), expected);
-#endif
-}
-#endif
 
 #ifdef COMPATIBLE_CONTACT_SUPPORTED
 void tst_QContactManager::compatibleContact_data()
@@ -4256,165 +3992,6 @@ void tst_QContactManager::lateDeletion()
 
     cm->setParent(qApp); // now do nothing
 }
-
-#if 0
-class errorSemanticsTester : public QObject {
-    Q_OBJECT;
-public:
-    bool initialErrorWasDoesNotExist;
-    bool slotErrorWasBadArgument;
-    QContactManager* mManager;
-
-    errorSemanticsTester(QContactManager* manager)
-        : initialErrorWasDoesNotExist(false),
-        slotErrorWasBadArgument(false),
-        mManager(manager)
-    {
-        connect(manager, contactsAddedSignal, this, SLOT(handleAdded()));
-    }
-
-public slots:
-    void handleAdded()
-    {
-        // Make sure the initial error state is correct
-        initialErrorWasDoesNotExist = mManager->error() == QContactManager::DoesNotExistError;
-        // Now force a different error
-        mManager->removeContacts(QList<QContactIdType>());
-        slotErrorWasBadArgument = mManager->error() == QContactManager::BadArgumentError;
-        // and return
-    }
-};
-
-void tst_QContactManager::errorSemantics()
-{
-    /*
-        Test to make sure that calling functions in response to signals doesn't upset the correct error results
-        This relies on the memory engine emitting signals before e.g. saveContacts returns
-     */
-
-    QContactManager m(DEFAULT_MANAGER);
-    errorSemanticsTester t(&m);
-
-    QVERIFY(m.error() == QContactManager::NoError);
-
-#ifndef DETAIL_DEFINITION_SUPPORTED
-    QContact alice = createContact("Alice", "inWonderland", "1234567");
-#else
-    QContactDetailDefinition nameDef = m.detailDefinition(QContactName::DefinitionName, QContactType::TypeContact);
-    QContact alice = createContact(nameDef, "Alice", "inWonderland", "1234567");
-#endif
-
-    // Try creating some specific error so we can test it later on
-    QContact a = m.contact(ContactId::apiId(567));
-    QVERIFY(m.error() == QContactManager::DoesNotExistError);
-
-    // Now save something
-    QVERIFY(m.saveContact(&alice));
-    QVERIFY(t.initialErrorWasDoesNotExist);
-    QVERIFY(t.slotErrorWasBadArgument);
-    QVERIFY(m.error() == QContactManager::NoError);
-}
-#endif
-
-#if 0
-void tst_QContactManager::lazyConnections()
-{
-    QMap<QString, QString> parameters;
-    parameters["version"] = QString("1");
-    QContactManager lazy1("testlazy", parameters);
-    QContactManager lazy2("testlazy");
-
-    QCOMPARE(lazy1.managerName(), QString("lazy"));
-    QCOMPARE(lazy2.managerName(), QString("lazy2"));
-
-    // Make sure the initial connection counts are empty
-    QCOMPARE(QContactLazyEngine::connectionCounts.count(), 0);
-    QCOMPARE(QContactLazyEngine2::connectionCounts.count(), 0);
-
-    // Lazy 1 first
-    {
-        QTestSignalSink casink(&lazy1, contactsAddedSignal);
-
-        // See if we got one connection
-        QCOMPARE(QContactLazyEngine::connectionCounts.value(contactsAddedSignal), 1);
-        QCOMPARE(QContactLazyEngine::connectionCounts.count(), 1);
-
-        // Go out of scope, and see if disconnect is called
-    }
-    QCOMPARE(QContactLazyEngine::connectionCounts.value(contactsAddedSignal), 0);
-    QCOMPARE(QContactLazyEngine::connectionCounts.count(), 1);
-
-    // Lazy2 second
-    {
-        QTestSignalSink casink(&lazy2, contactsAddedSignal);
-
-        // See if we got one connection
-        QCOMPARE(QContactLazyEngine2::connectionCounts.value(contactsAddedSignal), 1);
-        QCOMPARE(QContactLazyEngine2::connectionCounts.count(), 1);
-
-        // Go out of scope, and see if disconnect is called
-    }
-    QCOMPARE(QContactLazyEngine2::connectionCounts.value(contactsAddedSignal), 0);
-    QCOMPARE(QContactLazyEngine2::connectionCounts.count(), 1);
-
-    // Just make sure all the signals get connected correctly
-    {
-        QTestSignalSink casink(&lazy1, contactsAddedSignal);
-        QTestSignalSink crsink(&lazy1, contactsRemovedSignal);
-        QTestSignalSink cmsink(&lazy1, contactsChangedSignal);
-        QTestSignalSink dcsink(&lazy1, SIGNAL(dataChanged()));
-        QTestSignalSink rasink(&lazy1, relationshipsAddedSignal);
-        QTestSignalSink rrsink(&lazy1, relationshipsRemovedSignal);
-        QTestSignalSink scsink(&lazy1, selfContactIdChangedSignal);
-
-        // See if we got all the connections
-        QCOMPARE(QContactLazyEngine::connectionCounts.count(), 7);
-        QCOMPARE(QContactLazyEngine::connectionCounts.value(contactsAddedSignal), 1);
-        QCOMPARE(QContactLazyEngine::connectionCounts.value(contactsChangedSignal), 1);
-        QCOMPARE(QContactLazyEngine::connectionCounts.value(contactsRemovedSignal), 1);
-        QCOMPARE(QContactLazyEngine::connectionCounts.value(SIGNAL(dataChanged())), 1);
-        QCOMPARE(QContactLazyEngine::connectionCounts.value(relationshipsAddedSignal), 1);
-        QCOMPARE(QContactLazyEngine::connectionCounts.value(relationshipsRemovedSignal), 1);
-        QCOMPARE(QContactLazyEngine::connectionCounts.value(selfContactIdChangedSignal), 1);
-    }
-    QCOMPARE(QContactLazyEngine::connectionCounts.count(), 7);
-    QCOMPARE(QContactLazyEngine::connectionCounts.value(contactsAddedSignal), 0);
-    QCOMPARE(QContactLazyEngine::connectionCounts.value(contactsChangedSignal), 0);
-    QCOMPARE(QContactLazyEngine::connectionCounts.value(contactsRemovedSignal), 0);
-    QCOMPARE(QContactLazyEngine::connectionCounts.value(SIGNAL(dataChanged())), 0);
-    QCOMPARE(QContactLazyEngine::connectionCounts.value(relationshipsAddedSignal), 0);
-    QCOMPARE(QContactLazyEngine::connectionCounts.value(relationshipsRemovedSignal), 0);
-    QCOMPARE(QContactLazyEngine::connectionCounts.value(selfContactIdChangedSignal), 0);
-
-    // and for lazy2
-    {
-        QTestSignalSink casink(&lazy2, contactsAddedSignal);
-        QTestSignalSink crsink(&lazy2, contactsRemovedSignal);
-        QTestSignalSink cmsink(&lazy2, contactsChangedSignal);
-        QTestSignalSink dcsink(&lazy2, SIGNAL(dataChanged()));
-        QTestSignalSink rasink(&lazy2, relationshipsAddedSignal);
-        QTestSignalSink rrsink(&lazy2, relationshipsRemovedSignal);
-        QTestSignalSink scsink(&lazy2, selfContactIdChangedSignal);
-
-        // See if we got all the connections
-        QCOMPARE(QContactLazyEngine2::connectionCounts.count(), 7);
-        QCOMPARE(QContactLazyEngine2::connectionCounts.value(contactsChangedSignal), 1);
-        QCOMPARE(QContactLazyEngine2::connectionCounts.value(contactsRemovedSignal), 1);
-        QCOMPARE(QContactLazyEngine2::connectionCounts.value(SIGNAL(dataChanged())), 1);
-        QCOMPARE(QContactLazyEngine2::connectionCounts.value(relationshipsAddedSignal), 1);
-        QCOMPARE(QContactLazyEngine2::connectionCounts.value(relationshipsRemovedSignal), 1);
-        QCOMPARE(QContactLazyEngine2::connectionCounts.value(selfContactIdChangedSignal), 1);
-    }
-    QCOMPARE(QContactLazyEngine2::connectionCounts.count(), 7);
-    QCOMPARE(QContactLazyEngine2::connectionCounts.value(contactsAddedSignal), 0);
-    QCOMPARE(QContactLazyEngine2::connectionCounts.value(contactsChangedSignal), 0);
-    QCOMPARE(QContactLazyEngine2::connectionCounts.value(contactsRemovedSignal), 0);
-    QCOMPARE(QContactLazyEngine2::connectionCounts.value(SIGNAL(dataChanged())), 0);
-    QCOMPARE(QContactLazyEngine2::connectionCounts.value(relationshipsAddedSignal), 0);
-    QCOMPARE(QContactLazyEngine2::connectionCounts.value(relationshipsRemovedSignal), 0);
-    QCOMPARE(QContactLazyEngine2::connectionCounts.value(selfContactIdChangedSignal), 0);
-}
-#endif
 
 void tst_QContactManager::compareVariant()
 {
