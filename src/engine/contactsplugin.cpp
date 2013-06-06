@@ -96,9 +96,7 @@ QContactEngineId *ContactsFactory::createContactEngineId(
         const QMap<QString, QString> &parameters, const QString &engineIdString) const
 {
     Q_UNUSED(parameters)
-    Q_UNUSED(engineIdString)
-
-    return new ContactId(0);
+    return new ContactId(engineIdString);
 }
 #else
 QList<int> ContactsFactory::supportedImplementationVersions() const
