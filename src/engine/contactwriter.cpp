@@ -677,7 +677,11 @@ static QContactManager::Error bindRelationships(
 QContactManager::Error ContactWriter::save(
         const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap)
 {
+#ifdef USING_QTPIM
+    static const QString uri(QString::fromLatin1("qtcontacts:org.nemomobile.contacts.sqlite:"));
+#else
     static const QString uri(QString::fromLatin1("org.nemomobile.contacts.sqlite"));
+#endif
 
     if (relationships.isEmpty())
         return QContactManager::NoError;
@@ -742,8 +746,20 @@ QContactManager::Error ContactWriter::save(
         const QString &type = relationship.relationshipType();
 
         if ((firstId == secondId)
-                || (!first.managerUri().isEmpty() && first.managerUri() != uri)
-                || (!second.managerUri().isEmpty() && second.managerUri() != uri)
+                || (!first.managerUri().isEmpty() &&
+#ifdef USING_QTPIM
+                    !first.managerUri().startsWith(uri)
+#else
+                    first.managerUri() != uri
+#endif
+                   )
+                || (!second.managerUri().isEmpty() &&
+#ifdef USING_QTPIM
+                    !second.managerUri().startsWith(uri)
+#else
+                    second.managerUri() != uri
+#endif
+                   )
                 || (!validContactIds.contains(firstId) || !validContactIds.contains(secondId))) {
             // invalid contact specified in relationship, don't insert.
             invalidInsertions += 1;

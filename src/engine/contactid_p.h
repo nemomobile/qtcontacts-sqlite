@@ -65,6 +65,7 @@ public:
     static QContactIdType fromString(const QString &id);
 
     ContactId(quint32 databaseId);
+    ContactId(const QString &s);
 
     // implementing QContactEngineId:
     bool isEqualTo(const QContactEngineId *other) const;

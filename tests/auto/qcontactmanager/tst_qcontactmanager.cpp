@@ -863,6 +863,9 @@ void tst_QContactManager::add()
 
     QContact added = cm->contact(retrievalId(alice));
     QVERIFY(added.id() == alice.id());
+
+    // Test that the ID is roundtripped via string correctly
+    QCOMPARE(QContactId::fromString(added.id().toString()), added.id());
     
     if (!isSuperset(added, alice)) {
         dumpContacts(cm.data());

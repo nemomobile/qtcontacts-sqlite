@@ -32,6 +32,9 @@
 #include "contactid_p.h"
 
 #include <QContact>
+#ifdef USING_QTPIM
+#include <QContactManager>
+#endif
 
 namespace {
 
@@ -39,12 +42,12 @@ const QString default_uri = QString::fromLatin1("org.nemomobile.contacts.sqlite"
 
 QString dbIdToString(quint32 dbId)
 {
-    return QString::fromLatin1("sql:%1").arg(dbId);
+    return QString::fromLatin1("sql-%1").arg(dbId);
 }
 
 quint32 dbIdFromString(const QString &s)
 {
-    if (s.startsWith(QString::fromLatin1("sql:"))) {
+    if (s.startsWith(QString::fromLatin1("sql-"))) {
         return s.mid(4).toUInt();
     }
     return 0;
@@ -97,6 +100,12 @@ ContactId::ContactId(quint32 dbId)
 {
 }
 
+ContactId::ContactId(const QString &s)
+    : QContactEngineId()
+    , m_databaseId(dbIdFromString(s))
+{
+}
+
 bool ContactId::isEqualTo(const QContactEngineId *other) const
 {
     return m_databaseId == static_cast<const ContactId*>(other)->m_databaseId;
@@ -109,7 +118,7 @@ bool ContactId::isLessThan(const QContactEngineId *other) const
 
 QString ContactId::managerUri() const
 {
-    return default_uri;
+    return QContactManager::buildUri(default_uri, QMap<QString, QString>());
 }
 
 QContactEngineId* ContactId::clone() const
