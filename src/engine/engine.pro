@@ -6,7 +6,7 @@ TARGET = qtcontacts_sqlite
 
 QT += sql dbus
 
-equals(QT_MAJOR_VERSION, 4): CONFIG += plugin
+CONFIG += plugin
 PLUGIN_TYPE=contacts
 
 # we hardcode this for Qt4 as there's no GenericDataLocation offered by QDesktopServices
