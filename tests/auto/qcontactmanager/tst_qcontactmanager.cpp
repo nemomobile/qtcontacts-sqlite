@@ -415,6 +415,8 @@ void tst_QContactManager::dumpContactDifferences(const QContact& ca, const QCont
     QCOMPARE(n1.suffix(), n2.suffix());
 #ifdef CUSTOM_LABEL_SUPPORTED
     QCOMPARE(n1.customLabel(), n2.customLabel());
+#elif defined(CUSTOM_LABEL_STORAGE_SUPPORTED)
+    QCOMPARE(n1.value<QString>(QContactName__FieldCustomLabel), n2.value<QString>(QContactName__FieldCustomLabel));
 #endif
 
 #ifdef DISPLAY_LABEL_SUPPORTED
@@ -683,7 +685,13 @@ void tst_QContactManager::saveContactName(QContact *contact, QContactDetailDefin
 #endif
 {
 #ifndef DETAIL_DEFINITION_SUPPORTED
+#ifdef CUSTOM_LABEL_SUPPORTED
+    contactName->setCustomLabel(name);
+#elif defined(CUSTOM_LABEL_STORAGE_SUPPORTED)
+    contactName->setValue(QContactName__FieldCustomLabel, name);
+#else
     contactName->setFirstName(name);
+#endif
 #else
     // check which name fields are supported in the following order:
     // 1. custom label, 2. first name, 3. last name
@@ -861,12 +869,14 @@ void tst_QContactManager::add()
     QVERIFY(ContactId::isValid(alice.id()));
     QCOMPARE(cm->contactIds().count(), currCount+1);
 
+#ifdef USING_QTPIM
+    // Test that the ID is roundtripped via string correctly
+    QCOMPARE(QContactId::fromString(alice.id().toString()), alice.id());
+#endif
+
     QContact added = cm->contact(retrievalId(alice));
     QVERIFY(added.id() == alice.id());
 
-    // Test that the ID is roundtripped via string correctly
-    QCOMPARE(QContactId::fromString(added.id().toString()), added.id());
-    
     if (!isSuperset(added, alice)) {
         dumpContacts(cm.data());
         dumpContactDifferences(added, alice);

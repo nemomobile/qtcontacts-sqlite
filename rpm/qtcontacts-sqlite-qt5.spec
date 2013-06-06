@@ -1,15 +1,15 @@
 Name: qtcontacts-sqlite-qt5
-Version: 0.0.12
+Version: 0.0.13
 Release: 0
 Summary: SQLite-based plugin for QtPIM Contacts
 Group: System/Plugins
 License: TBD
 URL: TBD
 Source0: %{name}-%{version}.tar.gz
-Requires: pkgconfig(Qt5Core)
-Requires: pkgconfig(Qt5Sql)
-Requires: pkgconfig(Qt5DBus)
-Requires: pkgconfig(Qt5Contacts)
+BuildRequires: pkgconfig(Qt5Core)
+BuildRequires: pkgconfig(Qt5Sql)
+BuildRequires: pkgconfig(Qt5DBus)
+BuildRequires: pkgconfig(Qt5Contacts)
 
 %description
 %{summary}.

@@ -122,7 +122,9 @@ static const FieldInfo nameFields[] =
     { QContactName::FieldMiddleName, "middleName", StringField },
     { QContactName::FieldPrefix, "prefix", StringField },
     { QContactName::FieldSuffix, "suffix", StringField },
-#ifndef USING_QTPIM
+#ifdef USING_QTPIM
+    { QContactName__FieldCustomLabel, "customLabel", StringField }
+#else
     { QContactName::FieldCustomLabel, "customLabel", StringField }
 #endif
 };
@@ -754,7 +756,7 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
             } else {
 #ifdef USING_QTPIM
                 const QVariant &v(filter.value());
-                if (!stringField && (v.type() == QMetaType::Bool)) {
+                if (!stringField && (v.type() == QVariant::Bool)) {
                     // Convert to number rather than string
                     bindValue = QString::number(v.toBool() ? 1 : 0);
                 } else {
@@ -919,7 +921,11 @@ static QString buildWhere(const QContactRelationshipFilter &filter, QVariantList
 
     quint32 dbId = ContactId::databaseId(rci);
 
+#ifdef USING_QTPIM
+    if (!rci.managerUri().isEmpty() && !rci.managerUri().startsWith(QString::fromLatin1("qtcontacts:org.nemomobile.contacts.sqlite:"))) {
+#else
     if (!rci.managerUri().isEmpty() && rci.managerUri() != QLatin1String("org.nemomobile.contacts.sqlite")) {
+#endif
         *failed = true;
         qWarning() << "Cannot buildWhere with invalid manager URI:" << rci.managerUri();
         return QLatin1String("FALSE");
@@ -1577,7 +1583,9 @@ QContactManager::Error ContactReader::queryContacts(
             setValue(&name, QContactName::FieldMiddleName , query.value(6));
             setValue(&name, QContactName::FieldPrefix     , query.value(7));
             setValue(&name, QContactName::FieldSuffix     , query.value(8));
-#ifndef USING_QTPIM
+#ifdef USING_QTPIM
+            setValue(&name, QContactName__FieldCustomLabel, query.value(9));
+#else
             setValue(&name, QContactName::FieldCustomLabel, query.value(9));
 #endif
             if (!name.isEmpty())
