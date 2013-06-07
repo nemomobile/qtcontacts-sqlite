@@ -1923,7 +1923,9 @@ static void promoteDetailsToLocal(const QList<QContactDetail> addDelta, const QL
             lcn.setMiddleName(det.value<QString>(QContactName::FieldMiddleName));
             lcn.setLastName(det.value<QString>(QContactName::FieldLastName));
             lcn.setSuffix(det.value<QString>(QContactName::FieldSuffix));
-#ifndef USING_QTPIM
+#ifdef USING_QTPIM
+            lcn.setValue(QContactName__FieldCustomLabel, det.value(QContactName__FieldCustomLabel));
+#else
             lcn.setCustomLabel(det.value<QString>(QContactName::FieldCustomLabel));
 #endif
             localContact->saveDetail(&lcn);
@@ -2200,7 +2202,11 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
                 aname.setLastName(cname.lastName());
             if (!cname.suffix().isEmpty() && aname.suffix().isEmpty())
                 aname.setSuffix(cname.suffix());
-#ifndef USING_QTPIM
+#ifdef USING_QTPIM
+            QString customLabel = cname.value<QString>(QContactName__FieldCustomLabel);
+            if (!customLabel.isEmpty() && aname.value<QString>(QContactName__FieldCustomLabel).isEmpty())
+                aname.setValue(QContactName__FieldCustomLabel, cname.value(QContactName__FieldCustomLabel));
+#else
             if (!cname.customLabel().isEmpty() && aname.customLabel().isEmpty())
                 aname.setCustomLabel(cname.customLabel());
 #endif
@@ -2534,8 +2540,6 @@ void ContactWriter::regenerateAggregates(const QList<quint32> &aggregateIds, con
 
 QContactManager::Error ContactWriter::create(QContact *contact, const DetailList &definitionMask, bool withinTransaction, bool withinAggregateUpdate)
 {
-    static const QString uri(QString::fromLatin1("org.nemomobile.contacts.sqlite"));
-
 #ifndef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     Q_UNUSED(withinTransaction)
     Q_UNUSED(withinAggregateUpdate)
@@ -2717,7 +2721,9 @@ void ContactWriter::bindContactDetails(const QContact &contact, QSqlQuery &query
     query.bindValue(5, name.value<QString>(QContactName::FieldMiddleName));
     query.bindValue(6, name.value<QString>(QContactName::FieldPrefix));
     query.bindValue(7, name.value<QString>(QContactName::FieldSuffix));
-#ifndef USING_QTPIM
+#ifdef USING_QTPIM
+    query.bindValue(8, name.value<QString>(QContactName__FieldCustomLabel));
+#else
     query.bindValue(8, name.value<QString>(QContactName::FieldCustomLabel));
 #endif
 

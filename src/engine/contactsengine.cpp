@@ -35,6 +35,7 @@
 #include "contactnotifier.h"
 #include "contactreader.h"
 #include "contactwriter.h"
+#include "constants_p.h"
 
 #include <QCoreApplication>
 #include <QMutex>
@@ -1353,8 +1354,12 @@ QString ContactsEngine::synthesizedDisplayLabel(const QContact &contact, QContac
 
     QContactName name = contact.detail<QContactName>();
 
-#ifndef USING_QTPIM
     // If a custom label has been set, return that
+#ifdef USING_QTPIM
+    const QString customLabel = name.value<QString>(QContactName__FieldCustomLabel);
+    if (!customLabel.isEmpty())
+        return customLabel;
+#else
     if (!name.customLabel().isEmpty())
         return name.customLabel();
 #endif

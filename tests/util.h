@@ -53,6 +53,7 @@
 #include "qtcontacts.h"
 #endif
 
+#include "constants_p.h"
 #include "contactid_p.h"
 
 // qtpim Contacts does not support all the feaures of QtMobility Contacts
@@ -63,6 +64,8 @@
 #define DISPLAY_LABEL_SUPPORTED
 #define CUSTOM_LABEL_SUPPORTED
 #else
+// qtpim doesn't support the customLabel field natively, but qtcontact-sqlite provides it
+#define CUSTOM_LABEL_STORAGE_SUPPORTED
 #endif
 
 // Eventually these will make it into qtestcase.h

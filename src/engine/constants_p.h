@@ -34,12 +34,17 @@
 
 #include <QContactDetail>
 
-BEGIN_CONTACTS_NAMESPACE
-
 #ifdef USING_QTPIM
 #include <QContactOnlineAccount>
 #include <QContactPhoneNumber>
 #include <QContactAvatar>
+#include <QContactName>
+#endif
+
+BEGIN_CONTACTS_NAMESPACE
+
+#ifdef USING_QTPIM
+static const int QContactName__FieldCustomLabel = (QContactName::FieldSuffix+1);
 
 static const int QContactOnlineAccount__FieldAccountPath = (QContactOnlineAccount::FieldSubTypes+1);
 static const int QContactOnlineAccount__FieldAccountIconPath = (QContactOnlineAccount::FieldSubTypes+2);
