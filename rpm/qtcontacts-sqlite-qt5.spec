@@ -7,6 +7,7 @@ License: TBD
 URL: TBD
 Source0: %{name}-%{version}.tar.gz
 BuildRequires: pkgconfig(Qt5Core)
+BuildRequires: pkgconfig(Qt5Gui)
 BuildRequires: pkgconfig(Qt5Sql)
 BuildRequires: pkgconfig(Qt5DBus)
 BuildRequires: pkgconfig(Qt5Contacts)
@@ -21,7 +22,7 @@ BuildRequires: pkgconfig(Qt5Contacts)
 %package tests
 Summary:    Unit tests for qtcontacts-sqlite-qt5
 Group:      System/Libraries
-Requires:  pkgconfig(Qt5Test)
+BuildRequires:  pkgconfig(Qt5Test)
 Requires:   %{name} = %{version}-%{release}
 
 %description tests
