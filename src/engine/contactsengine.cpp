@@ -387,7 +387,7 @@ public:
 
     QString description() const
     {
-        QString s(QLatin1String("Fetch"));
+        QString s(QLatin1String("FetchByID"));
         foreach (const QContactIdType &id, m_contactIds) {
             s.append(' ').append(ContactId::toString(id));
         }
