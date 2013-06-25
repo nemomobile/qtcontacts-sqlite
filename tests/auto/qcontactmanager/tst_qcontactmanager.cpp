@@ -4280,7 +4280,11 @@ void tst_QContactManager::constituentOfSelf()
         QContactRelationship relationship;
         relationship = makeRelationship(QContactRelationship::Aggregates, aggregator.id(), constituent.id());
         QVERIFY(m.removeRelationship(relationship));
-        QVERIFY(m.removeContact(removalId(aggregator)));
+
+        // The aggregator should have been removed
+        QContact nonexistent = m.contact(retrievalId(aggregator));
+        QVERIFY(m.error() == QContactManager::DoesNotExistError);
+        QCOMPARE(nonexistent.id(), QContactId());
     }
 
     // Now connect our contact to the real self contact

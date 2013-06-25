@@ -387,7 +387,7 @@ public:
 
     QString description() const
     {
-        QString s(QLatin1String("Fetch"));
+        QString s(QLatin1String("FetchByID"));
         foreach (const QContactIdType &id, m_contactIds) {
             s.append(' ').append(ContactId::toString(id));
         }
@@ -414,7 +414,7 @@ public:
     {
         if (!writer)
             writer = new ContactWriter(engine, database, reader);
-        m_error = writer->save(m_relationships, &m_errorMap);
+        m_error = writer->save(m_relationships, &m_errorMap, false);
     }
 
     void updateState(QContactAbstractRequest::State state)
@@ -447,7 +447,7 @@ public:
     {
         if (!writer)
             writer = new ContactWriter(engine, database, reader);
-        m_error = writer->remove(m_relationships, &m_errorMap);
+        m_error = writer->remove(m_relationships, &m_errorMap, false);
     }
 
     void updateState(QContactAbstractRequest::State state)
@@ -1059,7 +1059,7 @@ bool ContactsEngine::saveRelationships(
         m_synchronousWriter = new ContactWriter(*this, m_database, m_synchronousReader);
     }
 
-    QContactManager::Error err = m_synchronousWriter->save(*relationships, errorMap);
+    QContactManager::Error err = m_synchronousWriter->save(*relationships, errorMap, false);
     if (error)
         *error = err;
 
@@ -1100,7 +1100,7 @@ bool ContactsEngine::removeRelationships(
         m_synchronousWriter = new ContactWriter(*this, m_database, m_synchronousReader);
     }
 
-    QContactManager::Error err = m_synchronousWriter->remove(relationships, errorMap);
+    QContactManager::Error err = m_synchronousWriter->remove(relationships, errorMap, false);
     if (error)
         *error = err;
     return err == QContactManager::NoError;
