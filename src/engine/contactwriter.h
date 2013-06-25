@@ -150,12 +150,12 @@ private:
     const ContactsEngine &m_engine;
     QSqlDatabase m_database;
     ProcessMutex *m_databaseMutex;
-    QSqlQuery m_findRelatedForAggregate;
+    QSqlQuery m_findConstituentsForAggregate;
     QSqlQuery m_findLocalForAggregate;
     QSqlQuery m_findAggregateForContact;
     QSqlQuery m_findMatchForContact;
     QSqlQuery m_selectAggregateContactIds;
-    QSqlQuery m_orphanAggregateIds;
+    QSqlQuery m_childlessAggregateIds;
     QSqlQuery m_orphanContactIds;
     QSqlQuery m_checkContactExists;
     QSqlQuery m_existingContactIds;
