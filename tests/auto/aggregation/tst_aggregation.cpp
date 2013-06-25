@@ -90,6 +90,8 @@ private slots:
     void removeSingleLocal();
     void removeSingleAggregate();
 
+    void alterRelationships();
+
     void regenerateAggregate();
 
     void detailUris();
@@ -1427,6 +1429,237 @@ void tst_Aggregation::removeSingleAggregate()
     int newAllCount = m_cm->contactIds(allSyncTargets).size();
     QCOMPARE(newAggCount, oldAggCount);
     QCOMPARE(newAllCount, oldAllCount);
+}
+
+void tst_Aggregation::alterRelationships()
+{
+    QContactDetailFilter allSyncTargets;
+    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
+
+    int aggCount = m_cm->contactIds().size();
+    int allCount = m_cm->contactIds(allSyncTargets).size();
+
+    // set up some signal spies
+    QSignalSpy addSpy(m_cm, contactsAddedSignal);
+    QSignalSpy remSpy(m_cm, contactsRemovedSignal);
+    int addSpyCount = 0;
+    int remSpyCount = 0;
+
+    // now add two new local contacts (no synctarget specified == automatically local)
+    QContact alice;
+
+    QContactName an;
+    an.setFirstName("Alice");
+    an.setLastName("alterRelationships");
+    alice.saveDetail(&an);
+
+    QContact bob;
+
+    QContactName bn;
+    bn.setFirstName("Bob");
+    bn.setLastName("alterRelationships");
+    bob.saveDetail(&bn);
+
+    m_addAccumulatedIds.clear();
+    QVERIFY(m_cm->saveContact(&alice));
+    QVERIFY(m_cm->saveContact(&bob));
+    QTRY_VERIFY(addSpy.count() >= addSpyCount + 2);
+    QTRY_COMPARE(m_addAccumulatedIds.size(), 4); // should have added locals + aggregates
+    QVERIFY(m_addAccumulatedIds.contains(ContactId::apiId(alice)));
+    QVERIFY(m_addAccumulatedIds.contains(ContactId::apiId(bob)));
+    addSpyCount = addSpy.count();
+
+    QCOMPARE(m_cm->contactIds().size(), aggCount + 2); // 2 extra aggregate contacts
+    aggCount = m_cm->contactIds().size();
+    QCOMPARE(m_cm->contactIds(allSyncTargets).size(), allCount + 4); // should have added locals + aggregates
+    allCount = m_cm->contactIds(allSyncTargets).size();
+
+    QContact localAlice;
+    QContact localBob;
+    QContact aggregateAlice;
+    QContact aggregateBob;
+
+    QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
+    QCOMPARE(allContacts.size(), allCount); // should return as many contacts as contactIds.
+    foreach (const QContact &curr, allContacts) {
+        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
+        QContactName currName = curr.detail<QContactName>();
+        if (currName.firstName() == QLatin1String("Alice") && currName.lastName() == QLatin1String("alterRelationships")) {
+            if (currSt.syncTarget() == QLatin1String("local")) {
+                localAlice = curr;
+            } else {
+                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                aggregateAlice = curr;
+            }
+        } else if (currName.firstName() == QLatin1String("Bob") && currName.lastName() == QLatin1String("alterRelationships")) {
+            if (currSt.syncTarget() == QLatin1String("local")) {
+                localBob = curr;
+            } else {
+                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                aggregateBob = curr;
+            }
+        }
+    }
+
+    QVERIFY(localAlice.id() != QContactId());
+    QVERIFY(localBob.id() != QContactId());
+    QVERIFY(aggregateAlice.id() != QContactId());
+    QVERIFY(aggregateBob.id() != QContactId());
+    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(localBob.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateBob.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
+    QVERIFY(relatedContactIds(aggregateBob.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localBob.id()));
+
+    // Remove the aggregation relationship for Bob
+    QContactRelationship relationship;
+    relationship = makeRelationship(QContactRelationship::Aggregates, aggregateBob.id(), localBob.id());
+    QVERIFY(m_cm->removeRelationship(relationship));
+
+    // The childless aggregate should have been removed
+    QTRY_VERIFY(remSpy.count() > remSpyCount);
+    QTRY_COMPARE(m_remAccumulatedIds.size(), 1);
+    QVERIFY(m_remAccumulatedIds.contains(ContactId::apiId(aggregateBob)));
+    remSpyCount = remSpy.count();
+
+    // A new aggregate should have been generated
+    QTRY_VERIFY(addSpy.count() > addSpyCount);
+    QTRY_COMPARE(m_addAccumulatedIds.size(), 5);
+    addSpyCount = addSpy.count();
+
+    // Verify the relationships
+    QContactId oldAggregateBobId = aggregateBob.id();
+
+    localAlice = QContact();
+    localBob = QContact();
+    aggregateAlice = QContact();
+    aggregateBob = QContact();
+
+    allContacts = m_cm->contacts(allSyncTargets);
+    foreach (const QContact &curr, allContacts) {
+        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
+        QContactName currName = curr.detail<QContactName>();
+        if (currName.firstName() == QLatin1String("Alice") && currName.lastName() == QLatin1String("alterRelationships")) {
+            if (currSt.syncTarget() == QLatin1String("local")) {
+                localAlice = curr;
+            } else {
+                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                aggregateAlice = curr;
+            }
+        } else if (currName.firstName() == QLatin1String("Bob") && currName.lastName() == QLatin1String("alterRelationships")) {
+            if (currSt.syncTarget() == QLatin1String("local")) {
+                localBob = curr;
+            } else {
+                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                aggregateBob = curr;
+            }
+        }
+    }
+
+    QVERIFY(localAlice.id() != QContactId());
+    QVERIFY(localBob.id() != QContactId());
+    QVERIFY(aggregateAlice.id() != QContactId());
+    QVERIFY(aggregateBob.id() != QContactId());
+    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(localBob.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateBob.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
+    QVERIFY(relatedContactIds(aggregateBob.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localBob.id()));
+    QVERIFY(aggregateBob.id() != oldAggregateBobId);
+
+    // Aggregate localBob into aggregateAlice
+    relationship = makeRelationship(QContactRelationship::Aggregates, aggregateAlice.id(), localBob.id());
+    QVERIFY(m_cm->saveRelationship(&relationship));
+
+    // Remove the relationship between localBob and aggregateBob
+    relationship = makeRelationship(QContactRelationship::Aggregates, aggregateBob.id(), localBob.id());
+    QVERIFY(m_cm->removeRelationship(relationship));
+
+    // The childless aggregate should have been removed
+    QTRY_VERIFY(remSpy.count() > remSpyCount);
+    QTRY_COMPARE(m_remAccumulatedIds.size(), 2);
+    QVERIFY(m_remAccumulatedIds.contains(ContactId::apiId(aggregateBob)));
+    remSpyCount = remSpy.count();
+
+    // No new aggregate should have been generated
+    QCOMPARE(addSpy.count(), addSpyCount);
+    QCOMPARE(m_addAccumulatedIds.size(), 5);
+
+    // Verify the relationships
+    localAlice = QContact();
+    localBob = QContact();
+    aggregateAlice = QContact();
+    aggregateBob = QContact();
+
+    allContacts = m_cm->contacts(allSyncTargets);
+    foreach (const QContact &curr, allContacts) {
+        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
+        QContactName currName = curr.detail<QContactName>();
+        if (currName.firstName() == QLatin1String("Alice") && currName.lastName() == QLatin1String("alterRelationships")) {
+            if (currSt.syncTarget() == QLatin1String("local")) {
+                localAlice = curr;
+            } else {
+                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                aggregateAlice = curr;
+            }
+        } else if (currName.firstName() == QLatin1String("Bob") && currName.lastName() == QLatin1String("alterRelationships")) {
+            if (currSt.syncTarget() == QLatin1String("local")) {
+                localBob = curr;
+            } else {
+                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                aggregateBob = curr;
+            }
+        }
+    }
+
+    QVERIFY(localAlice.id() != QContactId());
+    QVERIFY(localBob.id() != QContactId());
+    QVERIFY(aggregateAlice.id() != QContactId());
+    QCOMPARE(aggregateBob.id(), QContactId());
+    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(localBob.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localBob.id()));
+
+    // Test removing a relationship from a multi-child aggregate
+    relationship = makeRelationship(QContactRelationship::Aggregates, aggregateAlice.id(), localAlice.id());
+    QVERIFY(m_cm->removeRelationship(relationship));
+
+    // No aggregate will be removed
+    QCOMPARE(remSpy.count(), remSpyCount);
+    QCOMPARE(m_remAccumulatedIds.size(), 2);
+
+    // No new aggregate should have been generated, since the aggregation process will find
+    // the existing aggregate as the best candidate
+    QCOMPARE(addSpy.count(), addSpyCount);
+    QCOMPARE(m_addAccumulatedIds.size(), 5);
+
+    // Verify that the relationships are unchanged
+    localAlice = m_cm->contact(retrievalId(localAlice));
+    aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
+    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
+
+    // Create an IsNot relationship to prevent re-aggregation
+    relationship = makeRelationship(QString::fromLatin1("IsNot"), aggregateAlice.id(), localAlice.id());
+    QVERIFY(m_cm->saveRelationship(&relationship));
+
+    // Now remove the aggregation again
+    relationship = makeRelationship(QContactRelationship::Aggregates, aggregateAlice.id(), localAlice.id());
+    QVERIFY(m_cm->removeRelationship(relationship));
+
+    // No aggregate will be removed
+    QCOMPARE(remSpy.count(), remSpyCount);
+    QCOMPARE(m_remAccumulatedIds.size(), 2);
+
+    // A new aggregate should have been generated, since the aggregation can't use the existing match
+    QTRY_VERIFY(addSpy.count() > addSpyCount);
+    QTRY_COMPARE(m_addAccumulatedIds.size(), 6);
+    addSpyCount = addSpy.count();
+
+    // Verify that the relationships are updated
+    localAlice = m_cm->contact(retrievalId(localAlice));
+    aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
+    QVERIFY(!relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(!relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
 }
 
 void tst_Aggregation::regenerateAggregate()

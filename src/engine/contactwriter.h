@@ -88,10 +88,12 @@ public:
 
     QContactManager::Error save(
             const QList<QContactRelationship> &relationships,
-            QMap<int, QContactManager::Error> *errorMap);
+            QMap<int, QContactManager::Error> *errorMap,
+            bool withinTransaction);
     QContactManager::Error remove(
             const QList<QContactRelationship> &relationships,
-            QMap<int, QContactManager::Error> *errorMap);
+            QMap<int, QContactManager::Error> *errorMap,
+            bool withinTransaction);
 
 private:
     bool beginTransaction();
@@ -102,9 +104,16 @@ private:
     QContactManager::Error update(QContact *contact, const DetailList &definitionMask, bool *aggregateUpdated, bool withinTransaction, bool withinAggregateUpdate);
     QContactManager::Error write(quint32 contactId, QContact *contact, const DetailList &definitionMask);
 
+    QContactManager::Error saveRelationships(const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap);
+    QContactManager::Error removeRelationships(const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap);
+
+#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     QContactManager::Error updateOrCreateAggregate(QContact *contact, const DetailList &definitionMask, bool withinTransaction);
     QContactManager::Error updateLocalAndAggregate(QContact *contact, const DetailList &definitionMask, bool withinTransaction);
     void regenerateAggregates(const QList<quint32> &aggregateIds, const DetailList &definitionMask, bool withinTransaction);
+    QContactManager::Error removeChildlessAggregates(QList<QContactIdType> *realRemoveIds);
+    QContactManager::Error aggregateOrphanedContacts(bool withinTransaction);
+#endif
 
     void bindContactDetails(const QContact &contact, QSqlQuery &query);
 
@@ -147,6 +156,7 @@ private:
     QSqlQuery m_findMatchForContact;
     QSqlQuery m_selectAggregateContactIds;
     QSqlQuery m_orphanAggregateIds;
+    QSqlQuery m_orphanContactIds;
     QSqlQuery m_checkContactExists;
     QSqlQuery m_existingContactIds;
     QSqlQuery m_selfContactId;

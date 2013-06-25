@@ -97,7 +97,11 @@ static const char *selectAggregateContactIds =
 
 static const char *orphanAggregateIds =
         "\n SELECT contactId FROM Contacts WHERE syncTarget = 'aggregate' AND contactId NOT IN ("
-        "\n SELECT firstId FROM Relationships WHERE type = 'Aggregates')";
+        "\n SELECT DISTINCT firstId FROM Relationships WHERE type = 'Aggregates')";
+
+static const char *orphanContactIds =
+        "\n SELECT contactId FROM Contacts WHERE syncTarget != 'aggregate' AND contactId NOT IN ("
+        "\n SELECT DISTINCT secondId FROM Relationships WHERE type = 'Aggregates')";
 
 static const char *checkContactExists =
         "\n SELECT COUNT(contactId), syncTarget FROM Contacts WHERE contactId = :contactId;";
@@ -469,6 +473,7 @@ ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &d
     , m_findMatchForContact(prepare(findMatchForContact, database))
     , m_selectAggregateContactIds(prepare(selectAggregateContactIds, database))
     , m_orphanAggregateIds(prepare(orphanAggregateIds, database))
+    , m_orphanContactIds(prepare(orphanContactIds, database))
     , m_checkContactExists(prepare(checkContactExists, database))
     , m_existingContactIds(prepare(existingContactIds, database))
     , m_selfContactId(prepare(selfContactId, database))
@@ -680,6 +685,34 @@ static QContactManager::Error bindRelationships(
 */
 
 QContactManager::Error ContactWriter::save(
+        const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap, bool withinTransaction)
+{
+    if (relationships.isEmpty())
+        return QContactManager::NoError;
+
+    if (!withinTransaction && !beginTransaction()) {
+        qWarning() << "Unable to begin database transaction while saving relationships";
+        return QContactManager::UnspecifiedError;
+    }
+
+    QContactManager::Error error = saveRelationships(relationships, errorMap);
+    if (error != QContactManager::NoError) {
+        if (!withinTransaction) {
+            // only rollback if we created a transaction.
+            rollbackTransaction();
+            return error;
+        }
+    }
+
+    if (!withinTransaction && !commitTransaction()) {
+        qWarning() << "Failed to commit database after relationship save";
+        return QContactManager::UnspecifiedError;
+    }
+
+    return QContactManager::NoError;
+}
+
+QContactManager::Error ContactWriter::saveRelationships(
         const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap)
 {
 #ifdef USING_QTPIM
@@ -687,9 +720,6 @@ QContactManager::Error ContactWriter::save(
 #else
     static const QString uri(QString::fromLatin1("org.nemomobile.contacts.sqlite"));
 #endif
-
-    if (relationships.isEmpty())
-        return QContactManager::NoError;
 
     // in order to perform duplicate detection we build up the following datastructure.
     QMultiMap<quint32, QPair<QString, quint32> > bucketedRelationships; // first id to <type, second id>.
@@ -812,8 +842,6 @@ QContactManager::Error ContactWriter::save(
         return QContactManager::UnspecifiedError;
     }
 
-    // Notify
-
     if (invalidInsertions > 0) {
         return QContactManager::InvalidRelationshipError;
     }
@@ -822,11 +850,36 @@ QContactManager::Error ContactWriter::save(
 }
 
 QContactManager::Error ContactWriter::remove(
-        const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap)
+        const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap, bool withinTransaction)
 {
     if (relationships.isEmpty())
         return QContactManager::NoError;
 
+    if (!withinTransaction && !beginTransaction()) {
+        qWarning() << "Unable to begin database transaction while removing relationships";
+        return QContactManager::UnspecifiedError;
+    }
+
+    QContactManager::Error error = removeRelationships(relationships, errorMap);
+    if (error != QContactManager::NoError) {
+        if (!withinTransaction) {
+            // only rollback if we created a transaction.
+            rollbackTransaction();
+            return error;
+        }
+    }
+
+    if (!withinTransaction && !commitTransaction()) {
+        qWarning() << "Failed to commit database after relationship removal";
+        return QContactManager::UnspecifiedError;
+    }
+
+    return QContactManager::NoError;
+}
+
+QContactManager::Error ContactWriter::removeRelationships(
+        const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap)
+{
     // in order to perform existence detection we build up the following datastructure.
     QMultiMap<quint32, QPair<QString, quint32> > bucketedRelationships; // first id to <type, second id>.
     {
@@ -891,11 +944,24 @@ QContactManager::Error ContactWriter::remove(
         alreadyRemoved.insert(curr);
     }
 
-    // Notify
-
     if (removeInvalid) {
         return QContactManager::DoesNotExistError;
     }
+
+#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
+    // remove any aggregates that no longer aggregate any contacts.
+    QList<QContactIdType> removedIds;
+    QContactManager::Error removeError = removeChildlessAggregates(&removedIds);
+    if (removeError != QContactManager::NoError)
+        return removeError;
+
+    m_removedIds.append(removedIds);
+
+    // Some contacts may need to have new aggregates created
+    QContactManager::Error aggregateError = aggregateOrphanedContacts(true);
+    if (aggregateError != QContactManager::NoError)
+        return aggregateError;
+#endif
 
     return QContactManager::NoError;
 }
@@ -1080,35 +1146,13 @@ QContactManager::Error ContactWriter::remove(const QList<QContactIdType> &contac
     }
 
     // removing aggregates if they no longer aggregate any contacts.
-    QVariantList boundOrphanIds;
-    if (!m_orphanAggregateIds.exec()) {
-        qWarning() << "Failed to fetch orphan aggregate contact ids during remove";
-        qWarning() << m_orphanAggregateIds.lastError();
+    QContactManager::Error removeError = removeChildlessAggregates(&realRemoveIds);
+    if (removeError != QContactManager::NoError) {
         if (!withinTransaction) {
             // only rollback the transaction if we created it
             rollbackTransaction();
         }
-        return QContactManager::UnspecifiedError;
-    }
-    while (m_orphanAggregateIds.next()) {
-        quint32 orphanId = m_orphanAggregateIds.value(0).toUInt();
-        boundOrphanIds.append(orphanId);
-        realRemoveIds.append(ContactId::apiId(orphanId));
-    }
-    m_orphanAggregateIds.finish();
-
-    if (boundOrphanIds.size() > 0) {
-        m_removeContact.bindValue(QLatin1String(":contactId"), boundOrphanIds);
-        if (!m_removeContact.execBatch()) {
-            qWarning() << "Failed to remove orphaned aggregate contacts";
-            qWarning() << m_removeContact.lastError();
-            if (!withinTransaction) {
-                // only rollback the transaction if we created it
-                rollbackTransaction();
-            }
-            return QContactManager::UnspecifiedError;
-        }
-        m_removeContact.finish();
+        return removeError;
     }
 
     m_removedIds.append(realRemoveIds);
@@ -1817,7 +1861,7 @@ static QContactManager::Error calculateDelta(ContactReader *reader, QContact *co
     return QContactManager::NoError;
 }
 
-
+#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
 static void adjustDetailUrisForLocal(QContactDetail &currDet)
 {
     if (currDet.detailUri().startsWith(QLatin1String("aggregate:"))) {
@@ -1983,6 +2027,7 @@ static void promoteDetailsToLocal(const QList<QContactDetail> addDelta, const QL
         }
     }
 }
+#endif
 
 static QContactRelationship makeRelationship(const QString &type, const QContactId &firstId, const QContactId &secondId)
 {
@@ -2003,6 +2048,7 @@ static QContactRelationship makeRelationship(const QString &type, const QContact
     return relationship;
 }
 
+#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
 /*
    This function is called when an aggregate contact is updated.
    Instead of just saving changes to the aggregate, we save the
@@ -2093,7 +2139,7 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
 #else
         saveRelationshipList.append(makeRelationship(QContactRelationship::Aggregates, contact->id(), writeList.at(0).id()));
 #endif
-        writeError = save(saveRelationshipList, &errorMap);
+        writeError = save(saveRelationshipList, &errorMap, withinTransaction);
         if (writeError != QContactManager::NoError) {
             // TODO: remove unaggregated contact
             // if the aggregation relationship fails, the entire save has failed.
@@ -2403,7 +2449,7 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
 #else
     saveRelationshipList.append(makeRelationship(QContactRelationship::Aggregates, matchingAggregate.id(), contact->id()));
 #endif
-    err = save(saveRelationshipList, &errorMap);
+    err = save(saveRelationshipList, &errorMap, withinTransaction);
     if (err != QContactManager::NoError) {
         // if the aggregation relationship fails, the entire save has failed.
         qWarning() << "Unable to save aggregation relationship!";
@@ -2542,6 +2588,71 @@ void ContactWriter::regenerateAggregates(const QList<quint32> &aggregateIds, con
         qWarning() << "definitionMask:" << definitionMask;
     }
 }
+
+QContactManager::Error ContactWriter::removeChildlessAggregates(QList<QContactIdType> *removedIds)
+{
+    QVariantList aggregateIds;
+    if (!m_orphanAggregateIds.exec()) {
+        qWarning() << "Failed to fetch orphan aggregate contact ids during remove";
+        qWarning() << m_orphanAggregateIds.lastError();
+        return QContactManager::UnspecifiedError;
+    }
+    while (m_orphanAggregateIds.next()) {
+        quint32 orphanId = m_orphanAggregateIds.value(0).toUInt();
+        aggregateIds.append(orphanId);
+        removedIds->append(ContactId::apiId(orphanId));
+    }
+    m_orphanAggregateIds.finish();
+
+    if (aggregateIds.size() > 0) {
+        m_removeContact.bindValue(QLatin1String(":contactId"), aggregateIds);
+        if (!m_removeContact.execBatch()) {
+            qWarning() << "Failed to remove orphaned aggregate contacts";
+            qWarning() << m_removeContact.lastError();
+            return QContactManager::UnspecifiedError;
+        }
+        m_removeContact.finish();
+    }
+
+    return QContactManager::NoError;
+}
+
+QContactManager::Error ContactWriter::aggregateOrphanedContacts(bool withinTransaction)
+{
+    QList<QContactIdType> contactIds;
+    if (!m_orphanContactIds.exec()) {
+        qWarning() << "Failed to fetch orphan aggregate contact ids during remove";
+        qWarning() << m_orphanContactIds.lastError();
+        return QContactManager::UnspecifiedError;
+    }
+    while (m_orphanContactIds.next()) {
+        quint32 orphanId = m_orphanContactIds.value(0).toUInt();
+        contactIds.append(ContactId::apiId(orphanId));
+    }
+    m_orphanContactIds.finish();
+
+    if (contactIds.size() > 0) {
+        QList<QContact> readList;
+        QContactManager::Error readError = m_reader->readContacts(QLatin1String("AggregateOrphaned"), &readList, contactIds, QContactFetchHint());
+        if (readError != QContactManager::NoError || readList.size() != contactIds.size()) {
+            qWarning() << "Failed to read orphaned contacts for aggregation";
+            return QContactManager::UnspecifiedError;
+        }
+
+        QList<QContact>::iterator it = readList.begin(), end = readList.end();
+        for ( ; it != end; ++it) {
+            QContact &orphan(*it);
+            QContactManager::Error error = updateOrCreateAggregate(&orphan, DetailList(), withinTransaction);
+            if (error != QContactManager::NoError) {
+                qWarning() << "Failed to create aggregate for orphaned contact:" << ContactId::toString(orphan);
+                return error;
+            }
+        }
+    }
+
+    return QContactManager::NoError;
+}
+#endif
 
 QContactManager::Error ContactWriter::create(QContact *contact, const DetailList &definitionMask, bool withinTransaction, bool withinAggregateUpdate)
 {
