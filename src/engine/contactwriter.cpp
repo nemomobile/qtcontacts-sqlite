@@ -1763,18 +1763,19 @@ static QContactManager::Error enforceDetailConstraints(QContact *contact)
 */
 static QContactManager::Error calculateDelta(ContactReader *reader, QContact *contact, const ContactWriter::DetailList &definitionMask, QList<QContactDetail> *addDelta, QList<QContactDetail> *removeDelta)
 {
-    QContactFetchHint fetchHint;
+    QContactFetchHint hint;
 #ifdef USING_QTPIM
-    fetchHint.setDetailTypesHint(definitionMask);
+    hint.setDetailTypesHint(definitionMask);
 #else
-    fetchHint.setDetailDefinitionsHint(definitionMask);
+    hint.setDetailDefinitionsHint(definitionMask);
 #endif
+    hint.setOptimizationHints(QContactFetchHint::NoRelationships);
 
     QList<QContactIdType> whichList;
     whichList.append(ContactId::apiId(*contact));
 
     QList<QContact> readList;
-    QContactManager::Error readError = reader->readContacts(QLatin1String("UpdateAggregate"), &readList, whichList, fetchHint);
+    QContactManager::Error readError = reader->readContacts(QLatin1String("UpdateAggregate"), &readList, whichList, hint);
     if (readError != QContactManager::NoError || readList.size() == 0) {
         // unable to read the aggregate contact from the database
         return readError == QContactManager::NoError ? QContactManager::UnspecifiedError : readError;
@@ -2092,8 +2093,11 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
 
         m_findLocalForAggregate.finish();
 
+        QContactFetchHint hint;
+        hint.setOptimizationHints(QContactFetchHint::NoRelationships);
+
         QList<QContact> readList;
-        QContactManager::Error readError = m_reader->readContacts(QLatin1String("UpdateAggregate"), &readList, whichList, QContactFetchHint());
+        QContactManager::Error readError = m_reader->readContacts(QLatin1String("UpdateAggregate"), &readList, whichList, hint);
         if (readError != QContactManager::NoError || readList.size() == 0) {
             qWarning() << "Unable to read local contact for aggregate" << ContactId::toString(*contact) << "during update";
             return readError == QContactManager::NoError ? QContactManager::UnspecifiedError : readError;
@@ -2515,9 +2519,11 @@ void ContactWriter::regenerateAggregates(const QList<quint32> &aggregateIds, con
             continue;
         }
 
+        QContactFetchHint hint;
+        hint.setOptimizationHints(QContactFetchHint::NoRelationships);
+
         QList<QContact> readList;
-        QContactManager::Error readError = m_reader->readContacts(QLatin1String("RegenerateAggregate"),
-                                                                  &readList, readIds, QContactFetchHint());
+        QContactManager::Error readError = m_reader->readContacts(QLatin1String("RegenerateAggregate"), &readList, readIds, hint);
         if (readError != QContactManager::NoError
                 || readList.size() <= 1
                 || readList.at(0).detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget) != QLatin1String("aggregate")) {
@@ -2632,8 +2638,11 @@ QContactManager::Error ContactWriter::aggregateOrphanedContacts(bool withinTrans
     m_orphanContactIds.finish();
 
     if (contactIds.size() > 0) {
+        QContactFetchHint hint;
+        hint.setOptimizationHints(QContactFetchHint::NoRelationships);
+
         QList<QContact> readList;
-        QContactManager::Error readError = m_reader->readContacts(QLatin1String("AggregateOrphaned"), &readList, contactIds, QContactFetchHint());
+        QContactManager::Error readError = m_reader->readContacts(QLatin1String("AggregateOrphaned"), &readList, contactIds, hint);
         if (readError != QContactManager::NoError || readList.size() != contactIds.size()) {
             qWarning() << "Failed to read orphaned contacts for aggregation";
             return QContactManager::UnspecifiedError;
