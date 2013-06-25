@@ -54,7 +54,7 @@
 
 #include <QtDebug>
 
-static const char *findRelatedForAggregate =
+static const char *findConstituentsForAggregate =
         "\n SELECT contactId FROM Contacts WHERE contactId IN ("
         "\n SELECT secondId FROM Relationships WHERE firstId = :aggregateId AND type = 'Aggregates')";
 
@@ -95,7 +95,7 @@ static const char *findMatchForContact =
 static const char *selectAggregateContactIds =
         "\n SELECT contactId FROM Contacts WHERE syncTarget = 'aggregate' AND contactId = :possibleAggregateId";
 
-static const char *orphanAggregateIds =
+static const char *childlessAggregateIds =
         "\n SELECT contactId FROM Contacts WHERE syncTarget = 'aggregate' AND contactId NOT IN ("
         "\n SELECT DISTINCT firstId FROM Relationships WHERE type = 'Aggregates')";
 
@@ -467,12 +467,12 @@ ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &d
     : m_engine(engine)
     , m_database(database)
     , m_databaseMutex(new ProcessMutex(database.databaseName()))
-    , m_findRelatedForAggregate(prepare(findRelatedForAggregate, database))
+    , m_findConstituentsForAggregate(prepare(findConstituentsForAggregate, database))
     , m_findLocalForAggregate(prepare(findLocalForAggregate, database))
     , m_findAggregateForContact(prepare(findAggregateForContact, database))
     , m_findMatchForContact(prepare(findMatchForContact, database))
     , m_selectAggregateContactIds(prepare(selectAggregateContactIds, database))
-    , m_orphanAggregateIds(prepare(orphanAggregateIds, database))
+    , m_childlessAggregateIds(prepare(childlessAggregateIds, database))
     , m_orphanContactIds(prepare(orphanContactIds, database))
     , m_checkContactExists(prepare(checkContactExists, database))
     , m_existingContactIds(prepare(existingContactIds, database))
@@ -1114,22 +1114,22 @@ QContactManager::Error ContactWriter::remove(const QList<QContactIdType> &contac
     // remove the aggregate contacts - and any contacts they aggregate
     if (boundAggregatesToRemove.size() > 0) {
         // first, get the list of contacts which are aggregated by the aggregate contacts we are going to remove
-        m_findRelatedForAggregate.bindValue(":aggregateId", boundAggregatesToRemove);
-        if (!m_findRelatedForAggregate.execBatch()) {
+        m_findConstituentsForAggregate.bindValue(":aggregateId", boundAggregatesToRemove);
+        if (!m_findConstituentsForAggregate.execBatch()) {
             qWarning() << "Failed to fetch contacts aggregated by removed aggregates";
-            qWarning() << m_findRelatedForAggregate.lastError();
+            qWarning() << m_findConstituentsForAggregate.lastError();
             if (!withinTransaction) {
                 // only rollback the transaction if we created it
                 rollbackTransaction();
             }
             return QContactManager::UnspecifiedError;
         }
-        while (m_findRelatedForAggregate.next()) {
-            quint32 dbId = m_findRelatedForAggregate.value(0).toUInt();
+        while (m_findConstituentsForAggregate.next()) {
+            quint32 dbId = m_findConstituentsForAggregate.value(0).toUInt();
             boundAggregatesToRemove.append(dbId); // we just add it to the big list of bound "remove these"
             realRemoveIds.append(ContactId::apiId(dbId));
         }
-        m_findRelatedForAggregate.finish();
+        m_findConstituentsForAggregate.finish();
 
         // remove the aggregates + the aggregated
         m_removeContact.bindValue(QLatin1String(":contactId"), boundAggregatesToRemove);
@@ -2500,15 +2500,15 @@ void ContactWriter::regenerateAggregates(const QList<quint32> &aggregateIds, con
         QList<QContactIdType> readIds;
         readIds.append(apiId);
 
-        m_findRelatedForAggregate.bindValue(":aggregateId", aggId);
-        if (!m_findRelatedForAggregate.exec()) {
-            qWarning() << "Failed to find related contacts for aggregate" << aggId << "during regenerate";
+        m_findConstituentsForAggregate.bindValue(":aggregateId", aggId);
+        if (!m_findConstituentsForAggregate.exec()) {
+            qWarning() << "Failed to find constituent contacts for aggregate" << aggId << "during regenerate";
             continue;
         }
-        while (m_findRelatedForAggregate.next()) {
-            readIds.append(ContactId::apiId(m_findRelatedForAggregate.value(0).toUInt()));
+        while (m_findConstituentsForAggregate.next()) {
+            readIds.append(ContactId::apiId(m_findConstituentsForAggregate.value(0).toUInt()));
         }
-        m_findRelatedForAggregate.finish();
+        m_findConstituentsForAggregate.finish();
 
         if (readIds.size() == 1) { // only the aggregate?
             qWarning() << "Existing aggregate" << aggId << "should already have been removed - aborting regenerate";
@@ -2521,7 +2521,7 @@ void ContactWriter::regenerateAggregates(const QList<quint32> &aggregateIds, con
         if (readError != QContactManager::NoError
                 || readList.size() <= 1
                 || readList.at(0).detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget) != QLatin1String("aggregate")) {
-            qWarning() << "Failed to read related contacts for aggregate" << aggId << "during regenerate";
+            qWarning() << "Failed to read constituent contacts for aggregate" << aggId << "during regenerate";
             continue;
         }
 
@@ -2592,22 +2592,22 @@ void ContactWriter::regenerateAggregates(const QList<quint32> &aggregateIds, con
 QContactManager::Error ContactWriter::removeChildlessAggregates(QList<QContactIdType> *removedIds)
 {
     QVariantList aggregateIds;
-    if (!m_orphanAggregateIds.exec()) {
-        qWarning() << "Failed to fetch orphan aggregate contact ids during remove";
-        qWarning() << m_orphanAggregateIds.lastError();
+    if (!m_childlessAggregateIds.exec()) {
+        qWarning() << "Failed to fetch childless aggregate contact ids during remove";
+        qWarning() << m_childlessAggregateIds.lastError();
         return QContactManager::UnspecifiedError;
     }
-    while (m_orphanAggregateIds.next()) {
-        quint32 orphanId = m_orphanAggregateIds.value(0).toUInt();
-        aggregateIds.append(orphanId);
-        removedIds->append(ContactId::apiId(orphanId));
+    while (m_childlessAggregateIds.next()) {
+        quint32 aggregateId = m_childlessAggregateIds.value(0).toUInt();
+        aggregateIds.append(aggregateId);
+        removedIds->append(ContactId::apiId(aggregateId));
     }
-    m_orphanAggregateIds.finish();
+    m_childlessAggregateIds.finish();
 
     if (aggregateIds.size() > 0) {
         m_removeContact.bindValue(QLatin1String(":contactId"), aggregateIds);
         if (!m_removeContact.execBatch()) {
-            qWarning() << "Failed to remove orphaned aggregate contacts";
+            qWarning() << "Failed to remove childless aggregate contacts";
             qWarning() << m_removeContact.lastError();
             return QContactManager::UnspecifiedError;
         }
