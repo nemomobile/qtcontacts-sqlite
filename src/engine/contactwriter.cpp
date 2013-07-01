@@ -561,17 +561,17 @@ bool ContactWriter::commitTransaction()
         qWarning() << "Lock error: no lock held on commit";
     }
 
-    if (!m_removedIds.isEmpty()) {
-        ContactNotifier::contactsRemoved(m_removedIds);
-        m_removedIds.clear();
+    if (!m_addedIds.isEmpty()) {
+        ContactNotifier::contactsAdded(m_addedIds);
+        m_addedIds.clear();
     }
     if (!m_changedIds.isEmpty()) {
         ContactNotifier::contactsChanged(m_changedIds);
         m_changedIds.clear();
     }
-    if (!m_addedIds.isEmpty()) {
-        ContactNotifier::contactsAdded(m_addedIds);
-        m_addedIds.clear();
+    if (!m_removedIds.isEmpty()) {
+        ContactNotifier::contactsRemoved(m_removedIds);
+        m_removedIds.clear();
     }
     return true;
 }
