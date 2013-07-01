@@ -4280,21 +4280,23 @@ void tst_QContactManager::constituentOfSelf()
     setFilterContact(relationshipFilter, constituent);
     relationshipFilter.setRelatedContactRole(QContactRelationship::Second);
 
-    foreach (const QContact &aggregator, m.contacts(relationshipFilter)) {
-        // Remove the relationship between these contacts
-        QContactRelationship relationship;
-        relationship = makeRelationship(QContactRelationship::Aggregates, aggregator.id(), constituent.id());
-        QVERIFY(m.removeRelationship(relationship));
-
-        // The aggregator should have been removed
-        QContact nonexistent = m.contact(retrievalId(aggregator));
-        QVERIFY(m.error() == QContactManager::DoesNotExistError);
-        QCOMPARE(nonexistent.id(), QContactId());
-    }
-
     // Now connect our contact to the real self contact
     QContactRelationship relationship(makeRelationship(QContactRelationship::Aggregates, selfId, constituent.id()));
     QVERIFY(m.saveRelationship(&relationship));
+
+    foreach (const QContact &aggregator, m.contacts(relationshipFilter)) {
+        if (aggregator.id() != selfId) {
+            // Remove the relationship between these contacts
+            QContactRelationship relationship;
+            relationship = makeRelationship(QContactRelationship::Aggregates, aggregator.id(), constituent.id());
+            QVERIFY(m.removeRelationship(relationship));
+
+            // The aggregator should have been removed
+            QContact nonexistent = m.contact(retrievalId(aggregator));
+            QVERIFY(m.error() == QContactManager::DoesNotExistError);
+            QCOMPARE(nonexistent.id(), QContactId());
+        }
+    }
 
     // Update the constituent
     QContactNickname nn;
@@ -4312,6 +4314,10 @@ void tst_QContactManager::constituentOfSelf()
     // Change should be reflected in the self contact
     QContact self = m.contact(m.selfContactId());
     QVERIFY(detailsEquivalent(self.detail<QContactNickname>(), nn));
+
+    // Check that no new aggregate has been generated
+    foreach (const QContact &aggregator, m.contacts(relationshipFilter))
+        QCOMPARE(aggregator.id(), selfId);
 
     // Do a presence update
     QContactPresence presence;
@@ -4347,6 +4353,11 @@ void tst_QContactManager::constituentOfSelf()
     self = m.contact(m.selfContactId());
     QVERIFY(detailsEquivalent(self.detail<QContactPresence>(), presence));
     QCOMPARE(self.detail<QContactGlobalPresence>().presenceState(), presence.presenceState());
+
+    // Check that no new aggregate has been generated
+    foreach (const QContact &aggregator, m.contacts(relationshipFilter))
+        QCOMPARE(aggregator.id(), selfId);
+
 }
 #endif
 
