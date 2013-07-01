@@ -82,6 +82,7 @@ public:
     virtual void contactIdsAvailable(const QList<QContactIdType> &) {}
 
     virtual QString description() const = 0;
+    virtual QContactManager::Error error() const = 0;
 };
 
 template <typename T>
@@ -102,6 +103,11 @@ public:
     void clear()
     {
         m_request = 0;
+    }
+
+    QContactManager::Error error() const
+    {
+        return m_error;
     }
 
     void setError(QContactManager::Error error)
@@ -782,7 +788,7 @@ void JobThread::run()
             QElapsedTimer timer;
             timer.start();
             m_currentJob->execute(*m_engine, database, &reader, writer);
-            qDebug() << "Job executed in" << timer.elapsed() << ":" << m_currentJob->description();
+            qDebug() << "Job executed in" << timer.elapsed() << ":" << m_currentJob->description() << ":" << m_currentJob->error();
             locker.relock();
             m_finishedJobs.append(m_currentJob);
             m_currentJob = 0;
