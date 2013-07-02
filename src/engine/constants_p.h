@@ -44,6 +44,9 @@
 BEGIN_CONTACTS_NAMESPACE
 
 #ifdef USING_QTPIM
+const int QContactDetail__ContextDefault = (QContactDetail::ContextOther+1);
+const int QContactDetail__ContextLarge = (QContactDetail::ContextOther+2);
+
 static const int QContactName__FieldCustomLabel = (QContactName::FieldSuffix+1);
 
 static const int QContactOnlineAccount__FieldAccountPath = (QContactOnlineAccount::FieldSubTypes+1);
@@ -59,6 +62,9 @@ static const int QContactTpMetadata__FieldAccountId = 1;
 static const int QContactTpMetadata__FieldAccountEnabled = 2;
 #else
 // Declared as static:
+Q_DECLARE_LATIN1_CONSTANT(QContactDetail__ContextDefault, "Default") = { "Default" };
+Q_DECLARE_LATIN1_CONSTANT(QContactDetail__ContextLarge, "Large") = { "Large" };
+
 Q_DECLARE_LATIN1_CONSTANT(QContactOnlineAccount__FieldAccountPath, "AccountPath") = { "AccountPath" };
 Q_DECLARE_LATIN1_CONSTANT(QContactOnlineAccount__FieldAccountIconPath, "AccountIconPath") = { "AccountIconPath" };
 Q_DECLARE_LATIN1_CONSTANT(QContactOnlineAccount__FieldEnabled, "Enabled") = { "Enabled" };
