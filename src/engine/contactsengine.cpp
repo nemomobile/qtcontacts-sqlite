@@ -957,19 +957,6 @@ bool ContactsEngine::saveContacts(
         m_synchronousWriter = new ContactWriter(*this, m_database, m_synchronousReader);
     }
 
-    // for each contact, if it doesn't have a display label, synthesise one for it.
-    for (int i = 0; contacts && i < contacts->size(); ++i) {
-        QContact &curr = (*contacts)[i];
-#ifdef USING_QTPIM
-        QContactDisplayLabel displayLabel(curr.detail<QContactDisplayLabel>());
-        if (displayLabel.isEmpty() || displayLabel.label().isEmpty()) {
-#else
-        if (curr.displayLabel().isEmpty()) {
-#endif
-            regenerateDisplayLabel(curr);
-        }
-    }
-
     QContactManager::Error err = m_synchronousWriter->save(contacts, definitionMask, 0, errorMap, false, false);
 
     if (error)

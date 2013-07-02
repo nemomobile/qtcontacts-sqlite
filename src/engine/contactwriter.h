@@ -42,6 +42,7 @@
 #include <QContactAvatar>
 #include <QContactBirthday>
 #include <QContactEmailAddress>
+#include <QContactGlobalPresence>
 #include <QContactGuid>
 #include <QContactHobby>
 #include <QContactNickname>
@@ -134,6 +135,7 @@ private:
     QSqlQuery &bindDetail(quint32 contactId, const QContactAvatar &detail);
     QSqlQuery &bindDetail(quint32 contactId, const QContactBirthday &detail);
     QSqlQuery &bindDetail(quint32 contactId, const QContactEmailAddress &detail);
+    QSqlQuery &bindDetail(quint32 contactId, const QContactGlobalPresence &detail);
     QSqlQuery &bindDetail(quint32 contactId, const QContactGuid &detail);
     QSqlQuery &bindDetail(quint32 contactId, const QContactHobby &detail);
     QSqlQuery &bindDetail(quint32 contactId, const QContactNickname &detail);
