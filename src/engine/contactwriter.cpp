@@ -1304,6 +1304,18 @@ static bool detailListContains(const ContactWriter::DetailList &list)
     return list.contains(detailType<T>());
 }
 
+// Presence and GlobalPresence should be handled together
+template<>
+bool detailListContains<QContactGlobalPresence>(const ContactWriter::DetailList &list)
+{
+    return list.contains(detailType<QContactPresence>()) || list.contains(detailType<QContactGlobalPresence>());
+}
+template<>
+bool detailListContains<QContactPresence>(const ContactWriter::DetailList &list)
+{
+    return list.contains(detailType<QContactPresence>()) || list.contains(detailType<QContactGlobalPresence>());
+}
+
 static bool detailListContains(const ContactWriter::DetailList &list, const QContactDetail &detail)
 {
 #ifdef USING_QTPIM
@@ -1495,95 +1507,6 @@ static bool betterPresence(const QContactPresence &detail, const QContactPresenc
     }
 
     return (detail.presenceState() < best.presenceState());
-}
-
-template <> bool ContactWriter::writeDetails<QContactPresence>(
-        quint32 contactId,
-        QContact *contact,
-        QSqlQuery &removeQuery,
-        const DetailList &definitionMask,
-        QContactManager::Error *error)
-{
-    if (!definitionMask.isEmpty() && !detailListContains<QContactPresence>(definitionMask))
-        return true;
-
-    if (!removeCommonDetails<QContactPresence>(contactId, error))
-        return false;
-
-    removeQuery.bindValue(0, contactId);
-    if (!removeQuery.exec()) {
-        qWarning() << "Failed to remove existing details for" << QString::fromLatin1(detailTypeName<QContactPresence>());
-        qWarning() << removeQuery.lastError();
-        *error = QContactManager::UnspecifiedError;
-        return false;
-    }
-
-    removeQuery.finish();
-
-    m_removeGlobalPresence.bindValue(0, contactId);
-    if (!m_removeGlobalPresence.exec()) {
-        qWarning() << "Failed to remove existing details for" << QString::fromLatin1(detailTypeName<QContactGlobalPresence>());
-        qWarning() << m_removeGlobalPresence.lastError();
-        *error = QContactManager::UnspecifiedError;
-        return false;
-    }
-
-    m_removeGlobalPresence.finish();
-
-    QContactGlobalPresence globalPresence = contact->detail<QContactGlobalPresence>();
-    const QList<QContactPresence> details = contact->details<QContactPresence>();
-    if (details.isEmpty()) {
-        // No presence - remove global presence if present
-        if (!globalPresence.isEmpty()) {
-            contact->removeDetail(&globalPresence);
-        }
-        return true;
-    }
-
-    QContactPresence bestPresence;
-
-    foreach (const QContactPresence &detail, details) {
-        if (betterPresence(detail, bestPresence)) {
-            bestPresence = detail;
-        }
-
-        QSqlQuery &query = bindDetail(contactId, detail);
-        if (!query.exec()) {
-            qWarning() << "Failed to write details for" << QString::fromLatin1(detailTypeName<QContactPresence>());
-            qWarning() << query.lastError();
-            *error = QContactManager::UnspecifiedError;
-            return false;
-        }
-
-        QVariant detailId = query.lastInsertId();
-        query.finish();
-
-        if (!writeCommonDetails(contactId, detailId, detail, error))
-            return false;
-    }
-
-    m_insertGlobalPresence.bindValue(0, contactId);
-    m_insertGlobalPresence.bindValue(1, bestPresence.presenceState());
-    m_insertGlobalPresence.bindValue(2, bestPresence.timestamp());
-    m_insertGlobalPresence.bindValue(3, bestPresence.nickname());
-    m_insertGlobalPresence.bindValue(4, bestPresence.customMessage());
-    if (!m_insertGlobalPresence.exec()) {
-        qWarning() << "Failed to write details for" << QString::fromLatin1(detailTypeName<QContactGlobalPresence>());
-        qWarning() << m_insertGlobalPresence.lastError();
-        *error = QContactManager::UnspecifiedError;
-        return false;
-    }
-
-    m_insertGlobalPresence.finish();
-
-    globalPresence.setPresenceState(bestPresence.presenceState());
-    globalPresence.setTimestamp(bestPresence.timestamp());
-    globalPresence.setNickname(bestPresence.nickname());
-    globalPresence.setCustomMessage(bestPresence.customMessage());
-
-    contact->saveDetail(&globalPresence);
-
-    return true;
 }
 
 QContactManager::Error ContactWriter::save(
@@ -2213,6 +2136,7 @@ static ContactWriter::DetailList getUnpromotedDetailTypes()
     // The list of definition names for details that are not propagated to an aggregate
     ContactWriter::DetailList rv(getIdentityDetailTypes());
     rv << detailType<QContactDisplayLabel>();
+    rv << detailType<QContactGlobalPresence>();
     return rv;
 }
 
@@ -2424,9 +2348,6 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
     // XXX TODO: promote relationships!
     promoteDetailsToAggregate(*contact, &matchingAggregate, definitionMask);
 
-    // update the display label for the aggregate
-    m_engine.regenerateDisplayLabel(matchingAggregate);
-
     if (!found) {
         // need to create an aggregating contact first.
         QContactSyncTarget cst;
@@ -2579,9 +2500,6 @@ void ContactWriter::regenerateAggregates(const QList<quint32> &aggregateIds, con
             promoteDetailsToAggregate(curr, &aggregateContact, definitionMask);
         }
 
-        // update the display label for the aggregate
-        m_engine.regenerateDisplayLabel(aggregateContact);
-
         // we save the updated aggregates to database all in a batch at the end.
         aggregatesToSave.append(aggregateContact);
         aggregatesToSaveIds.insert(ContactId::apiId(aggregateContact));
@@ -2663,6 +2581,36 @@ QContactManager::Error ContactWriter::aggregateOrphanedContacts(bool withinTrans
 }
 #endif
 
+static bool updateGlobalPresence(QContact *contact)
+{
+    QContactGlobalPresence globalPresence = contact->detail<QContactGlobalPresence>();
+
+    const QList<QContactPresence> details = contact->details<QContactPresence>();
+    if (details.isEmpty()) {
+        // No presence - remove global presence if present
+        if (!globalPresence.isEmpty()) {
+            contact->removeDetail(&globalPresence);
+        }
+        return true;
+    }
+
+    QContactPresence bestPresence;
+
+    foreach (const QContactPresence &detail, details) {
+        if (betterPresence(detail, bestPresence)) {
+            bestPresence = detail;
+        }
+    }
+
+    globalPresence.setPresenceState(bestPresence.presenceState());
+    globalPresence.setTimestamp(bestPresence.timestamp());
+    globalPresence.setNickname(bestPresence.nickname());
+    globalPresence.setCustomMessage(bestPresence.customMessage());
+
+    contact->saveDetail(&globalPresence);
+    return true;
+}
+
 QContactManager::Error ContactWriter::create(QContact *contact, const DetailList &definitionMask, bool withinTransaction, bool withinAggregateUpdate)
 {
 #ifndef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
@@ -2674,6 +2622,12 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
         qWarning() << "Contact failed detail constraints";
         return writeErr;
     }
+
+    // update the global presence (display label may be derived from it)
+    updateGlobalPresence(contact);
+
+    // update the display label for this contact
+    m_engine.regenerateDisplayLabel(*contact);
 
     bindContactDetails(*contact, m_insertContact);
     if (!m_insertContact.exec()) {
@@ -2764,6 +2718,12 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
     }
 #endif
 
+    // update the global presence (display label may be derived from it)
+    updateGlobalPresence(contact);
+
+    // update the display label for this contact
+    m_engine.regenerateDisplayLabel(*contact);
+
     bindContactDetails(*contact, m_updateContact);
     m_updateContact.bindValue(14, contactId);
     if (!m_updateContact.exec()) {
@@ -2777,7 +2737,6 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
 
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     if (writeError == QContactManager::NoError) {
-        //if (!withinAggregateUpdate && oldSyncTarget != QLatin1String("aggregate")) {
         if (oldSyncTarget != QLatin1String("aggregate")) {
             QList<quint32> aggregatesOfUpdated;
             m_findAggregateForContact.bindValue(":localId", contactId);
@@ -2810,6 +2769,7 @@ QContactManager::Error ContactWriter::write(quint32 contactId, QContact *contact
             && writeDetails<QContactAvatar>(contactId, contact, m_removeAvatar, definitionMask, &error)
             && writeDetails<QContactBirthday>(contactId, contact, m_removeBirthday, definitionMask, &error)
             && writeDetails<QContactEmailAddress>(contactId, contact, m_removeEmailAddress, definitionMask, &error)
+            && writeDetails<QContactGlobalPresence>(contactId, contact, m_removeGlobalPresence, definitionMask, &error)
             && writeDetails<QContactGuid>(contactId, contact, m_removeGuid, definitionMask, &error)
             && writeDetails<QContactHobby>(contactId, contact, m_removeHobby, definitionMask, &error)
             && writeDetails<QContactNickname>(contactId, contact, m_removeNickname, definitionMask, &error)
@@ -2925,6 +2885,17 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactEmailAddre
     m_insertEmailAddress.bindValue(1, detailValue(detail, T::FieldEmailAddress));
     m_insertEmailAddress.bindValue(2, detail.value<QString>(T::FieldEmailAddress).toLower());
     return m_insertEmailAddress;
+}
+
+QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactGlobalPresence &detail)
+{
+    typedef QContactGlobalPresence T;
+    m_insertGlobalPresence.bindValue(0, contactId);
+    m_insertGlobalPresence.bindValue(1, detailValue(detail, T::FieldPresenceState));
+    m_insertGlobalPresence.bindValue(2, detailValue(detail, T::FieldTimestamp));
+    m_insertGlobalPresence.bindValue(3, detailValue(detail, T::FieldNickname));
+    m_insertGlobalPresence.bindValue(4, detailValue(detail, T::FieldCustomMessage));
+    return m_insertGlobalPresence;
 }
 
 QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactGuid &detail)
