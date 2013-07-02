@@ -97,7 +97,7 @@ public:
 
 private:
     void dumpContactDifferences(const QContact& a, const QContact& b);
-    void dumpContact(const QContact &c);
+    void dumpContact(const QContact &c, QContactManager *cm);
     void dumpContacts(QContactManager *cm);
     bool isSuperset(const QContact& ca, const QContact& cb);
     QList<QContactDetail> removeAllDefaultDetails(const QList<QContactDetail>& details);
@@ -546,13 +546,13 @@ bool tst_QContactManager::isSuperset(const QContact& ca, const QContact& cb)
     return true;
 }
 
-void tst_QContactManager::dumpContact(const QContact& contact)
+void tst_QContactManager::dumpContact(const QContact& contact, QContactManager *cm)
 {
-    QContactManager m;
 #ifndef DISPLAY_LABEL_SUPPORTED
+    Q_UNUSED(cm)
     qDebug() << "Contact: " << ContactId::toString(contact);
 #else
-    qDebug() << "Contact: " << ContactId::toString(contact) << "(" << m.synthesizedContactDisplayLabel(contact) << ")";
+    qDebug() << "Contact: " << ContactId::toString(contact) << "(" << cm->synthesizedContactDisplayLabel(contact) << ")";
 #endif
     foreach (const QContactDetail &d, contact.details()) {
         qDebug() << "  " << detailType(d) << ":";
@@ -568,7 +568,7 @@ void tst_QContactManager::dumpContacts(QContactManager *cm)
 
     foreach (const QContactIdType &id, ids) {
         QContact c = cm->contact(id);
-        dumpContact(c);
+        dumpContact(c, cm);
     }
 }
 
