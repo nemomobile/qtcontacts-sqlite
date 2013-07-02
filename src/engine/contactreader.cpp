@@ -75,6 +75,79 @@
 
 static const int ReportBatchSize = 50;
 
+#ifdef USING_QTPIM
+namespace {
+
+QList<int> subTypeList(const QStringList &names, const QMap<QString, int> &subTypes)
+{
+    QList<int> rv;
+    foreach (const QString &subTypeName, names) {
+        QMap<QString, int>::const_iterator it = subTypes.find(subTypeName);
+        if (it != subTypes.end()) {
+            rv.append(*it);
+        } else {
+            rv.append(-1);
+        }
+    }
+    return rv;
+}
+
+namespace OnlineAccount {
+
+QMap<QString, int> subTypeNames()
+{
+    QMap<QString, int> rv;
+
+    rv.insert(QString::fromLatin1("Sip"), QContactOnlineAccount::SubTypeSip);
+    rv.insert(QString::fromLatin1("SipVoip"), QContactOnlineAccount::SubTypeSipVoip);
+    rv.insert(QString::fromLatin1("Impp"), QContactOnlineAccount::SubTypeImpp);
+    rv.insert(QString::fromLatin1("VideoShare"), QContactOnlineAccount::SubTypeVideoShare);
+
+    return rv;
+}
+
+QList<int> subTypeList(const QStringList &names)
+{
+    static const QMap<QString, int> subTypes(subTypeNames());
+
+    return ::subTypeList(names, subTypes);
+}
+
+}
+
+namespace PhoneNumber {
+
+QMap<QString, int> subTypeNames()
+{
+    QMap<QString, int> rv;
+
+    rv.insert(QString::fromLatin1("Landline"), QContactPhoneNumber::SubTypeLandline);
+    rv.insert(QString::fromLatin1("Mobile"), QContactPhoneNumber::SubTypeMobile);
+    rv.insert(QString::fromLatin1("Fax"), QContactPhoneNumber::SubTypeFax);
+    rv.insert(QString::fromLatin1("Pager"), QContactPhoneNumber::SubTypePager);
+    rv.insert(QString::fromLatin1("Voice"), QContactPhoneNumber::SubTypeVoice);
+    rv.insert(QString::fromLatin1("Modem"), QContactPhoneNumber::SubTypeModem);
+    rv.insert(QString::fromLatin1("Video"), QContactPhoneNumber::SubTypeVideo);
+    rv.insert(QString::fromLatin1("Car"), QContactPhoneNumber::SubTypeCar);
+    rv.insert(QString::fromLatin1("BulletinBoardSystem"), QContactPhoneNumber::SubTypeBulletinBoardSystem);
+    rv.insert(QString::fromLatin1("MessagingCapable"), QContactPhoneNumber::SubTypeMessagingCapable);
+    rv.insert(QString::fromLatin1("Assistant"), QContactPhoneNumber::SubTypeAssistant);
+    rv.insert(QString::fromLatin1("DtmfMenu"), QContactPhoneNumber::SubTypeDtmfMenu);
+
+    return rv;
+}
+
+QList<int> subTypeList(const QStringList &names)
+{
+    static const QMap<QString, int> subTypes(subTypeNames());
+
+    return ::subTypeList(names, subTypes);
+}
+
+} }
+
+#endif
+
 enum FieldType {
     StringField = 0,
     StringListField,
@@ -304,7 +377,14 @@ static void setValues(QContactOnlineAccount *detail, QSqlQuery *query, const int
     setValue(detail, T::FieldProtocol       , query->value(offset + 2));
     setValue(detail, T::FieldServiceProvider, query->value(offset + 3));
     setValue(detail, T::FieldCapabilities   , query->value(offset + 4).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
+
+#ifdef USING_QTPIM
+    QStringList subTypeNames(query->value(offset + 5).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
+    setValue(detail, T::FieldSubTypes, QVariant::fromValue<QList<int> >(OnlineAccount::subTypeList(subTypeNames)));
+#else
     setValue(detail, T::FieldSubTypes       , query->value(offset + 5).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
+#endif
+
     setValue(detail, QContactOnlineAccount__FieldAccountPath,     query->value(offset + 6));
     setValue(detail, QContactOnlineAccount__FieldAccountIconPath, query->value(offset + 7));
     setValue(detail, QContactOnlineAccount__FieldEnabled,         query->value(offset + 8));
@@ -344,7 +424,14 @@ static void setValues(QContactPhoneNumber *detail, QSqlQuery *query, const int o
     typedef QContactPhoneNumber T;
 
     setValue(detail, T::FieldNumber  , query->value(offset + 0));
+
+#ifdef USING_QTPIM
+    QStringList subTypeNames(query->value(offset + 1).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
+    setValue(detail, T::FieldSubTypes, QVariant::fromValue<QList<int> >(PhoneNumber::subTypeList(subTypeNames)));
+#else
     setValue(detail, T::FieldSubTypes, query->value(offset + 1).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
+#endif
+
     setValue(detail, QContactPhoneNumber__FieldNormalizedNumber, query->value(offset + 2));
 }
 
