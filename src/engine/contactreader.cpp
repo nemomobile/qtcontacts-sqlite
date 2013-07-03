@@ -78,20 +78,20 @@ static const int ReportBatchSize = 50;
 #ifdef USING_QTPIM
 namespace {
 
-int subType(const QString &name, const QMap<QString, int> &subTypes)
+int propertyValue(const QString &name, const QMap<QString, int> &propertyValues)
 {
-    QMap<QString, int>::const_iterator it = subTypes.find(name);
-    if (it != subTypes.end()) {
+    QMap<QString, int>::const_iterator it = propertyValues.find(name);
+    if (it != propertyValues.end()) {
         return *it;
     }
     return -1;
 }
 
-QList<int> subTypeList(const QStringList &names, const QMap<QString, int> &subTypes)
+QList<int> propertyValueList(const QStringList &names, const QMap<QString, int> &propertyValues)
 {
     QList<int> rv;
-    foreach (const QString &subTypeName, names) {
-        rv.append(subType(subTypeName, subTypes));
+    foreach (const QString &name, names) {
+        rv.append(propertyValue(name, propertyValues));
     }
     return rv;
 }
@@ -114,7 +114,31 @@ QList<int> subTypeList(const QStringList &names)
 {
     static const QMap<QString, int> subTypes(subTypeNames());
 
-    return ::subTypeList(names, subTypes);
+    return propertyValueList(names, subTypes);
+}
+
+QMap<QString, int> protocolNames()
+{
+    QMap<QString, int> rv;
+
+    rv.insert(QString::fromLatin1("Unknown"), QContactOnlineAccount::ProtocolUnknown);
+    rv.insert(QString::fromLatin1("Aim"), QContactOnlineAccount::ProtocolAim);
+    rv.insert(QString::fromLatin1("Icq"), QContactOnlineAccount::ProtocolIcq);
+    rv.insert(QString::fromLatin1("Irc"), QContactOnlineAccount::ProtocolIrc);
+    rv.insert(QString::fromLatin1("Jabber"), QContactOnlineAccount::ProtocolJabber);
+    rv.insert(QString::fromLatin1("Msn"), QContactOnlineAccount::ProtocolMsn);
+    rv.insert(QString::fromLatin1("Qq"), QContactOnlineAccount::ProtocolQq);
+    rv.insert(QString::fromLatin1("Skype"), QContactOnlineAccount::ProtocolSkype);
+    rv.insert(QString::fromLatin1("Yahoo"), QContactOnlineAccount::ProtocolYahoo);
+
+    return rv;
+}
+
+int protocol(const QString &name)
+{
+    static const QMap<QString, int> protocols(protocolNames());
+
+    return propertyValue(name, protocols);
 }
 
 }
@@ -145,7 +169,7 @@ QList<int> subTypeList(const QStringList &names)
 {
     static const QMap<QString, int> subTypes(subTypeNames());
 
-    return ::subTypeList(names, subTypes);
+    return propertyValueList(names, subTypes);
 }
 
 }
@@ -169,7 +193,7 @@ int subType(const QString &name)
 {
     static const QMap<QString, int> subTypes(subTypeNames());
 
-    return ::subType(name, subTypes);
+    return propertyValue(name, subTypes);
 }
 
 }
@@ -191,7 +215,7 @@ int subType(const QString &name)
 {
     static const QMap<QString, int> subTypes(subTypeNames());
 
-    return ::subType(name, subTypes);
+    return propertyValue(name, subTypes);
 }
 
 }
@@ -430,7 +454,11 @@ static void setValues(QContactOnlineAccount *detail, QSqlQuery *query, const int
 
     setValue(detail, T::FieldAccountUri     , query->value(offset + 0));
     // ignore lowerAccountUri
+#ifdef USING_QTPIM
+    setValue(detail, T::FieldProtocol       , QVariant::fromValue<int>(OnlineAccount::protocol(query->value(offset + 2).toString())));
+#else
     setValue(detail, T::FieldProtocol       , query->value(offset + 2));
+#endif
     setValue(detail, T::FieldServiceProvider, query->value(offset + 3));
     setValue(detail, T::FieldCapabilities   , query->value(offset + 4).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
 

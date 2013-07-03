@@ -2843,21 +2843,21 @@ namespace {
 
 #ifdef USING_QTPIM
 template<typename T>
-QString subType(const T &type, const QMap<int, QString> &typeNames)
+QString propertyName(const T &value, const QMap<int, QString> &valueNames)
 {
-    QMap<int, QString>::const_iterator it = typeNames.find(type);
-    if (it != typeNames.end()) {
+    QMap<int, QString>::const_iterator it = valueNames.find(value);
+    if (it != valueNames.end()) {
         return *it;
     }
     return QString();
 }
 
 template<typename T>
-QStringList subTypeList(const T &subTypes, const QMap<int, QString> &typeNames)
+QStringList propertyNameList(const T &propertyValues, const QMap<int, QString> &valueNames)
 {
     QStringList list;
-    foreach (const typename T::value_type &type, subTypes) {
-        list.append(subType(type, typeNames));
+    foreach (const typename T::value_type &value, propertyValues) {
+        list.append(propertyName(value, valueNames));
     }
     return list;
 }
@@ -2885,9 +2885,40 @@ QStringList subTypeList(const T &subTypes)
 #ifdef USING_QTPIM
     static const QMap<int, QString> typeNames(subTypeNames());
 
-    return ::subTypeList(subTypes, typeNames);
+    return propertyNameList(subTypes, typeNames);
 #else
     return subTypes;
+#endif
+}
+
+#ifdef USING_QTPIM
+QMap<int, QString> protocolNames()
+{
+    QMap<int, QString> rv;
+
+    rv.insert(QContactOnlineAccount::ProtocolUnknown, "Unknown");
+    rv.insert(QContactOnlineAccount::ProtocolAim, "Aim");
+    rv.insert(QContactOnlineAccount::ProtocolIcq, "Icq");
+    rv.insert(QContactOnlineAccount::ProtocolIrc, "Irc");
+    rv.insert(QContactOnlineAccount::ProtocolJabber, "Jabber");
+    rv.insert(QContactOnlineAccount::ProtocolMsn, "Msn");
+    rv.insert(QContactOnlineAccount::ProtocolQq, "Qq");
+    rv.insert(QContactOnlineAccount::ProtocolSkype, "Skype");
+    rv.insert(QContactOnlineAccount::ProtocolYahoo, "Yahoo");
+
+    return rv;
+}
+#endif
+
+template<typename T>
+QString protocol(const T &type)
+{
+#ifdef USING_QTPIM
+    static const QMap<int, QString> names(protocolNames());
+
+    return propertyName(type, names);
+#else
+    return type;
 #endif
 }
 
@@ -2923,7 +2954,7 @@ QStringList subTypeList(const T &subTypes)
 #ifdef USING_QTPIM
     static const QMap<int, QString> typeNames(subTypeNames());
 
-    return ::subTypeList(subTypes, typeNames);
+    return propertyNameList(subTypes, typeNames);
 #else
     return subTypes;
 #endif
@@ -2954,7 +2985,7 @@ QString subType(const T &type)
 #ifdef USING_QTPIM
     static const QMap<int, QString> typeNames(subTypeNames());
 
-    return ::subType(type, typeNames);
+    return propertyName(type, typeNames);
 #else
     return type;
 #endif
@@ -2983,7 +3014,7 @@ QString subType(const T &type)
 #ifdef USING_QTPIM
     static const QMap<int, QString> typeNames(subTypeNames());
 
-    return ::subType(type, typeNames);
+    return propertyName(type, typeNames);
 #else
     return type;
 #endif
@@ -3095,7 +3126,7 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactOnlineAcco
     m_insertOnlineAccount.bindValue(0, contactId);
     m_insertOnlineAccount.bindValue(1, detailValue(detail, T::FieldAccountUri));
     m_insertOnlineAccount.bindValue(2, detail.value<QString>(T::FieldAccountUri).toLower());
-    m_insertOnlineAccount.bindValue(3, detailValue(detail, T::FieldProtocol));
+    m_insertOnlineAccount.bindValue(3, OnlineAccount::protocol(detail.protocol()));
     m_insertOnlineAccount.bindValue(4, detailValue(detail, T::FieldServiceProvider));
     m_insertOnlineAccount.bindValue(5, detailValue(detail, T::FieldCapabilities));
     m_insertOnlineAccount.bindValue(6, OnlineAccount::subTypeList(detail.subTypes()).join(QLatin1String(";")));
