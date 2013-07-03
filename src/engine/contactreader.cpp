@@ -78,16 +78,20 @@ static const int ReportBatchSize = 50;
 #ifdef USING_QTPIM
 namespace {
 
+int subType(const QString &name, const QMap<QString, int> &subTypes)
+{
+    QMap<QString, int>::const_iterator it = subTypes.find(name);
+    if (it != subTypes.end()) {
+        return *it;
+    }
+    return -1;
+}
+
 QList<int> subTypeList(const QStringList &names, const QMap<QString, int> &subTypes)
 {
     QList<int> rv;
     foreach (const QString &subTypeName, names) {
-        QMap<QString, int>::const_iterator it = subTypes.find(subTypeName);
-        if (it != subTypes.end()) {
-            rv.append(*it);
-        } else {
-            rv.append(-1);
-        }
+        rv.append(subType(subTypeName, subTypes));
     }
     return rv;
 }
@@ -144,7 +148,55 @@ QList<int> subTypeList(const QStringList &names)
     return ::subTypeList(names, subTypes);
 }
 
-} }
+}
+
+namespace Anniversary {
+
+QMap<QString, int> subTypeNames()
+{
+    QMap<QString, int> rv;
+
+    rv.insert(QString::fromLatin1("Wedding"), QContactAnniversary::SubTypeWedding);
+    rv.insert(QString::fromLatin1("Engagement"), QContactAnniversary::SubTypeEngagement);
+    rv.insert(QString::fromLatin1("House"), QContactAnniversary::SubTypeHouse);
+    rv.insert(QString::fromLatin1("Employment"), QContactAnniversary::SubTypeEmployment);
+    rv.insert(QString::fromLatin1("Memorial"), QContactAnniversary::SubTypeMemorial);
+
+    return rv;
+}
+
+int subType(const QString &name)
+{
+    static const QMap<QString, int> subTypes(subTypeNames());
+
+    return ::subType(name, subTypes);
+}
+
+}
+
+namespace Url {
+
+QMap<QString, int> subTypeNames()
+{
+    QMap<QString, int> rv;
+
+    rv.insert(QString::fromLatin1("HomePage"), QContactUrl::SubTypeHomePage);
+    rv.insert(QString::fromLatin1("Blog"), QContactUrl::SubTypeBlog);
+    rv.insert(QString::fromLatin1("Favourite"), QContactUrl::SubTypeFavourite);
+
+    return rv;
+}
+
+int subType(const QString &name)
+{
+    static const QMap<QString, int> subTypes(subTypeNames());
+
+    return ::subType(name, subTypes);
+}
+
+}
+
+}
 
 #endif
 
@@ -260,7 +312,11 @@ static void setValues(QContactAnniversary *detail, QSqlQuery *query, const int o
 
     setValue(detail, T::FieldOriginalDate, query->value(offset + 0));
     setValue(detail, T::FieldCalendarId  , query->value(offset + 1));
+#ifdef USING_QTPIM
+    setValue(detail, T::FieldSubType     , QVariant::fromValue<int>(Anniversary::subType(query->value(offset + 2).toString())));
+#else
     setValue(detail, T::FieldSubType     , query->value(offset + 2));
+#endif
 }
 
 static const FieldInfo avatarFields[] =
@@ -500,7 +556,11 @@ static void setValues(QContactUrl *detail, QSqlQuery *query, const int offset)
     typedef QContactUrl T;
 
     setValue(detail, T::FieldUrl    , query->value(offset + 0));
+#ifdef USING_QTPIM
+    setValue(detail, T::FieldSubType, QVariant::fromValue<int>(Url::subType(query->value(offset + 1).toString())));
+#else
     setValue(detail, T::FieldSubType, query->value(offset + 1));
+#endif
 }
 
 static const FieldInfo tpMetadataFields[] =
