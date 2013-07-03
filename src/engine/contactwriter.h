@@ -35,6 +35,7 @@
 #include "contactsdatabase.h"
 #include "contactid_p.h"
 
+#include <QSet>
 #include <QSqlQuery>
 
 #include <QContactAddress>
