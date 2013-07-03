@@ -210,9 +210,9 @@ private:
     QSqlQuery m_removeIdentity;
     ContactReader *m_reader;
 
-    QList<QContactIdType> m_addedIds;
-    QList<QContactIdType> m_removedIds;
-    QList<QContactIdType> m_changedIds;
+    QSet<QContactIdType> m_addedIds;
+    QSet<QContactIdType> m_removedIds;
+    QSet<QContactIdType> m_changedIds;
 };
 
 

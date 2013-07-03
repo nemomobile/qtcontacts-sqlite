@@ -562,15 +562,15 @@ bool ContactWriter::commitTransaction()
     }
 
     if (!m_addedIds.isEmpty()) {
-        ContactNotifier::contactsAdded(m_addedIds);
+        ContactNotifier::contactsAdded(m_addedIds.toList());
         m_addedIds.clear();
     }
     if (!m_changedIds.isEmpty()) {
-        ContactNotifier::contactsChanged(m_changedIds);
+        ContactNotifier::contactsChanged(m_changedIds.toList());
         m_changedIds.clear();
     }
     if (!m_removedIds.isEmpty()) {
-        ContactNotifier::contactsRemoved(m_removedIds);
+        ContactNotifier::contactsRemoved(m_removedIds.toList());
         m_removedIds.clear();
     }
     return true;
@@ -955,7 +955,8 @@ QContactManager::Error ContactWriter::removeRelationships(
     if (removeError != QContactManager::NoError)
         return removeError;
 
-    m_removedIds.append(removedIds);
+    foreach (const QContactIdType &id, removedIds)
+        m_removedIds.insert(id);
 
     // Some contacts may need to have new aggregates created
     QContactManager::Error aggregateError = aggregateOrphanedContacts(true);
@@ -1039,7 +1040,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactIdType> &contac
             return QContactManager::UnspecifiedError;
         }
         m_removeContact.finish();
-        m_removedIds.append(realRemoveIds);
+        m_removedIds.insert(realRemoveIds);
         if (!withinTransaction && !commitTransaction()) {
             // only commit if we created a transaction.
             qWarning() << "Failed to commit removal";
@@ -1155,7 +1156,8 @@ QContactManager::Error ContactWriter::remove(const QList<QContactIdType> &contac
         return removeError;
     }
 
-    m_removedIds.append(realRemoveIds);
+    foreach (const QContactIdType &id, realRemoveIds)
+        m_removedIds.insert(id);
 
     // And notify of any removals.
     if (realRemoveIds.size() > 0) {
@@ -1537,14 +1539,14 @@ QContactManager::Error ContactWriter::save(
         if (ContactId::databaseId(contactId) == 0) {
             err = create(&contact, definitionMask, true, withinAggregateUpdate);
             if (err == QContactManager::NoError) {
-                m_addedIds.append(ContactId::apiId(contact));
+                m_addedIds.insert(ContactId::apiId(contact));
             } else {
                 qWarning() << "Error creating contact:" << err;
             }
         } else {
             err = update(&contact, definitionMask, &aggregateUpdated, true, withinAggregateUpdate);
             if (err == QContactManager::NoError) {
-                m_changedIds.append(contactId);
+                m_changedIds.insert(contactId);
             } else {
                 qWarning() << "Error updating contact" << contactId << ":" << err;
             }
