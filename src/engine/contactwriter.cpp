@@ -35,6 +35,7 @@
 #include "contactreader.h"
 #include "contactnotifier.h"
 #include "constants_p.h"
+#include "conversion_p.h"
 #include "semaphore_p.h"
 
 #include <QContactFavorite>
@@ -53,6 +54,10 @@
 #include <QSqlError>
 
 #include <QtDebug>
+
+#ifdef USING_QTPIM
+using namespace Conversion;
+#endif
 
 static const char *findConstituentsForAggregate =
         "\n SELECT contactId FROM Contacts WHERE contactId IN ("
@@ -2858,7 +2863,11 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactAnniversar
     m_insertAnniversary.bindValue(0, contactId);
     m_insertAnniversary.bindValue(1, detailValue(detail, T::FieldOriginalDate));
     m_insertAnniversary.bindValue(2, detailValue(detail, T::FieldCalendarId));
+#ifdef USING_QTPIM
+    m_insertAnniversary.bindValue(3, Anniversary::subType(detail.subType()));
+#else
     m_insertAnniversary.bindValue(3, detailValue(detail, T::FieldSubType));
+#endif
     return m_insertAnniversary;
 }
 
@@ -2935,55 +2944,24 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactNote &deta
     return m_insertNote;
 }
 
-namespace { namespace OnlineAccount {
-
-#ifdef USING_QTPIM
-QMap<int, QString> subTypeNames()
-{
-    QMap<int, QString> rv;
-    
-    rv.insert(QContactOnlineAccount::SubTypeSip, "Sip");
-    rv.insert(QContactOnlineAccount::SubTypeSipVoip, "SipVoip");
-    rv.insert(QContactOnlineAccount::SubTypeImpp, "Impp");
-    rv.insert(QContactOnlineAccount::SubTypeVideoShare, "VideoShare");
-
-    return rv;
-}
-#endif
-
-template<typename T>
-QStringList subTypeList(const T &subTypes)
-{
-#ifdef USING_QTPIM
-    static const QMap<int, QString> typeNames(subTypeNames());
-
-    QStringList list;
-    foreach (int type, subTypes) {
-        QMap<int, QString>::const_iterator it = typeNames.find(type);
-        if (it != typeNames.end()) {
-            list.append(*it);
-        } else {
-            list.append(QString());
-        }
-    }
-    return list;
-#else
-    return subTypes;
-#endif
-}
-
-} }
-
 QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactOnlineAccount &detail)
 {
     typedef QContactOnlineAccount T;
     m_insertOnlineAccount.bindValue(0, contactId);
     m_insertOnlineAccount.bindValue(1, detailValue(detail, T::FieldAccountUri));
     m_insertOnlineAccount.bindValue(2, detail.value<QString>(T::FieldAccountUri).toLower());
+#ifdef USING_QTPIM
+    m_insertOnlineAccount.bindValue(3, OnlineAccount::protocol(detail.protocol()));
+#else
     m_insertOnlineAccount.bindValue(3, detailValue(detail, T::FieldProtocol));
+#endif
     m_insertOnlineAccount.bindValue(4, detailValue(detail, T::FieldServiceProvider));
     m_insertOnlineAccount.bindValue(5, detailValue(detail, T::FieldCapabilities));
+#ifdef USING_QTPIM
     m_insertOnlineAccount.bindValue(6, OnlineAccount::subTypeList(detail.subTypes()).join(QLatin1String(";")));
+#else
+    m_insertOnlineAccount.bindValue(6, detailValue(detail, T::FieldSubTypes));
+#endif
     m_insertOnlineAccount.bindValue(7, detailValue(detail, QContactOnlineAccount__FieldAccountPath));
     m_insertOnlineAccount.bindValue(8, detailValue(detail, QContactOnlineAccount__FieldAccountIconPath));
     m_insertOnlineAccount.bindValue(9, detailValue(detail, QContactOnlineAccount__FieldEnabled));
@@ -3003,59 +2981,16 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactOrganizati
     return m_insertOrganization;
 }
 
-namespace { namespace PhoneNumber {
-
-#ifdef USING_QTPIM
-QMap<int, QString> subTypeNames()
-{
-    QMap<int, QString> rv;
-    
-    rv.insert(QContactPhoneNumber::SubTypeLandline, "Landline");
-    rv.insert(QContactPhoneNumber::SubTypeMobile, "Mobile");
-    rv.insert(QContactPhoneNumber::SubTypeFax, "Fax");
-    rv.insert(QContactPhoneNumber::SubTypePager, "Pager");
-    rv.insert(QContactPhoneNumber::SubTypeVoice, "Voice");
-    rv.insert(QContactPhoneNumber::SubTypeModem, "Modem");
-    rv.insert(QContactPhoneNumber::SubTypeVideo, "Video");
-    rv.insert(QContactPhoneNumber::SubTypeCar, "Car");
-    rv.insert(QContactPhoneNumber::SubTypeBulletinBoardSystem, "BulletinBoardSystem");
-    rv.insert(QContactPhoneNumber::SubTypeMessagingCapable, "MessagingCapable");
-    rv.insert(QContactPhoneNumber::SubTypeAssistant, "Assistant");
-    rv.insert(QContactPhoneNumber::SubTypeDtmfMenu, "DtmfMenu");
-
-    return rv;
-}
-#endif
-
-template<typename T>
-QStringList subTypeList(const T &subTypes)
-{
-#ifdef USING_QTPIM
-    static const QMap<int, QString> typeNames(subTypeNames());
-
-    QStringList list;
-    foreach (int type, subTypes) {
-        QMap<int, QString>::const_iterator it = typeNames.find(type);
-        if (it != typeNames.end()) {
-            list.append(*it);
-        } else {
-            list.append(QString());
-        }
-    }
-    return list;
-#else
-    return subTypes;
-#endif
-}
-
-} }
-
 QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactPhoneNumber &detail)
 {
     typedef QContactPhoneNumber T;
     m_insertPhoneNumber.bindValue(0, contactId);
     m_insertPhoneNumber.bindValue(1, detailValue(detail, T::FieldNumber));
+#ifdef USING_QTPIM
     m_insertPhoneNumber.bindValue(2, PhoneNumber::subTypeList(detail.subTypes()).join(QLatin1String(";")));
+#else
+    m_insertPhoneNumber.bindValue(2, detailValue(detail, T::FieldSubTypes));
+#endif
     m_insertPhoneNumber.bindValue(3, QVariant(ContactsEngine::normalizedPhoneNumber(detail.number())));
     return m_insertPhoneNumber;
 }
@@ -3093,7 +3028,11 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactUrl &detai
     typedef QContactUrl T;
     m_insertUrl.bindValue(0, contactId);
     m_insertUrl.bindValue(1, detailValue(detail, T::FieldUrl));
+#ifdef USING_QTPIM
+    m_insertUrl.bindValue(2, Url::subType(detail.subType()));
+#else
     m_insertUrl.bindValue(2, detailValue(detail, T::FieldSubType));
+#endif
     return m_insertUrl;
 }
 

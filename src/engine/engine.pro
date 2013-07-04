@@ -16,6 +16,7 @@ DEFINES += 'QTCONTACTS_SQLITE_DATABASE_NAME=\'\"contacts.db\"\''
 HEADERS += \
         semaphore_p.h \
         constants_p.h \
+        conversion_p.h \
         contactid_p.h \
         contactsdatabase.h \
         contactsengine.h \
@@ -25,6 +26,7 @@ HEADERS += \
 
 SOURCES += \
         semaphore_p.cpp \
+        conversion.cpp \
         contactid.cpp \
         contactsdatabase.cpp \
         contactsengine.cpp \
