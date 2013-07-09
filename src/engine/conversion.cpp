@@ -158,7 +158,7 @@ int protocol(const QString &name)
     return propertyValue(name, protocols);
 }
 
-QString protocol(QContactOnlineAccount::Protocol type)
+QString protocol(int type)
 {
     static const QMap<int, QString> names(protocolNames());
 
