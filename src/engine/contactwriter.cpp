@@ -717,6 +717,16 @@ QContactManager::Error ContactWriter::save(
     return QContactManager::NoError;
 }
 
+template<typename T>
+QString relationshipString(T type)
+{
+#ifdef USING_QTPIM
+    return type();
+#else
+    return type;
+#endif
+}
+
 QContactManager::Error ContactWriter::saveRelationships(
         const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap)
 {
@@ -765,6 +775,10 @@ QContactManager::Error ContactWriter::saveRelationships(
     QList<quint32> firstIdsToBind;
     QList<quint32> secondIdsToBind;
     QList<QString> typesToBind;
+
+#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
+    QSet<quint32> aggregatesAffected;
+#endif
 
     QSqlQuery multiInsertQuery(m_database);
     QString queryString = QLatin1String("INSERT INTO Relationships");
@@ -824,6 +838,13 @@ QContactManager::Error ContactWriter::saveRelationships(
             typesToBind.append(type);
             bucketedRelationships.insert(firstId, qMakePair(type, secondId));
             realInsertions += 1;
+
+#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
+            if (type == relationshipString(QContactRelationship::Aggregates)) {
+                // This aggregate needs to be regenerated
+                aggregatesAffected.insert(firstId);
+            }
+#endif
         }
     }
 
@@ -849,6 +870,10 @@ QContactManager::Error ContactWriter::saveRelationships(
 
     if (invalidInsertions > 0) {
         return QContactManager::InvalidRelationshipError;
+    }
+
+    if (!aggregatesAffected.isEmpty()) {
+        regenerateAggregates(aggregatesAffected.toList(), DetailList(), true);
     }
 
     return QContactManager::NoError;
@@ -906,6 +931,9 @@ QContactManager::Error ContactWriter::removeRelationships(
 
     QContactManager::Error worstError = QContactManager::NoError;
     QSet<QContactRelationship> alreadyRemoved;
+#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
+    QSet<quint32> aggregatesAffected;
+#endif
     bool removeInvalid = false;
     for (int i = 0; i < relationships.size(); ++i) {
         QContactRelationship curr = relationships.at(i);
@@ -933,9 +961,18 @@ QContactManager::Error ContactWriter::removeRelationships(
             continue;
         }
 
+        QString type(curr.relationshipType());
+
         removeRelationship.bindValue(":firstId", currFirst);
         removeRelationship.bindValue(":secondId", currSecond);
-        removeRelationship.bindValue(":type", curr.relationshipType());
+        removeRelationship.bindValue(":type", type);
+
+#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
+        if (type == relationshipString(QContactRelationship::Aggregates)) {
+            // This aggregate needs to be regenerated
+            aggregatesAffected.insert(currFirst);
+        }
+#endif
 
         if (!removeRelationship.exec()) {
             qWarning() << "Failed to remove relationship";
@@ -960,8 +997,14 @@ QContactManager::Error ContactWriter::removeRelationships(
     if (removeError != QContactManager::NoError)
         return removeError;
 
-    foreach (const QContactIdType &id, removedIds)
+    foreach (const QContactIdType &id, removedIds) {
         m_removedIds.insert(id);
+        aggregatesAffected.remove(ContactId::databaseId(id));
+    }
+
+    if (!aggregatesAffected.isEmpty()) {
+        regenerateAggregates(aggregatesAffected.toList(), DetailList(), true);
+    }
 
     // Some contacts may need to have new aggregates created
     QContactManager::Error aggregateError = aggregateOrphanedContacts(true);
@@ -2070,11 +2113,7 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
     if (createdNewLocal) {
         // Add the aggregates relationship
         QList<QContactRelationship> saveRelationshipList;
-#ifdef USING_QTPIM
-        saveRelationshipList.append(makeRelationship(QContactRelationship::Aggregates(), contact->id(), writeList.at(0).id()));
-#else
-        saveRelationshipList.append(makeRelationship(QContactRelationship::Aggregates, contact->id(), writeList.at(0).id()));
-#endif
+        saveRelationshipList.append(makeRelationship(relationshipString(QContactRelationship::Aggregates), contact->id(), writeList.at(0).id()));
         writeError = save(saveRelationshipList, &errorMap, withinTransaction);
         if (writeError != QContactManager::NoError) {
             // TODO: remove unaggregated contact
@@ -2378,11 +2417,7 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
     matchingAggregate = saveContactList.at(0);
 
     // add the relationship and save in the database.
-#ifdef USING_QTPIM
-    saveRelationshipList.append(makeRelationship(QContactRelationship::Aggregates(), matchingAggregate.id(), contact->id()));
-#else
-    saveRelationshipList.append(makeRelationship(QContactRelationship::Aggregates, matchingAggregate.id(), contact->id()));
-#endif
+    saveRelationshipList.append(makeRelationship(relationshipString(QContactRelationship::Aggregates), matchingAggregate.id(), contact->id()));
     err = save(saveRelationshipList, &errorMap, withinTransaction);
     if (err != QContactManager::NoError) {
         // if the aggregation relationship fails, the entire save has failed.
@@ -2702,7 +2737,8 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
 
     QString newSyncTarget = contact->detail<QContactSyncTarget>().value<QString>(QContactSyncTarget::FieldSyncTarget);
 
-    if (newSyncTarget != oldSyncTarget && oldSyncTarget != QLatin1String("local")) {
+    if (newSyncTarget != oldSyncTarget &&
+        (oldSyncTarget != QLatin1String("local") && oldSyncTarget != QLatin1String("was_local"))) {
         // they are attempting to manually change the sync target value of a non-local contact
         qWarning() << "Cannot manually change sync target!";
         return QContactManager::InvalidDetailError;
