@@ -66,7 +66,7 @@ static const char *createContactsTable =
         "\n created DATETIME,"
         "\n modified DATETIME,"
         "\n gender TEXT,"
-        "\n isFavorite INTEGER);";
+        "\n isFavorite BOOL);";
 
 static const char *createAddressesTable =
         "\n CREATE TABLE Addresses ("

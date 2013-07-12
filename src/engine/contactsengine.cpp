@@ -804,6 +804,10 @@ ContactsEngine::ContactsEngine(const QString &name)
     , m_synchronousWriter(0)
     , m_jobThread(0)
 {
+#ifdef USING_QTPIM
+    static bool registered = qRegisterMetaType<QList<int> >("QList<int>");
+    Q_UNUSED(registered)
+#endif
 }
 
 ContactsEngine::~ContactsEngine()

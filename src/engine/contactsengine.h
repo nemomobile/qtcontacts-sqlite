@@ -44,7 +44,16 @@
 #include "contactwriter.h"
 #include "contactid_p.h"
 
+#ifdef USING_QTPIM
+// QList<int> is widely used in qtpim
+Q_DECLARE_METATYPE(QList<int>)
+#endif
+
 USE_CONTACTS_NAMESPACE
+
+// Force an ambiguity with QContactDetail::operator== so that we can't call it
+// It does not compare correctly if the values contains QList<int>
+inline void operator==(const QContactDetail &, const QContactDetail &) {}
 
 class JobThread;
 
