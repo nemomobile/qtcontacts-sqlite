@@ -1702,11 +1702,25 @@ void tst_Aggregation::wasLocal()
     an.setLastName("wasLocal");
     alice.saveDetail(&an);
 
+    QContactPhoneNumber ap;
+    ap.setNumber("1234567");
+    ap.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypeMobile);
+    alice.saveDetail(&ap);
+
+    QVERIFY(m_cm->saveContact(&alice));
+
     QContact bob;
 
     QContactNickname bn;
     bn.setNickname("Cooper");
     bob.saveDetail(&bn);
+
+    QContactPhoneNumber bp;
+    bp.setNumber("2345678");
+    bp.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypeMobile);
+    bob.saveDetail(&bp);
+
+    QVERIFY(m_cm->saveContact(&bob));
 
     m_addAccumulatedIds.clear();
     QVERIFY(m_cm->saveContact(&alice));
@@ -1750,14 +1764,27 @@ void tst_Aggregation::wasLocal()
         }
     }
 
+    // Verify the presence of contacts
     QVERIFY(localAlice.id() != QContactId());
     QVERIFY(localBob.id() != QContactId());
     QVERIFY(aggregateAlice.id() != QContactId());
     QVERIFY(aggregateBob.id() != QContactId());
+
+    // Verify the relationships
     QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
     QVERIFY(relatedContactIds(localBob.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateBob.id()));
     QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
     QVERIFY(relatedContactIds(aggregateBob.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localBob.id()));
+
+    // Verify the details
+    QCOMPARE(localAlice.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(localAlice.details<QContactPhoneNumber>().at(0).number(), QLatin1String("1234567"));
+    QCOMPARE(localBob.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(localBob.details<QContactPhoneNumber>().at(0).number(), QLatin1String("2345678"));
+    QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().at(0).number(), QLatin1String("1234567"));
+    QCOMPARE(aggregateBob.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(aggregateBob.details<QContactPhoneNumber>().at(0).number(), QLatin1String("2345678"));
 
     // Convert localBob to was_local
     QContactSyncTarget bst = localBob.detail<QContactSyncTarget>();
@@ -1820,6 +1847,15 @@ void tst_Aggregation::wasLocal()
     QVERIFY(relatedContactIds(localBob.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
     QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
     QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localBob.id()));
+    QCOMPARE(localAlice.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(localAlice.details<QContactPhoneNumber>().at(0).number(), QLatin1String("1234567"));
+    QCOMPARE(localBob.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(localBob.details<QContactPhoneNumber>().at(0).number(), QLatin1String("2345678"));
+    QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().count(), 2);
+    foreach (const QContactPhoneNumber &phoneNumber, aggregateAlice.details<QContactPhoneNumber>()) {
+        QVERIFY(phoneNumber.number() == QLatin1String("1234567") ||
+                phoneNumber.number() == QLatin1String("2345678"));
+    }
 
     // Was-local details are aggregated
     QCOMPARE(aggregateAlice.detail<QContactNickname>().nickname(), QLatin1String("Cooper"));
@@ -1828,6 +1864,7 @@ void tst_Aggregation::wasLocal()
     // Changes are not promoted down to the was_local constituent
     QContactPhoneNumber pn;
     pn.setNumber("7654321");
+    pn.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypeMobile);
     aggregateAlice.saveDetail(&pn);
 
     QVERIFY(m_cm->saveContact(&aggregateAlice));
@@ -1836,9 +1873,19 @@ void tst_Aggregation::wasLocal()
     aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
     localBob = m_cm->contact(retrievalId(localBob));
 
-    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().number(), QLatin1String("7654321"));
-    QCOMPARE(localAlice.detail<QContactPhoneNumber>().number(), QLatin1String("7654321"));
-    QCOMPARE(localBob.detail<QContactPhoneNumber>().number(), QString());
+    QCOMPARE(localAlice.details<QContactPhoneNumber>().count(), 2);
+    foreach (const QContactPhoneNumber &phoneNumber, localAlice.details<QContactPhoneNumber>()) {
+        QVERIFY(phoneNumber.number() == QLatin1String("1234567") ||
+                phoneNumber.number() == QLatin1String("7654321"));
+    }
+    QCOMPARE(localBob.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(localBob.details<QContactPhoneNumber>().at(0).number(), QLatin1String("2345678"));
+    QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().count(), 3);
+    foreach (const QContactPhoneNumber &phoneNumber, aggregateAlice.details<QContactPhoneNumber>()) {
+        QVERIFY(phoneNumber.number() == QLatin1String("1234567") ||
+                phoneNumber.number() == QLatin1String("2345678") ||
+                phoneNumber.number() == QLatin1String("7654321"));
+    }
 }
 
 void tst_Aggregation::regenerateAggregate()

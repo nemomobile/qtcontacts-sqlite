@@ -1711,7 +1711,7 @@ QContactManager::Error ContactReader::queryContacts(
                 contact.saveDetail(&gender);
 
             QContactFavorite favorite;
-            setValue(&favorite, QContactFavorite::FieldFavorite, query.value(14));
+            setValue(&favorite, QContactFavorite::FieldFavorite, query.value(14).toBool());
             if (!favorite.isEmpty())
                 contact.saveDetail(&favorite);
 

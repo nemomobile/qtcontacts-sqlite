@@ -1417,16 +1417,76 @@ DetailMap detailValues(const QContactDetail &detail)
 #endif
 }
 
+static bool variantEqual(const QVariant &lhs, const QVariant &rhs)
+{
+    // Work around incorrect result from QVariant::operator== when variants contain QList<int>
+    static const int QListIntType = QMetaType::type("QList<int>");
+
+    const int lhsType = lhs.userType();
+    if (lhsType != rhs.userType()) {
+        return false;
+    }
+
+    if (lhsType == QListIntType) {
+        return (lhs.value<QList<int> >() == rhs.value<QList<int> >());
+    }
+
+    return (lhs == rhs);
+}
+
+static bool detailValuesEqual(const QContactDetail &lhs, const QContactDetail &rhs)
+{
+    const DetailMap lhsValues(detailValues(lhs));
+    const DetailMap rhsValues(detailValues(rhs));
+
+    if (lhsValues.count() != rhsValues.count()) {
+        return false;
+    }
+
+    DetailMap::const_iterator lit = lhsValues.constBegin(), lend = lhsValues.constEnd();
+    DetailMap::const_iterator rit = rhsValues.constBegin();
+    for ( ; lit != lend; ++lit, ++rit) {
+        if (!variantEqual(*lit, *rit)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool detailValuesSuperset(const QContactDetail &lhs, const QContactDetail &rhs)
+{
+    // True if all values in rhs are present in lhs
+    const DetailMap lhsValues(detailValues(lhs));
+    const DetailMap rhsValues(detailValues(rhs));
+
+    if (lhsValues.count() < rhsValues.count()) {
+        return false;
+    }
+
+    foreach (const DetailMap::key_type &key, rhsValues.keys()) {
+        if (!variantEqual(lhsValues[key], rhsValues[key])) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 static bool detailsEquivalent(const QContactDetail &lhs, const QContactDetail &rhs)
 {
     // Same as operator== except ignores differences in accessConstraints values
     if (detailType(lhs) != detailType(rhs))
         return false;
-    if (lhs.contexts() != rhs.contexts())
+    return detailValuesEqual(lhs, rhs);
+}
+
+static bool detailsSuperset(const QContactDetail &lhs, const QContactDetail &rhs)
+{
+    // True is lhs is a superset of rhs
+    if (detailType(lhs) != detailType(rhs))
         return false;
-    if (lhs.linkedDetailUris() != rhs.linkedDetailUris())
-        return false;
-    return (detailValues(lhs) == detailValues(rhs));
+    return detailValuesSuperset(lhs, rhs);
 }
 
 QVariant detailLinkedUris(const QContactDetail &detail)
@@ -1759,26 +1819,32 @@ static QContactManager::Error calculateDelta(ContactReader *reader, QContact *co
     // Make mutable copies of the contacts (without Irremovable|Readonly flags)
     QContact dbContact;
     foreach (const QContactDetail &detail, readList.at(0).details()) {
-        QContactDetail copy(detail);
-        QContactManagerEngine::setDetailAccessConstraints(&copy, QContactDetail::NoConstraint);
-        dbContact.saveDetail(&copy);
+        if (detailType(detail) != detailType<QContactDisplayLabel>() &&
+            detailType(detail) != detailType<QContactType>() &&
+            (definitionMask.isEmpty() || detailListContains(definitionMask, detail))) {
+            QContactDetail copy(detail);
+            QContactManagerEngine::setDetailAccessConstraints(&copy, QContactDetail::NoConstraint);
+            dbContact.saveDetail(&copy);
+        }
     }
 
     QContact upContact;
     foreach (const QContactDetail &detail, contact->details()) {
-        QContactDetail copy(detail);
-        QContactManagerEngine::setDetailAccessConstraints(&copy, QContactDetail::NoConstraint);
-        upContact.saveDetail(&copy);
+        if (detailType(detail) != detailType<QContactDisplayLabel>() &&
+            detailType(detail) != detailType<QContactType>() &&
+            (definitionMask.isEmpty() || detailListContains(definitionMask, detail))) {
+            QContactDetail copy(detail);
+            QContactManagerEngine::setDetailAccessConstraints(&copy, QContactDetail::NoConstraint);
+            upContact.saveDetail(&copy);
+        }
     }
 
     // Determine which details are in the update contact which aren't in the database contact:
-    QList<QContactDetail> dbDetails = dbContact.details();
-    QList<QContactDetail> upDetails = upContact.details();
-
-    // Detail order is not defined, so loop over the entire set for each, removing exact matches
-    foreach(QContactDetail ddb, dbDetails) {
-        foreach(QContactDetail dup, upDetails) {
-            if (detailsEquivalent(ddb, dup)) {
+    // Detail order is not defined, so loop over the entire set for each, removing matches or
+    // superset details (eg, backend added a field (like lastModified to timestamp) on previous save)
+    foreach (QContactDetail ddb, dbContact.details()) {
+        foreach (QContactDetail dup, upContact.details()) {
+            if (detailsSuperset(ddb, dup)) {
                 dbContact.removeDetail(&ddb);
                 upContact.removeDetail(&dup);
                 break;
@@ -1786,53 +1852,11 @@ static QContactManager::Error calculateDelta(ContactReader *reader, QContact *co
         }
     }
 
-    // Also remove any superset details (eg, backend added a field (like lastModified to timestamp) on previous save)
-    dbDetails = dbContact.details();
-    upDetails = upContact.details();
-    foreach (QContactDetail ddb, dbDetails) {
-        foreach (QContactDetail dup, upDetails) {
-            if (detailType(ddb) == detailType(dup)) {
-                bool dbIsSuperset = true;
-                foreach (const DetailMap::key_type &key, detailValues(dup).keys()) {
-                    if (ddb.value(key) != dup.value(key)) {
-                        dbIsSuperset = false; // the value of this field changed in the update version
-                    }
-                }
-
-                if (dbIsSuperset) {
-                    dbContact.removeDetail(&ddb);
-                    upContact.removeDetail(&dup);
-                    break;
-                }
-            }
-        }
-    }
-
-    // Now extract the add delta from the update version
     // These are details which exist in the updated contact, but not in the database contact.
-    upDetails = upContact.details();
-    QList<QContactDetail> retn;
-    foreach (const QContactDetail &det, upDetails) {
-        if (detailType(det) != detailType<QContactDisplayLabel>() &&
-            detailType(det) != detailType<QContactType>() &&
-            (definitionMask.isEmpty() || detailListContains(definitionMask, det))) {
-            retn.append(det);
-        }
-    }
-    addDelta->append(retn);
+    addDelta->append(upContact.details());
 
-    // Now extract the remove delta from the database version
     // These are details which exist in the database contact, but not in the updated contact.
-    dbDetails = dbContact.details();
-    retn.clear();
-    foreach (const QContactDetail &det, dbDetails) {
-        if (detailType(det) != detailType<QContactDisplayLabel>() &&
-            detailType(det) != detailType<QContactType>() &&
-            (definitionMask.isEmpty() || detailListContains(definitionMask, det))) {
-            retn.append(det);
-        }
-    }
-    removeDelta->append(retn);
+    removeDelta->append(dbContact.details());
 
     return QContactManager::NoError;
 }
@@ -1899,7 +1923,7 @@ static void promoteDetailsToLocal(const QList<QContactDetail> addDelta, const QL
             QList<QContactDetail> allDets = localContact->details();
             for (int j = 0; j < allDets.size(); ++j) {
                 detToRemove = allDets.at(j);
-                if ((detailType(detToRemove) == detailType(det)) && (detToRemove == det)) {
+                if (detailsEquivalent(detToRemove, det)) {
                     // note: this comparison does value checking only.
                     localContact->removeDetail(&detToRemove);
                     found = true;
