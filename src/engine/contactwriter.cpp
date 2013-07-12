@@ -1419,6 +1419,7 @@ DetailMap detailValues(const QContactDetail &detail)
 
 static bool variantEqual(const QVariant &lhs, const QVariant &rhs)
 {
+#ifdef USING_QTPIM
     // Work around incorrect result from QVariant::operator== when variants contain QList<int>
     static const int QListIntType = QMetaType::type("QList<int>");
 
@@ -1430,7 +1431,7 @@ static bool variantEqual(const QVariant &lhs, const QVariant &rhs)
     if (lhsType == QListIntType) {
         return (lhs.value<QList<int> >() == rhs.value<QList<int> >());
     }
-
+#endif
     return (lhs == rhs);
 }
 
