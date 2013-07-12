@@ -1704,7 +1704,11 @@ void tst_Aggregation::wasLocal()
 
     QContactPhoneNumber ap;
     ap.setNumber("1234567");
+#ifdef USING_QTPIM
     ap.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypeMobile);
+#else
+    ap.setSubTypes(QStringList() << QContactPhoneNumber::SubTypeMobile);
+#endif
     alice.saveDetail(&ap);
 
     QVERIFY(m_cm->saveContact(&alice));
@@ -1717,7 +1721,11 @@ void tst_Aggregation::wasLocal()
 
     QContactPhoneNumber bp;
     bp.setNumber("2345678");
+#ifdef USING_QTPIM
     bp.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypeMobile);
+#else
+    bp.setSubTypes(QStringList() << QContactPhoneNumber::SubTypeMobile);
+#endif
     bob.saveDetail(&bp);
 
     QVERIFY(m_cm->saveContact(&bob));
@@ -1864,7 +1872,11 @@ void tst_Aggregation::wasLocal()
     // Changes are not promoted down to the was_local constituent
     QContactPhoneNumber pn;
     pn.setNumber("7654321");
+#ifdef USING_QTPIM
     pn.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypeMobile);
+#else
+    pn.setSubTypes(QStringList() << QContactPhoneNumber::SubTypeMobile);
+#endif
     aggregateAlice.saveDetail(&pn);
 
     QVERIFY(m_cm->saveContact(&aggregateAlice));
