@@ -35,8 +35,8 @@
 #include "contactsdatabase.h"
 #include "contactid_p.h"
 
-#include <QSet>
-#include <QSqlQuery>
+#include "qtcontacts-extensions.h"
+#include "QContactOriginMetadata"
 
 #include <QContactAddress>
 #include <QContactAnniversary>
@@ -55,8 +55,10 @@
 #include <QContactRingtone>
 #include <QContactTag>
 #include <QContactUrl>
-
 #include <QContactManager>
+
+#include <QSet>
+#include <QSqlQuery>
 
 USE_CONTACTS_NAMESPACE
 
@@ -148,7 +150,7 @@ private:
     QSqlQuery &bindDetail(quint32 contactId, const QContactRingtone &detail);
     QSqlQuery &bindDetail(quint32 contactId, const QContactTag &detail);
     QSqlQuery &bindDetail(quint32 contactId, const QContactUrl &detail);
-    QSqlQuery &bindDetail(quint32 contactId, const QContactTpMetadata &detail);
+    QSqlQuery &bindDetail(quint32 contactId, const QContactOriginMetadata &detail);
 
     const ContactsEngine &m_engine;
     QSqlDatabase m_database;
@@ -186,7 +188,7 @@ private:
     QSqlQuery m_insertRingtone;
     QSqlQuery m_insertTag;
     QSqlQuery m_insertUrl;
-    QSqlQuery m_insertTpMetadata;
+    QSqlQuery m_insertOriginMetadata;
     QSqlQuery m_insertDetail;
     QSqlQuery m_insertIdentity;
     QSqlQuery m_removeAddress;
@@ -206,7 +208,7 @@ private:
     QSqlQuery m_removeRingtone;
     QSqlQuery m_removeTag;
     QSqlQuery m_removeUrl;
-    QSqlQuery m_removeTpMetadata;
+    QSqlQuery m_removeOriginMetadata;
     QSqlQuery m_removeDetail;
     QSqlQuery m_removeIdentity;
     ContactReader *m_reader;

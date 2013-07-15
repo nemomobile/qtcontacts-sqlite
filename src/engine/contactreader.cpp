@@ -31,8 +31,10 @@
 
 #include "contactreader.h"
 #include "contactsengine.h"
-#include "constants_p.h"
 #include "conversion_p.h"
+
+#include "qtcontacts-extensions.h"
+#include "QContactOriginMetadata"
 
 #include <QContactAddress>
 #include <QContactAnniversary>
@@ -449,16 +451,16 @@ static void setValues(QContactUrl *detail, QSqlQuery *query, const int offset)
 
 static const FieldInfo tpMetadataFields[] =
 {
-    { QContactTpMetadata__FieldContactId, "telepathyId", StringField },
-    { QContactTpMetadata__FieldAccountId, "accountId", StringField },
-    { QContactTpMetadata__FieldAccountEnabled, "accountEnabled", BooleanField }
+    { QContactOriginMetadata::FieldId, "telepathyId", StringField },
+    { QContactOriginMetadata::FieldGroupId, "accountId", StringField },
+    { QContactOriginMetadata::FieldEnabled, "accountEnabled", BooleanField }
 };
 
-static void setValues(QContactTpMetadata *detail, QSqlQuery *query, const int offset)
+static void setValues(QContactOriginMetadata *detail, QSqlQuery *query, const int offset)
 {
-    setValue(detail, QContactTpMetadata__FieldContactId     , query->value(offset + 0));
-    setValue(detail, QContactTpMetadata__FieldAccountId     , query->value(offset + 1));
-    setValue(detail, QContactTpMetadata__FieldAccountEnabled, query->value(offset + 2));
+    setValue(detail, QContactOriginMetadata::FieldId     , query->value(offset + 0));
+    setValue(detail, QContactOriginMetadata::FieldGroupId, query->value(offset + 1));
+    setValue(detail, QContactOriginMetadata::FieldEnabled, query->value(offset + 2));
 }
 
 #ifdef USING_QTPIM
@@ -640,7 +642,7 @@ static const DetailInfo detailInfo[] =
     DEFINE_DETAIL(QContactRingtone      , Ringtones      , ringtoneFields     , false),
     DEFINE_DETAIL(QContactTag           , Tags           , tagFields          , false),
     DEFINE_DETAIL(QContactUrl           , Urls           , urlFields          , false),
-    DEFINE_DETAIL(QContactTpMetadata    , TpMetadata     , tpMetadataFields   , true),
+    DEFINE_DETAIL(QContactOriginMetadata, TpMetadata     , tpMetadataFields   , true),
     DEFINE_DETAIL(QContactGlobalPresence, GlobalPresences, presenceFields     , true)
 };
 

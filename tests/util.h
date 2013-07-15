@@ -53,8 +53,9 @@
 #include "qtcontacts.h"
 #endif
 
-#include "constants_p.h"
 #include "contactid_p.h"
+
+#include "qtcontacts-extensions.h"
 
 // qtpim Contacts does not support all the feaures of QtMobility Contacts
 #ifndef USING_QTPIM

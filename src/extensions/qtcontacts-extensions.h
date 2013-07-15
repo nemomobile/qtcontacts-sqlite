@@ -29,10 +29,11 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
  */
 
-#ifndef QTCONTACTSSQLITE_CONSTANTS_P_H
-#define QTCONTACTSSQLITE_CONSTANTS_P_H
+#ifndef QTCONTACTS_EXTENSIONS_H
+#define QTCONTACTS_EXTENSIONS_H
 
 #include <QContactDetail>
+#include <QContactId>
 
 #ifdef USING_QTPIM
 #include <QContactOnlineAccount>
@@ -41,25 +42,39 @@
 #include <QContactName>
 #endif
 
-BEGIN_CONTACTS_NAMESPACE
+// Defines the extended values supported by qtcontacts-sqlite
 
 #ifdef USING_QTPIM
-const int QContactDetail__ContextDefault = (QContactDetail::ContextOther+1);
-const int QContactDetail__ContextLarge = (QContactDetail::ContextOther+2);
+QT_BEGIN_NAMESPACE_CONTACTS
+#else
+QTM_BEGIN_NAMESPACE
+#endif
 
+#ifdef USING_QTPIM
+// In QContactDetail::contexts(), we support additional values, "Default" and "Large"
+static const int QContactDetail__ContextDefault = (QContactDetail::ContextOther+1);
+static const int QContactDetail__ContextLarge = (QContactDetail::ContextOther+2);
+
+// In QContactName, we support the customLabel property
 static const int QContactName__FieldCustomLabel = (QContactName::FieldSuffix+1);
 
+// In QContactOnlineAccount we support the following properties:
+//   AccountPath - identifying path value for the account
+//   AccountIconPath - path to an icon indicating the service type of the account
+//   Enabled - a boolean indicating whether or not the account is enabled for activity
 static const int QContactOnlineAccount__FieldAccountPath = (QContactOnlineAccount::FieldSubTypes+1);
 static const int QContactOnlineAccount__FieldAccountIconPath = (QContactOnlineAccount::FieldSubTypes+2);
 static const int QContactOnlineAccount__FieldEnabled = (QContactOnlineAccount::FieldSubTypes+3);
 
+// In QContactPhoneNumber, we support a field for normalized form of the number
 static const int QContactPhoneNumber__FieldNormalizedNumber = (QContactPhoneNumber::FieldSubTypes+1);
 
+// In QContactAvatar, we support a field for storing caller metadata
 static const int QContactAvatar__FieldAvatarMetadata = (QContactAvatar::FieldVideoUrl+1);
 
-static const int QContactTpMetadata__FieldContactId = 0;
-static const int QContactTpMetadata__FieldAccountId = 1;
-static const int QContactTpMetadata__FieldAccountEnabled = 2;
+// We support the QContactOriginMetadata detail type
+static const QContactDetail::DetailType QContactDetail__TypeOriginMetadata = static_cast<QContactDetail::DetailType>(QContactDetail::TypeVersion + 1);
+
 #else
 // Declared as static:
 Q_DECLARE_LATIN1_CONSTANT(QContactDetail__ContextDefault, "Default") = { "Default" };
@@ -72,12 +87,34 @@ Q_DECLARE_LATIN1_CONSTANT(QContactOnlineAccount__FieldEnabled, "Enabled") = { "E
 Q_DECLARE_LATIN1_CONSTANT(QContactPhoneNumber__FieldNormalizedNumber, "NormalizedNumber") = { "NormalizedNumber" };
 
 Q_DECLARE_LATIN1_CONSTANT(QContactAvatar__FieldAvatarMetadata, "AvatarMetadata") = { "AvatarMetadata" };
-
-Q_DECLARE_LATIN1_CONSTANT(QContactTpMetadata__FieldContactId, "ContactId") = { "ContactId" };
-Q_DECLARE_LATIN1_CONSTANT(QContactTpMetadata__FieldAccountId, "AccountId") = { "AccountId" };
-Q_DECLARE_LATIN1_CONSTANT(QContactTpMetadata__FieldAccountEnabled, "AccountEnabled") = { "AccountEnabled" };
 #endif
 
-END_CONTACTS_NAMESPACE
+#ifdef USING_QTPIM
+QT_END_NAMESPACE_CONTACTS
+#else
+QTM_END_NAMESPACE
+#endif
+
+namespace QtContactsSqliteExtensions {
+
+#ifdef USING_QTPIM
+QTCONTACTS_USE_NAMESPACE
+#else
+QTM_USE_NAMESPACE
+#endif
+
+#ifdef USING_QTPIM
+typedef QContactId ApiContactIdType;
+#else
+typedef QContactLocalId ApiContactIdType;
+#endif
+
+ApiContactIdType apiContactId(quint32);
+quint32 internalContactId(const ApiContactIdType &);
+#ifndef USING_QTPIM
+quint32 internalContactId(const QContactId &);
+#endif
+
+}
 
 #endif

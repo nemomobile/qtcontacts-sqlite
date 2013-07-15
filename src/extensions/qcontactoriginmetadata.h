@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Jolla Ltd. <andrew.den.exter@jollamobile.com>
+ * Copyright (C) 2013 Jolla Ltd. <mattthew.vogt@jollamobile.com>
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -29,25 +29,56 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
  */
 
-#ifndef QTCONTACTSSQLITE_CONTACTSDATABASE
-#define QTCONTACTSSQLITE_CONTACTSDATABASE
+#ifndef QCONTACTORIGINMETADATA_H
+#define QCONTACTORIGINMETADATA_H
 
-#include <QSqlDatabase>
-#include <QVariantList>
+#include <QContactDetail>
+#include <QContactDetailFilter>
 
-class ContactsDatabase
+#include <QtGlobal>
+
+#ifdef USING_QTPIM
+QT_BEGIN_NAMESPACE_CONTACTS
+#else
+QTM_BEGIN_NAMESPACE
+#endif
+
+class QContactOriginMetadata : public QContactDetail
 {
 public:
-    enum Identity {
-        SelfContactId
+#ifdef USING_QTPIM
+    Q_DECLARE_CUSTOM_CONTACT_DETAIL(QContactOriginMetadata)
+
+    enum {
+        FieldId = 0,
+        FieldGroupId = 1,
+        FieldEnabled = 2
     };
+#else
+    // Keep the existing string values to maintain DB compatibility
+    Q_DECLARE_CUSTOM_CONTACT_DETAIL(QContactOriginMetadata, "TpMetadata")
+    Q_DECLARE_LATIN1_CONSTANT(FieldId, "ContactId");
+    Q_DECLARE_LATIN1_CONSTANT(FieldGroupId, "AccountId");
+    Q_DECLARE_LATIN1_CONSTANT(FieldEnabled, "AccountEnabled");
+#endif
 
-    static QSqlDatabase open(const QString &databaseName);
-    static QSqlQuery prepare(const char *statement, const QSqlDatabase &database);
+    void setId(const QString &s);
+    QString id() const;
 
-    static QString expandQuery(const QString &queryString, const QVariantList &bindings);
-    static QString expandQuery(const QString &queryString, const QMap<QString, QVariant> &bindings);
-    static QString expandQuery(const QSqlQuery &query);
+    void setGroupId(const QString &s);
+    QString groupId() const;
+
+    void setEnabled(bool b);
+    bool enabled() const;
+
+    static QContactDetailFilter matchId(const QString &s);
+    static QContactDetailFilter matchGroupId(const QString &s);
 };
+
+#ifdef USING_QTPIM
+QT_END_NAMESPACE_CONTACTS
+#else
+QTM_END_NAMESPACE
+#endif
 
 #endif

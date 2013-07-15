@@ -35,7 +35,8 @@
 #include "contactnotifier.h"
 #include "contactreader.h"
 #include "contactwriter.h"
-#include "constants_p.h"
+
+#include "qtcontacts-extensions.h"
 
 #include <QCoreApplication>
 #include <QMutex>

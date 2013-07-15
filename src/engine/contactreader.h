@@ -32,13 +32,14 @@
 #ifndef CONTACTREADER_H
 #define CONTACTREADER_H
 
-#include <QSqlDatabase>
-#include <QSqlQuery>
+#include "contactid_p.h"
+#include "contactsdatabase.h"
+
 #include <QContact>
 #include <QContactManager>
 
-#include "contactid_p.h"
-#include "contactsdatabase.h"
+#include <QSqlDatabase>
+#include <QSqlQuery>
 
 USE_CONTACTS_NAMESPACE
 
