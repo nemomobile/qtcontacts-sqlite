@@ -484,16 +484,33 @@ static bool prepareDatabase(QSqlDatabase &database)
 
 QSqlDatabase ContactsDatabase::open(const QString &databaseName)
 {
-    // horrible hack: Qt4 didn't have GenericDataLocation so we hardcode database location.
-    QDir databaseDir(QLatin1String(QTCONTACTS_SQLITE_DATABASE_DIR));
-    if (!databaseDir.exists()) {
-        databaseDir.mkpath(QLatin1String("."));
+    // See if we can access the privileged version of the DB
+    QDir databaseDir(QString::fromLatin1(QTCONTACTS_SQLITE_PRIVILEGED_DATABASE_DIR));
+    if (!databaseDir.exists() || !databaseDir.isReadable()) {
+        // horrible hack: Qt4 didn't have GenericDataLocation so we hardcode database location.
+        databaseDir = QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR);
+        if (!databaseDir.exists()) {
+            // Create the directory tree if required
+            if (!databaseDir.mkpath(QString::fromLatin1("."))) {
+                qWarning() << "Unable to create database directory:" << databaseDir.path();
+                return QSqlDatabase();
+            }
+        }
     }
 
-    const QString databaseFile = databaseDir.absoluteFilePath(QLatin1String(QTCONTACTS_SQLITE_DATABASE_NAME));
+    // Create a directory to contain the DB files if required
+    databaseDir = QDir(databaseDir.path() + QString::fromLatin1("/qtcontacts-sqlite"));
+    if (!databaseDir.exists()) {
+        if (!databaseDir.mkpath(QString::fromLatin1("."))) {
+            qWarning() << "Unable to create contacts database directory:" << databaseDir.path();
+            return QSqlDatabase();
+        }
+    }
+
+    const QString databaseFile = databaseDir.absoluteFilePath(QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_NAME));
     const bool exists = QFile::exists(databaseFile);
 
-    QSqlDatabase database = QSqlDatabase::addDatabase(QLatin1String("QSQLITE"), databaseName);
+    QSqlDatabase database = QSqlDatabase::addDatabase(QString::fromLatin1("QSQLITE"), databaseName);
     database.setDatabaseName(databaseFile);
 
     if (!database.open()) {

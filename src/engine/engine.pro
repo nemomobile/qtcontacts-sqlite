@@ -10,7 +10,8 @@ CONFIG += plugin
 PLUGIN_TYPE=contacts
 
 # we hardcode this for Qt4 as there's no GenericDataLocation offered by QDesktopServices
-DEFINES += 'QTCONTACTS_SQLITE_DATABASE_DIR=\'\"/home/nemo/.local/share/data/qtcontacts-sqlite/\"\''
+DEFINES += 'QTCONTACTS_SQLITE_PRIVILEGED_DATABASE_DIR=\'\"/home/nemo/.privileged/\"\''
+DEFINES += 'QTCONTACTS_SQLITE_DATABASE_DIR=\'\"/home/nemo/.local/share/data/\"\''
 DEFINES += 'QTCONTACTS_SQLITE_DATABASE_NAME=\'\"contacts.db\"\''
 
 HEADERS += \
