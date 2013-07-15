@@ -106,10 +106,10 @@ private:
     void waitForSignalPropagation();
 
     QContactManager *m_cm;
-    QList<QContactIdType> m_addAccumulatedIds;
-    QList<QContactIdType> m_chgAccumulatedIds;
-    QList<QContactIdType> m_remAccumulatedIds;
-    QList<QContactIdType> m_createdIds;
+    QSet<QContactIdType> m_addAccumulatedIds;
+    QSet<QContactIdType> m_chgAccumulatedIds;
+    QSet<QContactIdType> m_remAccumulatedIds;
+    QSet<QContactIdType> m_createdIds;
 };
 
 tst_Aggregation::tst_Aggregation()
@@ -146,7 +146,7 @@ void tst_Aggregation::cleanup()
 {
     waitForSignalPropagation();
     if (!m_createdIds.isEmpty()) {
-        m_cm->removeContacts(m_createdIds);
+        m_cm->removeContacts(m_createdIds.toList());
         m_createdIds.clear();
     }
     waitForSignalPropagation();
@@ -160,18 +160,24 @@ void tst_Aggregation::waitForSignalPropagation()
 
 void tst_Aggregation::addAccumulationSlot(const QList<QContactIdType> &ids)
 {
-    m_addAccumulatedIds.append(ids);
-    m_createdIds.append(ids);
+    foreach (const QContactIdType &id, ids) {
+        m_addAccumulatedIds.insert(id);
+        m_createdIds.insert(id);
+    }
 }
 
 void tst_Aggregation::chgAccumulationSlot(const QList<QContactIdType> &ids)
 {
-    m_chgAccumulatedIds.append(ids);
+    foreach (const QContactIdType &id, ids) {
+        m_chgAccumulatedIds.insert(id);
+    }
 }
 
 void tst_Aggregation::remAccumulationSlot(const QList<QContactIdType> &ids)
 {
-    m_remAccumulatedIds.append(ids);
+    foreach (const QContactIdType &id, ids) {
+        m_remAccumulatedIds.insert(id);
+    }
 }
 
 void tst_Aggregation::createSingleLocal()
@@ -1590,6 +1596,7 @@ void tst_Aggregation::alterRelationships()
     remSpyCount = remSpy.count();
 
     // No new aggregate should have been generated
+    waitForSignalPropagation();
     QCOMPARE(addSpy.count(), addSpyCount);
     QCOMPARE(m_addAccumulatedIds.size(), 5);
 
@@ -1646,6 +1653,9 @@ void tst_Aggregation::alterRelationships()
 
     // No new aggregate should have been generated, since the aggregation process will find
     // the existing aggregate as the best candidate (due to same first/last name)
+
+    // Note - this test is failing with qt4; the match-finding query is failing to find the
+    // existing match, due to some error in binding values that I can't work out right now...
     QCOMPARE(addSpy.count(), addSpyCount);
     QCOMPARE(m_addAccumulatedIds.size(), 5);
 

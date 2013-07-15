@@ -47,7 +47,9 @@ public:
     static QSqlDatabase open(const QString &databaseName);
     static QSqlQuery prepare(const char *statement, const QSqlDatabase &database);
 
-private:
+    static QString expandQuery(const QString &queryString, const QVariantList &bindings);
+    static QString expandQuery(const QString &queryString, const QMap<QString, QVariant> &bindings);
+    static QString expandQuery(const QSqlQuery &query);
 };
 
 BEGIN_CONTACTS_NAMESPACE

@@ -1202,25 +1202,12 @@ static QString buildOrderBy(const QList<QContactSortOrder> &order, QString *join
     return fragments.join(QLatin1String(", "));
 }
 
-static void debugFilterExpansion(const QString &description, const QString &queryString, const QVariantList &bindings)
+static void debugFilterExpansion(const QString &description, const QString &query, const QVariantList &bindings)
 {
     static const bool debugFilters = !qgetenv("QTCONTACTS_SQLITE_DEBUG_FILTERS").isEmpty();
-    static const QChar marker = QChar::fromLatin1('?');
 
     if (debugFilters) {
-        QString query(queryString);
-
-        int index = 0;
-        for (int i = 0; i < bindings.count(); ++i) {
-            QString value = bindings.at(i).toString();
-            index = query.indexOf(marker, index);
-            if (index == -1)
-                break;
-
-            query.replace(index, 1, value);
-            index += value.length();
-        }
-        qDebug() << description << query;
+        qDebug() << description << ContactsDatabase::expandQuery(query, bindings);
     }
 }
 

@@ -531,6 +531,67 @@ QSqlQuery ContactsDatabase::prepare(const char *statement, const QSqlDatabase &d
     return query;
 }
 
+QString ContactsDatabase::expandQuery(const QString &queryString, const QVariantList &bindings)
+{
+    QString query(queryString);
+
+    int index = 0;
+    for (int i = 0; i < bindings.count(); ++i) {
+        static const QChar marker = QChar::fromLatin1('?');
+
+        QString value = bindings.at(i).toString();
+        index = query.indexOf(marker, index);
+        if (index == -1)
+            break;
+
+        query.replace(index, 1, value);
+        index += value.length();
+    }
+
+    return query;
+}
+
+QString ContactsDatabase::expandQuery(const QString &queryString, const QMap<QString, QVariant> &bindings)
+{
+    QString query(queryString);
+
+    int index = 0;
+
+    while (true) {
+        static const QChar marker = QChar::fromLatin1(':');
+
+        index = query.indexOf(marker, index);
+        if (index == -1)
+            break;
+
+        int remaining = query.length() - index;
+        int len = 1;
+        for ( ; (len < remaining) && query.at(index + len).isLetter(); ) {
+            ++len;
+        }
+
+        const QString key(query.mid(index, len));
+        QVariant value = bindings.value(key);
+
+        QString valueText;
+        if (value.type() == QVariant::String) {
+            valueText = QString::fromLatin1("'%1'").arg(value.toString());
+        } else {
+            valueText = value.toString();
+        }
+
+        query.replace(index, len, valueText);
+        index += valueText.length();
+    }
+
+    return query;
+}
+
+QString ContactsDatabase::expandQuery(const QSqlQuery &query)
+{
+    return expandQuery(query.lastQuery(), query.boundValues());
+}
+
 #ifdef USING_QTPIM
 const QContactDetail::DetailType QContactTpMetadata::Type(static_cast<QContactDetail::DetailType>(QContactDetail::TypeVersion + 1));
 #else
