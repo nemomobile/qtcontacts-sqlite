@@ -78,13 +78,13 @@ static const char *findMatchForContact =
         "\n   UNION"
         "\n   SELECT contactId, 3 as score FROM OnlineAccounts WHERE lowerAccountUri IN ( :uri )"
         "\n   UNION"
-        "\n   SELECT contactId, 3 as score FROM Contacts WHERE lowerFirstName != '' AND lowerFirstName = :first AND (lowerLastName == '' OR lowerLastName = :last)"
+        "\n   SELECT contactId, 3 as score FROM Contacts WHERE lowerFirstName != '' AND lowerFirstName = :firstName AND (lowerLastName = '' OR lowerLastName = :lastName)"
         "\n   UNION"
-        "\n   SELECT contactId, 2 as score FROM Contacts WHERE lowerFirstName != '' AND lowerFirstName LIKE :firstPartial AND (lowerLastName == '' OR lowerLastName = :last)"
+        "\n   SELECT contactId, 2 as score FROM Contacts WHERE lowerFirstName != '' AND lowerFirstName LIKE :firstPartial AND (lowerLastName = '' OR lowerLastName = :lastName)"
         "\n   UNION"
-        "\n   SELECT contactId, 2 as score FROM Contacts WHERE lowerFirstName = '' AND lowerLastName != '' AND lowerLastName = :last"
+        "\n   SELECT contactId, 2 as score FROM Contacts WHERE lowerFirstName = '' AND lowerLastName != '' AND lowerLastName = :lastName"
         "\n   UNION"
-        "\n   SELECT contactId, 1 as score FROM Nicknames WHERE lowerNickname != '' AND lowerNickname = :nick"
+        "\n   SELECT contactId, 1 as score FROM Nicknames WHERE lowerNickname != '' AND lowerNickname = :nickname"
         "\n ) AS Matches"
         "\n JOIN Contacts ON Contacts.contactId = Matches.contactId"
         "\n WHERE Contacts.syncTarget = 'aggregate'"
@@ -2374,10 +2374,10 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
     // or accumulating points for name matches (including partial matches of first name).
 
     m_findMatchForContact.bindValue(":id", contactId);
-    m_findMatchForContact.bindValue(":first", firstName);
+    m_findMatchForContact.bindValue(":firstName", firstName);
     m_findMatchForContact.bindValue(":firstPartial", firstName.prepend(Percent).append(Percent));
-    m_findMatchForContact.bindValue(":last", lastName);
-    m_findMatchForContact.bindValue(":nick", nickname);
+    m_findMatchForContact.bindValue(":lastName", lastName);
+    m_findMatchForContact.bindValue(":nickname", nickname);
     m_findMatchForContact.bindValue(":number", phoneNumbers.join(","));
     m_findMatchForContact.bindValue(":email", emailAddresses.join(","));
     m_findMatchForContact.bindValue(":uri", accountUris.join(","));
