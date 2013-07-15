@@ -32,6 +32,8 @@
 #ifndef QTCONTACTS_EXTENSIONS_H
 #define QTCONTACTS_EXTENSIONS_H
 
+#include "qtcontacts-extensions-config.h"
+
 #include <QContactDetail>
 #include <QContactId>
 
@@ -46,8 +48,10 @@
 
 #ifdef USING_QTPIM
 QT_BEGIN_NAMESPACE_CONTACTS
-#else
+#elif defined(USING_QTMOBILITY)
 QTM_BEGIN_NAMESPACE
+#else
+#error "QtContacts variant in use is not specified"
 #endif
 
 #ifdef USING_QTPIM

@@ -29,58 +29,27 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
  */
 
-#ifndef QCONTACTORIGINMETADATA_H
-#define QCONTACTORIGINMETADATA_H
+#ifndef QTCONTACTS_EXTENSIONS_CONFIG_H
+#define QTCONTACTS_EXTENSIONS_CONFIG_H
 
-#include "qtcontacts-extensions-config.h"
+#include <QtGlobal>
 
-#include <QContactDetail>
-#include <QContactDetailFilter>
+// Which variant of QtContacts are we using?
+#if !defined(USING_QTPIM) && !defined(USING_QTMOBILITY)
 
-#ifdef USING_QTPIM
-QT_BEGIN_NAMESPACE_CONTACTS
-#elif defined(USING_QTMOBILITY)
-QTM_BEGIN_NAMESPACE
+#ifdef Q_MOC_RUN
+// moc in qt4 can't process the QT_VERSION_CHECK test
+#warning "Unable to select QtContacts variant with moc - please define USING_QTPIM or USING_QTMOBILITY"
 #else
-#error "QtContacts variant in use is not specified"
+
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+#define USING_QTPIM
+#else
+#define USING_QTMOBILITY
 #endif
 
-class QContactOriginMetadata : public QContactDetail
-{
-public:
-#ifdef USING_QTPIM
-    Q_DECLARE_CUSTOM_CONTACT_DETAIL(QContactOriginMetadata)
-
-    enum {
-        FieldId = 0,
-        FieldGroupId = 1,
-        FieldEnabled = 2
-    };
-#else
-    // Keep the existing string values to maintain DB compatibility
-    Q_DECLARE_CUSTOM_CONTACT_DETAIL(QContactOriginMetadata, "TpMetadata")
-    Q_DECLARE_LATIN1_CONSTANT(FieldId, "ContactId");
-    Q_DECLARE_LATIN1_CONSTANT(FieldGroupId, "AccountId");
-    Q_DECLARE_LATIN1_CONSTANT(FieldEnabled, "AccountEnabled");
 #endif
 
-    void setId(const QString &s);
-    QString id() const;
-
-    void setGroupId(const QString &s);
-    QString groupId() const;
-
-    void setEnabled(bool b);
-    bool enabled() const;
-
-    static QContactDetailFilter matchId(const QString &s);
-    static QContactDetailFilter matchGroupId(const QString &s);
-};
-
-#ifdef USING_QTPIM
-QT_END_NAMESPACE_CONTACTS
-#else
-QTM_END_NAMESPACE
 #endif
 
 #endif
