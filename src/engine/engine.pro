@@ -14,6 +14,9 @@ DEFINES += 'QTCONTACTS_SQLITE_PRIVILEGED_DATABASE_DIR=\'\"/home/nemo/.privileged
 DEFINES += 'QTCONTACTS_SQLITE_DATABASE_DIR=\'\"/home/nemo/.local/share/data/\"\''
 DEFINES += 'QTCONTACTS_SQLITE_DATABASE_NAME=\'\"contacts.db\"\''
 
+INCLUDEPATH += \
+        ../extensions
+
 HEADERS += \
         semaphore_p.h \
         constants_p.h \
@@ -38,6 +41,16 @@ SOURCES += \
 
 target.path = $$[QT_INSTALL_PLUGINS]/contacts
 INSTALLS += target
+
+headers.path = $${PREFIX}/include/qtcontacts-sqlite-extensions
+headers.files = ../extensions/*
+headers.depends = ../extensions/*
+INSTALLS += headers
+
+pkgconfig.path = $${PREFIX}/lib/pkgconfig
+equals(QT_MAJOR_VERSION, 4): pkgconfig.files = ../qtcontacts-sqlite-extensions.pc
+equals(QT_MAJOR_VERSION, 5): pkgconfig.files = ../qtcontacts-sqlite-qt5-extensions.pc
+INSTALLS += pkgconfig
 
 equals(QT_MAJOR_VERSION, 5): OTHER_FILES += plugin.json
 

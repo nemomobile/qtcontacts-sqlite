@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Jolla Ltd. <andrew.den.exter@jollamobile.com>
+ * Copyright (C) 2013 Jolla Ltd. <mattthew.vogt@jollamobile.com>
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -29,25 +29,27 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
  */
 
-#ifndef QTCONTACTSSQLITE_CONTACTSDATABASE
-#define QTCONTACTSSQLITE_CONTACTSDATABASE
+#ifndef QTCONTACTS_EXTENSIONS_CONFIG_H
+#define QTCONTACTS_EXTENSIONS_CONFIG_H
 
-#include <QSqlDatabase>
-#include <QVariantList>
+#include <QtGlobal>
 
-class ContactsDatabase
-{
-public:
-    enum Identity {
-        SelfContactId
-    };
+// Which variant of QtContacts are we using?
+#if !defined(USING_QTPIM) && !defined(USING_QTMOBILITY)
 
-    static QSqlDatabase open(const QString &databaseName);
-    static QSqlQuery prepare(const char *statement, const QSqlDatabase &database);
+#ifdef Q_MOC_RUN
+// moc in qt4 can't process the QT_VERSION_CHECK test
+#warning "Unable to select QtContacts variant with moc - please define USING_QTPIM or USING_QTMOBILITY"
+#else
 
-    static QString expandQuery(const QString &queryString, const QVariantList &bindings);
-    static QString expandQuery(const QString &queryString, const QMap<QString, QVariant> &bindings);
-    static QString expandQuery(const QSqlQuery &query);
-};
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+#define USING_QTPIM
+#else
+#define USING_QTMOBILITY
+#endif
+
+#endif
+
+#endif
 
 #endif

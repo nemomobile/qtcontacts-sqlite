@@ -38,6 +38,19 @@ This package contains unit tests for the qtcontacts-sqlite library.
 %defattr(-,root,root,-)
 /opt/tests/qtcontacts-sqlite/*
 
+%package extensions
+Summary:    QtContacts extension headers for qtcontacts-sqlite
+Group:      Development/Libraries
+Requires:   %{name} = %{version}-%{release}
+
+%description extensions
+This package contains extension headers for the qtcontacts-sqlite library.
+
+%files extensions
+%defattr(-,root,root,-)
+%{_libdir}/pkgconfig/qtcontacts-sqlite-extensions.pc
+%{_includedir}/qtcontacts-sqlite-extensions/*
+
 
 %prep
 %setup -q -n %{name}-%{version}

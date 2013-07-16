@@ -39,8 +39,6 @@
 
 #include <QtDebug>
 
-USE_CONTACTS_NAMESPACE
-
 static const char *setupEncoding =
         "\n PRAGMA encoding = \"UTF-16\";";
 
@@ -609,8 +607,4 @@ QString ContactsDatabase::expandQuery(const QSqlQuery &query)
     return expandQuery(query.lastQuery(), query.boundValues());
 }
 
-#ifdef USING_QTPIM
-const QContactDetail::DetailType QContactTpMetadata::Type(static_cast<QContactDetail::DetailType>(QContactDetail::TypeVersion + 1));
-#else
-Q_IMPLEMENT_CUSTOM_CONTACT_DETAIL(QContactTpMetadata, "TpMetadata");
-#endif
+#include "qcontactoriginmetadata_impl.h"

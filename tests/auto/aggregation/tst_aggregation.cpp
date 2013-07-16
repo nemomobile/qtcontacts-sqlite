@@ -32,7 +32,6 @@
 #define QT_STATICPLUGIN
 
 #include "../../util.h"
-#include "constants_p.h"
 
 static const QString aggregatesRelationship(relationshipString(QContactRelationship::Aggregates));
 

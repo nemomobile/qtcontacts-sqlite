@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Jolla Ltd. <andrew.den.exter@jollamobile.com>
+ * Copyright (C) 2013 Jolla Ltd. <matthew.vogt@jollamobile.com>
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -29,25 +29,53 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
  */
 
-#ifndef QTCONTACTSSQLITE_CONTACTSDATABASE
-#define QTCONTACTSSQLITE_CONTACTSDATABASE
+#ifndef QTCONTACTS_EXTENSIONS_IMPL_H
+#define QTCONTACTS_EXTENSIONS_IMPL_H
 
-#include <QSqlDatabase>
-#include <QVariantList>
+#include "qtcontacts-extensions.h"
 
-class ContactsDatabase
+namespace QtContactsSqliteExtensions {
+
+ApiContactIdType apiContactId(quint32 iid)
 {
-public:
-    enum Identity {
-        SelfContactId
-    };
+#ifdef USING_QTPIM
+    QContactId contactId;
+    if (iid != 0) {
+        static const QString idStr(QString::fromLatin1("qtcontacts:org.nemomobile.contacts.sqlite::sql-%1"));
+        contactId = QContactId::fromString(idStr.arg(iid));
+        if (contactId.isNull()) {
+            qWarning() << "Unable to formulate valid ID from:" << iid;
+        }
+    }
+    return contactId;
+#else
+    return static_cast<ApiContactIdType>(iid);
+#endif
+}
 
-    static QSqlDatabase open(const QString &databaseName);
-    static QSqlQuery prepare(const char *statement, const QSqlDatabase &database);
+quint32 internalContactId(const ApiContactIdType &id)
+{
+#ifdef USING_QTPIM
+    if (!id.isNull()) {
+        QStringList components = id.toString().split(QChar::fromLatin1(':'));
+        const QString &idComponent = components.isEmpty() ? QString() : components.last();
+        if (idComponent.startsWith(QString::fromLatin1("sql-"))) {
+            return idComponent.mid(4).toUInt();
+        }
+    }
+    return 0;
+#else
+    return static_cast<quint32>(id);
+#endif
+}
 
-    static QString expandQuery(const QString &queryString, const QVariantList &bindings);
-    static QString expandQuery(const QString &queryString, const QMap<QString, QVariant> &bindings);
-    static QString expandQuery(const QSqlQuery &query);
-};
+#ifndef USING_QTPIM
+quint32 internalContactId(const QContactId &id)
+{
+    return static_cast<quint32>(id.localId());
+}
+#endif
+
+}
 
 #endif

@@ -34,7 +34,6 @@
 #include "contactsengine.h"
 #include "contactreader.h"
 #include "contactnotifier.h"
-#include "constants_p.h"
 #include "conversion_p.h"
 #include "semaphore_p.h"
 
@@ -393,7 +392,7 @@ static const char *insertUrl =
         "\n  :url,"
         "\n  :subTypes)";
 
-static const char *insertTpMetadata =
+static const char *insertOriginMetadata =
         "\n INSERT INTO TpMetadata ("
         "\n  contactId,"
         "\n  telepathyId,"
@@ -505,7 +504,7 @@ ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &d
     , m_insertRingtone(prepare(insertRingtone, database))
     , m_insertTag(prepare(insertTag, database))
     , m_insertUrl(prepare(insertUrl, database))
-    , m_insertTpMetadata(prepare(insertTpMetadata, database))
+    , m_insertOriginMetadata(prepare(insertOriginMetadata, database))
     , m_insertDetail(prepare(insertDetail, database))
     , m_insertIdentity(prepare(insertIdentity, database))
     , m_removeAddress(prepare("DELETE FROM Addresses WHERE contactId = :contactId;", database))
@@ -525,7 +524,7 @@ ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &d
     , m_removeRingtone(prepare("DELETE FROM Ringtones WHERE contactId = :contactId;", database))
     , m_removeTag(prepare("DELETE FROM Tags WHERE contactId = :contactId;", database))
     , m_removeUrl(prepare("DELETE FROM Urls WHERE contactId = :contactId;", database))
-    , m_removeTpMetadata(prepare("DELETE FROM TpMetadata WHERE contactId = :contactId;", database))
+    , m_removeOriginMetadata(prepare("DELETE FROM TpMetadata WHERE contactId = :contactId;", database))
     , m_removeDetail(prepare("DELETE FROM Details WHERE contactId = :contactId AND detail = :detail;", database))
     , m_removeIdentity(prepare("DELETE FROM Identities WHERE identity = :identity;", database))
     , m_reader(reader)
@@ -1302,7 +1301,7 @@ QMap<QContactDetail::DetailType, const char *> getDetailTypeNames()
     INSERT(rv, QContactVersion);
 
     // Our extensions:
-    INSERT(rv, QContactTpMetadata);
+    INSERT(rv, QContactOriginMetadata);
 
     return rv;
 }
@@ -1731,7 +1730,7 @@ static ContactWriter::DetailList allSupportedDetails()
     appendDetailType<QContactOnlineAccount>(&details);
     appendDetailType<QContactPresence>(&details);
     appendDetailType<QContactGlobalPresence>(&details);
-    appendDetailType<QContactTpMetadata>(&details);
+    appendDetailType<QContactOriginMetadata>(&details);
     appendDetailType<QContactAddress>(&details);
     appendDetailType<QContactTag>(&details);
     appendDetailType<QContactUrl>(&details);
@@ -1756,7 +1755,7 @@ static ContactWriter::DetailList allSingularDetails()
     appendDetailType<QContactGender>(&details);
     appendDetailType<QContactTimestamp>(&details);
     appendDetailType<QContactBirthday>(&details);
-    appendDetailType<QContactTpMetadata>(&details);
+    appendDetailType<QContactOriginMetadata>(&details);
 
     return details;
 }
@@ -2851,7 +2850,7 @@ QContactManager::Error ContactWriter::write(quint32 contactId, QContact *contact
             && writeDetails<QContactRingtone>(contactId, contact, m_removeRingtone, definitionMask, &error)
             && writeDetails<QContactTag>(contactId, contact, m_removeTag, definitionMask, &error)
             && writeDetails<QContactUrl>(contactId, contact, m_removeUrl, definitionMask, &error)
-            && writeDetails<QContactTpMetadata>(contactId, contact, m_removeTpMetadata, definitionMask, &error)) {
+            && writeDetails<QContactOriginMetadata>(contactId, contact, m_removeOriginMetadata, definitionMask, &error)) {
         return QContactManager::NoError;
     }
     return error;
@@ -3097,11 +3096,11 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactUrl &detai
     return m_insertUrl;
 }
 
-QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactTpMetadata &detail)
+QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactOriginMetadata &detail)
 {
-    m_insertTpMetadata.bindValue(0, contactId);
-    m_insertTpMetadata.bindValue(1, detailValue(detail, QContactTpMetadata__FieldContactId));
-    m_insertTpMetadata.bindValue(2, detailValue(detail, QContactTpMetadata__FieldAccountId));
-    m_insertTpMetadata.bindValue(3, detailValue(detail, QContactTpMetadata__FieldAccountEnabled));
-    return m_insertTpMetadata;
+    m_insertOriginMetadata.bindValue(0, contactId);
+    m_insertOriginMetadata.bindValue(1, detailValue(detail, QContactOriginMetadata::FieldId));
+    m_insertOriginMetadata.bindValue(2, detailValue(detail, QContactOriginMetadata::FieldGroupId));
+    m_insertOriginMetadata.bindValue(3, detailValue(detail, QContactOriginMetadata::FieldEnabled));
+    return m_insertOriginMetadata;
 }
