@@ -1121,6 +1121,45 @@ void tst_Aggregation::uniquenessConstraints()
     QVERIFY(aggregateAlice.saveDetail(&afav));   // should update the existing.
     QVERIFY(m_cm->saveContact(&aggregateAlice)); // should succeed.
     QVERIFY(m_cm->contact(retrievalId(aggregateAlice)).detail<QContactFavorite>().isFavorite());
+    aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
+
+    // test uniqueness constraint of birthday detail.
+    QDateTime aliceBirthday = QDateTime::fromString("25/12/1950 01:23:45", "dd/MM/yyyy hh:mm:ss");
+    QCOMPARE(aggregateAlice.details<QContactBirthday>().size(), 0);
+    QContactBirthday abd;
+    abd.setDateTime(aliceBirthday);
+    QVERIFY(aggregateAlice.saveDetail(&abd));
+    QCOMPARE(aggregateAlice.details<QContactBirthday>().size(), 1);
+    QVERIFY(m_cm->saveContact(&aggregateAlice));
+    // now save another, should fail.
+    QContactBirthday anotherBd;
+    anotherBd.setDateTime(QDateTime::currentDateTime());
+    QVERIFY(aggregateAlice.saveDetail(&anotherBd));
+    QCOMPARE(aggregateAlice.details<QContactBirthday>().size(), 2);
+    QVERIFY(!m_cm->saveContact(&aggregateAlice)); // should fail, uniqueness.
+    QVERIFY(aggregateAlice.removeDetail(&anotherBd));
+    QVERIFY(m_cm->saveContact(&aggregateAlice)); // back to just one, should succeed.
+    QVERIFY(m_cm->contact(retrievalId(aggregateAlice)).detail<QContactBirthday>().dateTime() == aliceBirthday);
+    // now save a different birthday in another contact aggregated into alice.
+    QContact testsyncAlice;
+    QContactSyncTarget tsst;
+    tsst.setSyncTarget("test");
+    testsyncAlice.saveDetail(&tsst);
+    QContactBirthday tsabd;
+    tsabd.setDateTime(aliceBirthday.addDays(-5));
+    testsyncAlice.saveDetail(&tsabd);
+    QContactName tsaname;
+    tsaname.setFirstName(an.firstName());
+    tsaname.setLastName(an.lastName());
+    testsyncAlice.saveDetail(&tsaname);
+    QContactEmailAddress tsaem;
+    tsaem.setEmailAddress(aem.emailAddress());
+    testsyncAlice.saveDetail(&tsaem);
+    QVERIFY(m_cm->saveContact(&testsyncAlice)); // should get aggregated into aggregateAlice.
+    aggregateAlice = m_cm->contact(retrievalId(aggregateAlice)); // reload
+    QCOMPARE(aggregateAlice.details<QContactBirthday>().size(), 1); // should still only have one birthday - local should take precedence.
+    QVERIFY(aggregateAlice.detail<QContactBirthday>().dateTime() == aliceBirthday);
+    aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
 
     // test uniqueness constraint of name detail.
     QVERIFY(aggregateAlice.details<QContactName>().size() == 1);
@@ -1135,6 +1174,7 @@ void tst_Aggregation::uniquenessConstraints()
     anotherName.setMiddleName("Middle");
     QVERIFY(aggregateAlice.saveDetail(&anotherName));
     QVERIFY(m_cm->saveContact(&aggregateAlice));
+    aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
 
     // test uniqueness (and read-only) constraint of sync target.
     QVERIFY(aggregateAlice.details<QContactSyncTarget>().size() == 1);
@@ -1153,6 +1193,7 @@ void tst_Aggregation::uniquenessConstraints()
     ast = aggregateAlice.detail<QContactSyncTarget>();
     ast.setSyncTarget("aggregate"); // reset the state.
     QVERIFY(aggregateAlice.saveDetail(&ast));
+    aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
 
     // test uniqueness constraint of timestamp detail.
     // Timestamp is a bit special, since if no values exist, we don't synthesise it,
@@ -1184,6 +1225,7 @@ void tst_Aggregation::uniquenessConstraints()
     if (hasCreatedTs) {
         QCOMPARE(m_cm->contact(retrievalId(aggregateAlice)).detail<QContactTimestamp>().created(), testDt);
     }
+    aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
 
     // test uniqueness constraint of guid detail.  Guid is a bit special, as it's not in the main table.
     QVERIFY(aggregateAlice.details<QContactGuid>().size() == 0);
@@ -1203,6 +1245,7 @@ void tst_Aggregation::uniquenessConstraints()
     QVERIFY(aggregateAlice.saveDetail(&ag2));
     QVERIFY(m_cm->saveContact(&aggregateAlice)); // this now updates the original guid.
     QCOMPARE(aggregateAlice.detail<QContactGuid>().guid(), QLatin1String("second-unique-guid"));
+    aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
 }
 
 void tst_Aggregation::removeSingleLocal()

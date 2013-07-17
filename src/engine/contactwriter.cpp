@@ -1917,6 +1917,9 @@ static void promoteDetailsToLocal(const QList<QContactDetail> addDelta, const QL
         } else if (detailType(det) == detailType<QContactFavorite>()) {
             detToRemove = localContact->detail<QContactFavorite>();
             localContact->removeDetail(&detToRemove);
+        } else if (detailType(det) == detailType<QContactBirthday>()) {
+            detToRemove = localContact->detail<QContactBirthday>();
+            localContact->removeDetail(&detToRemove);
         } else {
             // all other details are just removed directly.
             bool found = false;
@@ -2003,6 +2006,10 @@ static void promoteDetailsToLocal(const QList<QContactDetail> addDelta, const QL
             QContactFavorite lf = localContact->detail<QContactFavorite>();
             lf.setFavorite(det.value<bool>(QContactFavorite::FieldFavorite));
             localContact->saveDetail(&lf);
+        } else if (detailType(det) == detailType<QContactBirthday>()) {
+            QContactBirthday bd = localContact->detail<QContactBirthday>();
+            bd.setDateTime(det.value<QDateTime>(QContactBirthday::FieldBirthday));
+            localContact->saveDetail(&bd);
         } else {
             // other details can be saved to the local contact (if they don't already exist).
             adjustDetailUrisForLocal(det);
@@ -2292,6 +2299,14 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
             if (cf.isFavorite() && !af.isFavorite()) {
                 af.setFavorite(true);
                 aggregate->saveDetail(&af);
+            }
+        } else if (detailType(currDet) == detailType<QContactBirthday>()) {
+            // birthday involves composition (at least, it's unique)
+            QContactBirthday cb(currDet);
+            QContactBirthday ab(aggregate->detail<QContactBirthday>());
+            if (!ab.dateTime().isValid() && cb.dateTime().isValid()) {
+                ab.setDateTime(cb.dateTime());
+                aggregate->saveDetail(&ab);
             }
         } else {
             // All other details involve duplication.
