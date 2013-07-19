@@ -372,11 +372,20 @@ static const char *createLocalSelfContact =
         "\n 0);";
 #endif
 
-static const char *createContactsIndex =
-        "\n CREATE INDEX ContactsIndex ON Contacts(syncTarget, lowerFirstName, lowerLastName);";
+static const char *createContactsSyncTargetIndex =
+        "\n CREATE INDEX ContactsSyncTargetIndex ON Contacts(syncTarget);";
 
-static const char *createRelationshipsIndex =
-        "\n CREATE INDEX RelationshipsIndex ON Relationships(firstId, secondId);";
+static const char *createContactsFirstNameIndex =
+        "\n CREATE INDEX ContactsFirstNameIndex ON Contacts(lowerFirstName);";
+
+static const char *createContactsLastNameIndex =
+        "\n CREATE INDEX ContactsLastNameIndex ON Contacts(lowerLastName);";
+
+static const char *createRelationshipsFirstIdIndex =
+        "\n CREATE INDEX RelationshipsFirstIdIndex ON Relationships(firstId);";
+
+static const char *createRelationshipsSecondIdIndex =
+        "\n CREATE INDEX RelationshipsSecondIdIndex ON Relationships(secondId);";
 
 static const char *createPhoneNumbersIndex =
         "\n CREATE INDEX PhoneNumbersIndex ON PhoneNumbers(normalizedNumber);";
@@ -390,8 +399,11 @@ static const char *createOnlineAccountsIndex =
 static const char *createNicknamesIndex =
         "\n CREATE INDEX NicknamesIndex ON Nicknames(lowerNickname);";
 
-static const char *createTpMetadataIndex =
-        "\n CREATE INDEX TpMetadataIndex ON TpMetadata(telepathyId, accountId);";
+static const char *createTpMetadataTelepathyIdIndex =
+        "\n CREATE INDEX TpMetadataTelepathyIdIndex ON TpMetadata(telepathyId);";
+
+static const char *createTpMetadataAccountIdIndex =
+        "\n CREATE INDEX TpMetadataAccountIdIndex ON TpMetadata(accountId);";
 
 static const char *createTables[] =
 {
@@ -425,13 +437,17 @@ static const char *createTables[] =
     createAggregateSelfContact,
     createSelfContactRelationship,
 #endif
-    createContactsIndex,
-    createRelationshipsIndex,
+    createContactsSyncTargetIndex,
+    createContactsFirstNameIndex,
+    createContactsLastNameIndex,
+    createRelationshipsFirstIdIndex,
+    createRelationshipsSecondIdIndex,
     createPhoneNumbersIndex,
     createEmailAddressesIndex,
     createOnlineAccountsIndex,
     createNicknamesIndex,
-    createTpMetadataIndex
+    createTpMetadataTelepathyIdIndex,
+    createTpMetadataAccountIdIndex
 };
 
 template <typename T, int N> static int lengthOf(const T(&)[N]) { return N; }
