@@ -6,7 +6,7 @@ TARGET = qtcontacts_sqlite
 
 QT += sql dbus
 
-CONFIG += plugin
+CONFIG += plugin hide_symbols
 PLUGIN_TYPE=contacts
 
 # we hardcode this for Qt4 as there's no GenericDataLocation offered by QDesktopServices
