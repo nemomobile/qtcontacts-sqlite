@@ -2456,8 +2456,18 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
     matchingAggregate = saveContactList.at(0);
 
     // add the relationship and save in the database.
-    saveRelationshipList.append(makeRelationship(relationshipString(QContactRelationship::Aggregates), matchingAggregate.id(), contact->id()));
-    err = save(saveRelationshipList, &errorMap, withinTransaction);
+    // Note: we DON'T use the existing save(relationshipList, ...) function
+    // as it does (expensive) aggregate regeneration which we have already
+    // done above (via the detail promotion and aggregate save).
+    // Instead, we simply add the "aggregates" relationship directly.
+    m_insertRelationship.bindValue(":firstId", ContactId::databaseId(matchingAggregate));
+    m_insertRelationship.bindValue(":secondId", ContactId::databaseId(*contact));
+    m_insertRelationship.bindValue(":type", relationshipString(QContactRelationship::Aggregates));
+    if (!m_insertRelationship.exec()) {
+        qWarning() << "error inserting Aggregates relationship: " << m_insertRelationship.lastError();
+        err = QContactManager::UnspecifiedError;
+    }
+
     if (err != QContactManager::NoError) {
         // if the aggregation relationship fails, the entire save has failed.
         qWarning() << "Unable to save aggregation relationship!";
