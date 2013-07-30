@@ -450,7 +450,12 @@ static const char *createTables[] =
     createTpMetadataAccountIdIndex
 };
 
-template <typename T, int N> static int lengthOf(const T(&)[N]) { return N; }
+struct ExtraColumn {
+    const char *table;
+    const char *name;
+    const char *definition;
+    bool (*postInstall)(QSqlDatabase &);
+};
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {
@@ -462,6 +467,90 @@ static bool execute(QSqlDatabase &database, const QString &statement)
         return false;
     } else {
         return true;
+    }
+}
+
+static const ExtraColumn *extraColumns[] =
+{
+};
+
+static bool addColumn(const ExtraColumn *columnDef, QSqlDatabase &database)
+{
+    static const QLatin1String sql("ALTER TABLE %1 ADD COLUMN %2 %3");
+
+    QString statement(QString(sql).arg(QString::fromLatin1(columnDef->table), QString::fromLatin1(columnDef->name), QString::fromLatin1(columnDef->definition)));
+    return execute(database, statement);
+}
+
+static QStringList findExistingColumns(const char *table, QSqlDatabase &database)
+{
+    static const QLatin1String sql("SELECT sql FROM sqlite_master WHERE type = 'table' and name = '%1'");
+
+    QString statement(QString(sql).arg(QString::fromLatin1(table)));
+
+    QSqlQuery query(database);
+    if (!query.exec(statement)) {
+        qWarning() << "Unable to query columns for:" << table;
+    } else if (query.next()) {
+        QString tableDef = query.value(0).toString();
+
+        int index = tableDef.indexOf(QChar::fromLatin1('('));
+        int lastIndex = tableDef.lastIndexOf(QChar::fromLatin1(')'));
+        if (index != -1 && lastIndex != -1) {
+            QStringList columnDefs = tableDef.mid(index + 1, lastIndex - index - 1).split(QChar::fromLatin1(','));
+
+            QStringList names;
+            foreach (const QString &col, columnDefs) {
+                QString columnDef = col.trimmed();
+
+                index = columnDef.indexOf(QChar::fromLatin1(' '));
+                names.append(index == -1 ? columnDef : columnDef.left(index));
+            }
+
+            return names;
+        }
+    }
+
+    return QStringList();
+}
+
+template <typename T> static int lengthOf(T) { return 0; }
+template <typename T, int N> static int lengthOf(const T(&)[N]) { return N; }
+
+static bool upgradeDatabase(QSqlDatabase &database)
+{
+    if (!database.transaction())
+        return false;
+
+    bool error = false;
+    for (int i = 0; i < lengthOf(extraColumns); ++i) {
+        const ExtraColumn *column = extraColumns[i];
+
+        QStringList existingColumns = findExistingColumns(column->table, database);
+        if (!existingColumns.contains(column->name)) {
+            if (!addColumn(column, database)) {
+                qWarning() << "Unable to add column:" << column->name << "to table:" << column->table;
+                error = true;
+            } else if (column->postInstall) {
+                if (!(*column->postInstall)(database)) {
+                    qWarning() << "Unable to run post install function for column:" << column->name << "in table:" << column->table;
+                    error = true;
+                }
+            }
+
+            if (error) {
+                break;
+            } else {
+                qDebug() << "Added column:" << column->name << "to table:" << column->table;
+            }
+        }
+    }
+
+    if (error) {
+        database.rollback();
+        return false;
+    } else {
+        return database.commit();
     }
 }
 
@@ -542,6 +631,8 @@ QSqlDatabase ContactsDatabase::open(const QString &databaseName)
 
         return database;
     } else {
+        upgradeDatabase(database);
+
         database.exec(QLatin1String(setupTempStore));
         database.exec(QLatin1String(setupJournal));
     }
