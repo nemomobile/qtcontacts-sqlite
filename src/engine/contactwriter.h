@@ -119,7 +119,7 @@ private:
     QContactManager::Error aggregateOrphanedContacts(bool withinTransaction);
 #endif
 
-    void bindContactDetails(const QContact &contact, QSqlQuery &query);
+    void bindContactDetails(const QContact &contact, QSqlQuery &query, const DetailList &definitionMask, bool update);
 
     template <typename T> bool writeDetails(
             quint32 contactId,

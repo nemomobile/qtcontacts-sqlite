@@ -883,6 +883,12 @@ void tst_QContactManager::add()
         QCOMPARE(added, alice);
     }
 
+    // Verify that the computed properties are correct
+    QContactStatusFlags flags = added.detail<QContactStatusFlags>();
+    QCOMPARE(flags.testFlag(QContactStatusFlags::HasPhoneNumber), true);
+    QCOMPARE(flags.testFlag(QContactStatusFlags::HasEmailAddress), false);
+    QCOMPARE(flags.testFlag(QContactStatusFlags::HasOnlineAccount), false);
+
     // now try adding a contact that does not exist in the database with non-zero id
     if (cm->managerName() == "symbiansim") {
         // TODO: symbiansim backend fails this test currently. Will be fixed later.
@@ -1223,6 +1229,11 @@ void tst_QContactManager::update()
     QCOMPARE(updatedName, name);
     QCOMPARE(cm->contacts().size(), contactCount); // contact count should be the same, no new contacts
 
+    QContactStatusFlags flags = updated.detail<QContactStatusFlags>();
+    QCOMPARE(flags.testFlag(QContactStatusFlags::HasPhoneNumber), true);
+    QCOMPARE(flags.testFlag(QContactStatusFlags::HasEmailAddress), false);
+    QCOMPARE(flags.testFlag(QContactStatusFlags::HasOnlineAccount), false);
+
     /* Test that adding a new detail doesn't cause unwanted side effects */
     int detailCount = alice.details().size();
     QContactEmailAddress email;
@@ -1231,9 +1242,15 @@ void tst_QContactManager::update()
     QVERIFY(cm->saveContact(&alice));
     QCOMPARE(cm->contacts().size(), contactCount); // contact count shoudl be the same, no new contacts
 
-    // This test is dangerous, since backends can add timestamps etc...
+    // This test is imprecise, since backends can add timestamps etc...
     detailCount += 1;
-    QCOMPARE(detailCount, alice.details().size()); // adding a detail should cause the detail count to increase by one.
+    updated = cm->contact(retrievalId(alice));
+    QVERIFY(updated.details().size() >= detailCount);
+
+    flags = updated.detail<QContactStatusFlags>();
+    QCOMPARE(flags.testFlag(QContactStatusFlags::HasPhoneNumber), true);
+    QCOMPARE(flags.testFlag(QContactStatusFlags::HasEmailAddress), true);
+    QCOMPARE(flags.testFlag(QContactStatusFlags::HasOnlineAccount), false);
 
     /* Test that removal of fields in a detail works */
     QContactPhoneNumber phn = alice.detail<QContactPhoneNumber>();
@@ -1265,6 +1282,11 @@ void tst_QContactManager::update()
     alice = cm->contact(retrievalId(alice)); // force reload of (persisted) alice
     QVERIFY(alice.details<QContactPhoneNumber>().isEmpty()); // no such detail.
     QCOMPARE(cm->contacts().size(), contactCount); // removal of a detail shouldn't affect the contact count
+
+    flags = alice.detail<QContactStatusFlags>();
+    QCOMPARE(flags.testFlag(QContactStatusFlags::HasPhoneNumber), false);
+    QCOMPARE(flags.testFlag(QContactStatusFlags::HasEmailAddress), true);
+    QCOMPARE(flags.testFlag(QContactStatusFlags::HasOnlineAccount), false);
 
     // This test is dangerous, since backends can add timestamps etc...
     //detailCount -= 1;

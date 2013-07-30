@@ -35,6 +35,7 @@
 
 #include "qtcontacts-extensions.h"
 #include "QContactOriginMetadata"
+#include "QContactStatusFlags"
 
 #include <QContactAddress>
 #include <QContactAnniversary>
@@ -1703,6 +1704,13 @@ QContactManager::Error ContactReader::queryContacts(
             setValue(&favorite, QContactFavorite::FieldFavorite, query.value(14).toBool());
             if (!favorite.isEmpty())
                 contact.saveDetail(&favorite);
+
+            QContactStatusFlags flags;
+            flags.setFlag(QContactStatusFlags::HasPhoneNumber, query.value(15).toBool());
+            flags.setFlag(QContactStatusFlags::HasEmailAddress, query.value(16).toBool());
+            flags.setFlag(QContactStatusFlags::HasOnlineAccount, query.value(17).toBool());
+            QContactManagerEngine::setDetailAccessConstraints(&flags, QContactDetail::ReadOnly | QContactDetail::Irremovable);
+            contact.saveDetail(&flags);
 
             contacts->append(contact);
         }

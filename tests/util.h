@@ -57,6 +57,12 @@
 
 #include "qtcontacts-extensions.h"
 
+#include "qcontactoriginmetadata.h"
+#include "qcontactoriginmetadata_impl.h"
+
+#include "qcontactstatusflags.h"
+#include "qcontactstatusflags_impl.h"
+
 // qtpim Contacts does not support all the feaures of QtMobility Contacts
 #ifndef USING_QTPIM
 #define DETAIL_DEFINITION_SUPPORTED

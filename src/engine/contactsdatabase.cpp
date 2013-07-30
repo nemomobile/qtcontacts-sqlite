@@ -64,7 +64,10 @@ static const char *createContactsTable =
         "\n created DATETIME,"
         "\n modified DATETIME,"
         "\n gender TEXT,"
-        "\n isFavorite BOOL);";
+        "\n isFavorite BOOL,"
+        "\n hasPhoneNumber BOOL DEFAULT 0,"
+        "\n hasEmailAddress BOOL DEFAULT 0,"
+        "\n hasOnlineAccount BOOL DEFAULT 0);";
 
 static const char *createAddressesTable =
         "\n CREATE TABLE Addresses ("
@@ -450,7 +453,12 @@ static const char *createTables[] =
     createTpMetadataAccountIdIndex
 };
 
-template <typename T, int N> static int lengthOf(const T(&)[N]) { return N; }
+struct ExtraColumn {
+    const char *table;
+    const char *name;
+    const char *definition;
+    bool (*postInstall)(QSqlDatabase &);
+};
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {
@@ -462,6 +470,124 @@ static bool execute(QSqlDatabase &database, const QString &statement)
         return false;
     } else {
         return true;
+    }
+}
+
+static bool setContactsHasDetail(QSqlDatabase &database, const QString &column, const QString &table)
+{
+    QString statement = QString::fromLatin1(
+        "UPDATE Contacts "
+        "SET %1 = 1 "
+        "WHERE contactId in (SELECT DISTINCT contactId FROM %2);");
+
+    return execute(database, statement.arg(column).arg(table));
+}
+
+static bool setContactsHasPhoneNumber(QSqlDatabase &database)
+{
+    return setContactsHasDetail(database, QString::fromLatin1("hasPhoneNumber"), QString::fromLatin1("PhoneNumbers"));
+}
+
+static const ExtraColumn contactsHasPhoneNumber = { "Contacts", "hasPhoneNumber", "BOOL", &setContactsHasPhoneNumber };
+
+static bool setContactsHasEmailAddress(QSqlDatabase &database)
+{
+    return setContactsHasDetail(database, QString::fromLatin1("hasEmailAddress"), QString::fromLatin1("EmailAddresses"));
+}
+
+static const ExtraColumn contactsHasEmailAddress = { "Contacts", "hasEmailAddress", "BOOL", &setContactsHasEmailAddress };
+
+static bool setContactsHasOnlineAccount(QSqlDatabase &database)
+{
+    return setContactsHasDetail(database, QString::fromLatin1("hasOnlineAccount"), QString::fromLatin1("OnlineAccounts"));
+}
+
+static const ExtraColumn contactsHasOnlineAccount = { "Contacts", "hasOnlineAccount", "BOOL", &setContactsHasOnlineAccount };
+
+static const ExtraColumn *extraColumns[] =
+{
+    &contactsHasPhoneNumber,
+    &contactsHasEmailAddress,
+    &contactsHasOnlineAccount
+};
+
+static bool addColumn(const ExtraColumn *columnDef, QSqlDatabase &database)
+{
+    static const QLatin1String sql("ALTER TABLE %1 ADD COLUMN %2 %3");
+
+    QString statement(QString(sql).arg(QString::fromLatin1(columnDef->table), QString::fromLatin1(columnDef->name), QString::fromLatin1(columnDef->definition)));
+    return execute(database, statement);
+}
+
+static QStringList findExistingColumns(const char *table, QSqlDatabase &database)
+{
+    static const QLatin1String sql("SELECT sql FROM sqlite_master WHERE type = 'table' and name = '%1'");
+
+    QString statement(QString(sql).arg(QString::fromLatin1(table)));
+
+    QSqlQuery query(database);
+    if (!query.exec(statement)) {
+        qWarning() << "Unable to query columns for:" << table;
+    } else if (query.next()) {
+        QString tableDef = query.value(0).toString();
+
+        int index = tableDef.indexOf(QChar::fromLatin1('('));
+        int lastIndex = tableDef.lastIndexOf(QChar::fromLatin1(')'));
+        if (index != -1 && lastIndex != -1) {
+            QStringList columnDefs = tableDef.mid(index + 1, lastIndex - index - 1).split(QChar::fromLatin1(','));
+
+            QStringList names;
+            foreach (const QString &col, columnDefs) {
+                QString columnDef = col.trimmed();
+
+                index = columnDef.indexOf(QChar::fromLatin1(' '));
+                names.append(index == -1 ? columnDef : columnDef.left(index));
+            }
+
+            return names;
+        }
+    }
+
+    return QStringList();
+}
+
+template <typename T> static int lengthOf(T) { return 0; }
+template <typename T, int N> static int lengthOf(const T(&)[N]) { return N; }
+
+static bool upgradeDatabase(QSqlDatabase &database)
+{
+    if (!database.transaction())
+        return false;
+
+    bool error = false;
+    for (int i = 0; i < lengthOf(extraColumns); ++i) {
+        const ExtraColumn *column = extraColumns[i];
+
+        QStringList existingColumns = findExistingColumns(column->table, database);
+        if (!existingColumns.contains(column->name)) {
+            if (!addColumn(column, database)) {
+                qWarning() << "Unable to add column:" << column->name << "to table:" << column->table;
+                error = true;
+            } else if (column->postInstall) {
+                if (!(*column->postInstall)(database)) {
+                    qWarning() << "Unable to run post install function for column:" << column->name << "in table:" << column->table;
+                    error = true;
+                }
+            }
+
+            if (error) {
+                break;
+            } else {
+                qDebug() << "Added column:" << column->name << "to table:" << column->table;
+            }
+        }
+    }
+
+    if (error) {
+        database.rollback();
+        return false;
+    } else {
+        return database.commit();
     }
 }
 
@@ -542,6 +668,8 @@ QSqlDatabase ContactsDatabase::open(const QString &databaseName)
 
         return database;
     } else {
+        upgradeDatabase(database);
+
         database.exec(QLatin1String(setupTempStore));
         database.exec(QLatin1String(setupJournal));
     }
@@ -624,3 +752,4 @@ QString ContactsDatabase::expandQuery(const QSqlQuery &query)
 }
 
 #include "qcontactoriginmetadata_impl.h"
+#include "qcontactstatusflags_impl.h"
