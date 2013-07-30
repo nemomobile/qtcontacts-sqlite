@@ -37,6 +37,8 @@
 #include "conversion_p.h"
 #include "semaphore_p.h"
 
+#include <QContactStatusFlags>
+
 #include <QContactFavorite>
 #include <QContactGender>
 #include <QContactGlobalPresence>
@@ -131,7 +133,10 @@ static const char *insertContact =
         "\n  created,"
         "\n  modified,"
         "\n  gender,"
-        "\n  isFavorite)"
+        "\n  isFavorite,"
+        "\n  hasPhoneNumber,"
+        "\n  hasEmailAddress,"
+        "\n  hasOnlineAccount)"
         "\n VALUES ("
         "\n  :displayLabel,"
         "\n  :firstName,"
@@ -146,7 +151,10 @@ static const char *insertContact =
         "\n  :created,"
         "\n  :modified,"
         "\n  :gender,"
-        "\n  :isFavorite);";
+        "\n  :isFavorite,"
+        "\n  :hasPhoneNumber,"
+        "\n  :hasEmailAccount,"
+        "\n  :hasOnlineAccount);";
 
 static const char *updateContact =
         "\n UPDATE Contacts SET"
@@ -163,7 +171,10 @@ static const char *updateContact =
         "\n  created = :created,"
         "\n  modified = :modified,"
         "\n  gender = :gender,"
-        "\n  isFavorite = :isFavorite"
+        "\n  isFavorite = :isFavorite,"
+        "\n  hasPhoneNumber = CASE WHEN :valueKnown = 1 THEN :value ELSE hasPhoneNumber END, "
+        "\n  hasEmailAddress = CASE WHEN :valueKnown = 1 THEN :value ELSE hasEmailAddress END, "
+        "\n  hasOnlineAccount = CASE WHEN :valueKnown = 1 THEN :value ELSE hasOnlineAccount END "
         "\n WHERE contactId = :contactId;";
 
 static const char *removeContact =
@@ -1302,6 +1313,7 @@ QMap<QContactDetail::DetailType, const char *> getDetailTypeNames()
 
     // Our extensions:
     INSERT(rv, QContactOriginMetadata);
+    INSERT(rv, QContactStatusFlags);
 
     return rv;
 }
@@ -1739,6 +1751,7 @@ static ContactWriter::DetailList allSupportedDetails()
     appendDetailType<QContactNote>(&details);
     appendDetailType<QContactOrganization>(&details);
     appendDetailType<QContactRingtone>(&details);
+    appendDetailType<QContactStatusFlags>(&details);
 
     return details;
 }
@@ -1756,6 +1769,7 @@ static ContactWriter::DetailList allSingularDetails()
     appendDetailType<QContactTimestamp>(&details);
     appendDetailType<QContactBirthday>(&details);
     appendDetailType<QContactOriginMetadata>(&details);
+    appendDetailType<QContactStatusFlags>(&details);
 
     return details;
 }
@@ -1899,26 +1913,20 @@ static void promoteDetailsToLocal(const QList<QContactDetail> addDelta, const QL
         if (detailType(det) == detailType<QContactGuid>() ||
             detailType(det) == detailType<QContactSyncTarget>() ||
             detailType(det) == detailType<QContactDisplayLabel>() ||
+            detailType(det) == detailType<QContactStatusFlags>() ||
             (!definitionMask.isEmpty() && !detailListContains(definitionMask, det))) {
             continue; // don't remove these details.  They cannot apply to the local contact.
         }
 
         // handle unique details specifically.
         QContactDetail detToRemove;
-        if (detailType(det) == detailType<QContactName>()) {
-            detToRemove = localContact->detail<QContactName>();
-            localContact->removeDetail(&detToRemove);
-        } else if (detailType(det) == detailType<QContactTimestamp>()) {
-            detToRemove = localContact->detail<QContactTimestamp>();
-            localContact->removeDetail(&detToRemove);
-        } else if (detailType(det) == detailType<QContactGender>()) {
-            detToRemove = localContact->detail<QContactGender>();
-            localContact->removeDetail(&detToRemove);
-        } else if (detailType(det) == detailType<QContactFavorite>()) {
-            detToRemove = localContact->detail<QContactFavorite>();
-            localContact->removeDetail(&detToRemove);
-        } else if (detailType(det) == detailType<QContactBirthday>()) {
-            detToRemove = localContact->detail<QContactBirthday>();
+        if ((detailType(det) == detailType<QContactName>()) ||
+            (detailType(det) == detailType<QContactTimestamp>()) ||
+            (detailType(det) == detailType<QContactGender>()) ||
+            (detailType(det) == detailType<QContactFavorite>()) ||
+            (detailType(det) == detailType<QContactBirthday>()) ||
+            (detailType(det) == detailType<QContactStatusFlags>())) {
+            detToRemove = localContact->detail(detailType(det));
             localContact->removeDetail(&detToRemove);
         } else {
             // all other details are just removed directly.
@@ -1963,6 +1971,7 @@ static void promoteDetailsToLocal(const QList<QContactDetail> addDelta, const QL
         if (detailType(det) == detailType<QContactGuid>() ||
             detailType(det) == detailType<QContactSyncTarget>() ||
             detailType(det) == detailType<QContactDisplayLabel>() ||
+            detailType(det) == detailType<QContactStatusFlags>() ||
             (!definitionMask.isEmpty() && !detailListContains(definitionMask, det))) {
             continue; // don't save these details.  Guid MUST be globally unique.
         }
@@ -2216,6 +2225,7 @@ static ContactWriter::DetailList getUnpromotedDetailTypes()
     ContactWriter::DetailList rv(getIdentityDetailTypes());
     rv << detailType<QContactDisplayLabel>();
     rv << detailType<QContactGlobalPresence>();
+    rv << detailType<QContactStatusFlags>();
     return rv;
 }
 
@@ -2722,7 +2732,7 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
     // update the display label for this contact
     m_engine.regenerateDisplayLabel(*contact);
 
-    bindContactDetails(*contact, m_insertContact);
+    bindContactDetails(*contact, m_insertContact, DetailList(), false);
     if (!m_insertContact.exec()) {
         qWarning() << "Failed to create contact";
         qWarning() << m_insertContact.lastError();
@@ -2818,8 +2828,8 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
     // update the display label for this contact
     m_engine.regenerateDisplayLabel(*contact);
 
-    bindContactDetails(*contact, m_updateContact);
-    m_updateContact.bindValue(14, contactId);
+    bindContactDetails(*contact, m_updateContact, definitionMask, true);
+    m_updateContact.bindValue(20, contactId);
     if (!m_updateContact.exec()) {
         qWarning() << "Failed to update contact";
         qWarning() << m_updateContact.lastError();
@@ -2881,7 +2891,7 @@ QContactManager::Error ContactWriter::write(quint32 contactId, QContact *contact
     return error;
 }
 
-void ContactWriter::bindContactDetails(const QContact &contact, QSqlQuery &query)
+void ContactWriter::bindContactDetails(const QContact &contact, QSqlQuery &query, const DetailList &definitionMask, bool update)
 {
 #ifdef USING_QTPIM
     QContactDisplayLabel label = contact.detail<QContactDisplayLabel>();
@@ -2927,6 +2937,34 @@ void ContactWriter::bindContactDetails(const QContact &contact, QSqlQuery &query
 
     QContactFavorite favorite = contact.detail<QContactFavorite>();
     query.bindValue(13, favorite.isFavorite());
+
+    // Does this contact contain the information needed to update hasPhoneNumber?
+    bool valueKnown = definitionMask.isEmpty() || detailListContains<QContactPhoneNumber>(definitionMask);
+    bool value = valueKnown ? !contact.detail<QContactPhoneNumber>().isEmpty() : false;
+    if (update) {
+        query.bindValue(14, valueKnown);
+        query.bindValue(15, value);
+    } else {
+        query.bindValue(14, value);
+    }
+
+    valueKnown = definitionMask.isEmpty() || detailListContains<QContactEmailAddress>(definitionMask);
+    value = valueKnown ? !contact.detail<QContactEmailAddress>().isEmpty() : false;
+    if (update) {
+        query.bindValue(16, valueKnown);
+        query.bindValue(17, value);
+    } else {
+        query.bindValue(15, value);
+    }
+
+    valueKnown = definitionMask.isEmpty() || detailListContains<QContactOnlineAccount>(definitionMask);
+    value = valueKnown ? !contact.detail<QContactOnlineAccount>().isEmpty() : false;
+    if (update) {
+        query.bindValue(18, valueKnown);
+        query.bindValue(19, value);
+    } else {
+        query.bindValue(16, value);
+    }
 }
 
 QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactAddress &detail)

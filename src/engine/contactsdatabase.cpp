@@ -64,7 +64,10 @@ static const char *createContactsTable =
         "\n created DATETIME,"
         "\n modified DATETIME,"
         "\n gender TEXT,"
-        "\n isFavorite BOOL);";
+        "\n isFavorite BOOL,"
+        "\n hasPhoneNumber BOOL DEFAULT 0,"
+        "\n hasEmailAddress BOOL DEFAULT 0,"
+        "\n hasOnlineAccount BOOL DEFAULT 0);";
 
 static const char *createAddressesTable =
         "\n CREATE TABLE Addresses ("
@@ -470,8 +473,42 @@ static bool execute(QSqlDatabase &database, const QString &statement)
     }
 }
 
+static bool setContactsHasDetail(QSqlDatabase &database, const QString &column, const QString &table)
+{
+    QString statement = QString::fromLatin1(
+        "UPDATE Contacts "
+        "SET %1 = 1 "
+        "WHERE contactId in (SELECT DISTINCT contactId FROM %2);");
+
+    return execute(database, statement.arg(column).arg(table));
+}
+
+static bool setContactsHasPhoneNumber(QSqlDatabase &database)
+{
+    return setContactsHasDetail(database, QString::fromLatin1("hasPhoneNumber"), QString::fromLatin1("PhoneNumbers"));
+}
+
+static const ExtraColumn contactsHasPhoneNumber = { "Contacts", "hasPhoneNumber", "BOOL", &setContactsHasPhoneNumber };
+
+static bool setContactsHasEmailAddress(QSqlDatabase &database)
+{
+    return setContactsHasDetail(database, QString::fromLatin1("hasEmailAddress"), QString::fromLatin1("EmailAddresses"));
+}
+
+static const ExtraColumn contactsHasEmailAddress = { "Contacts", "hasEmailAddress", "BOOL", &setContactsHasEmailAddress };
+
+static bool setContactsHasOnlineAccount(QSqlDatabase &database)
+{
+    return setContactsHasDetail(database, QString::fromLatin1("hasOnlineAccount"), QString::fromLatin1("OnlineAccounts"));
+}
+
+static const ExtraColumn contactsHasOnlineAccount = { "Contacts", "hasOnlineAccount", "BOOL", &setContactsHasOnlineAccount };
+
 static const ExtraColumn *extraColumns[] =
 {
+    &contactsHasPhoneNumber,
+    &contactsHasEmailAddress,
+    &contactsHasOnlineAccount
 };
 
 static bool addColumn(const ExtraColumn *columnDef, QSqlDatabase &database)
@@ -715,3 +752,4 @@ QString ContactsDatabase::expandQuery(const QSqlQuery &query)
 }
 
 #include "qcontactoriginmetadata_impl.h"
+#include "qcontactstatusflags_impl.h"

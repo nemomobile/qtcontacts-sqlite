@@ -79,6 +79,9 @@ static const int QContactAvatar__FieldAvatarMetadata = (QContactAvatar::FieldVid
 // We support the QContactOriginMetadata detail type
 static const QContactDetail::DetailType QContactDetail__TypeOriginMetadata = static_cast<QContactDetail::DetailType>(QContactDetail::TypeVersion + 1);
 
+// We support the QContactStatusFlags detail type
+static const QContactDetail::DetailType QContactDetail__TypeStatusFlags = static_cast<QContactDetail::DetailType>(QContactDetail::TypeVersion + 2);
+
 #else
 // Declared as static:
 Q_DECLARE_LATIN1_CONSTANT(QContactDetail__ContextDefault, "Default") = { "Default" };
