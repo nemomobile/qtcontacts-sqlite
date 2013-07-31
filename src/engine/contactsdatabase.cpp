@@ -230,6 +230,43 @@ static const char *createDetailsJoinIndex =
 static const char *createDetailsRemoveIndex =
         "\n CREATE INDEX DetailsRemoveIndex ON Details(contactId, detail);";
 
+static const char *createAddressesDetailsContactIdIndex =
+        "\n CREATE INDEX createAddressesDetailsContactIdIndex ON Addresses(contactId);";
+static const char *createAnniversariesDetailsContactIdIndex =
+        "\n CREATE INDEX createAnniversariesDetailsContactIdIndex ON Anniversaries(contactId);";
+static const char *createAvatarsDetailsContactIdIndex =
+        "\n CREATE INDEX createAvatarsDetailsContactIdIndex ON Avatars(contactId);";
+static const char *createBirthdaysDetailsContactIdIndex =
+        "\n CREATE INDEX createBirthdaysDetailsContactIdIndex ON Birthdays(contactId);";
+static const char *createEmailAddressesDetailsContactIdIndex =
+        "\n CREATE INDEX createEmailAddressesDetailsContactIdIndex ON EmailAddresses(contactId);";
+static const char *createGlobalPresencesDetailsContactIdIndex =
+        "\n CREATE INDEX createGlobalPresencesDetailsContactIdIndex ON GlobalPresences(contactId);";
+static const char *createGuidsDetailsContactIdIndex =
+        "\n CREATE INDEX createGuidsDetailsContactIdIndex ON Guids(contactId);";
+static const char *createHobbiesDetailsContactIdIndex =
+        "\n CREATE INDEX createHobbiesDetailsContactIdIndex ON Hobbies(contactId);";
+static const char *createNicknamesDetailsContactIdIndex =
+        "\n CREATE INDEX createNicknamesDetailsContactIdIndex ON Nicknames(contactId);";
+static const char *createNotesDetailsContactIdIndex =
+        "\n CREATE INDEX createNotesDetailsContactIdIndex ON Notes(contactId);";
+static const char *createOnlineAccountsDetailsContactIdIndex =
+        "\n CREATE INDEX createOnlineAccountsDetailsContactIdIndex ON OnlineAccounts(contactId);";
+static const char *createOrganizationsDetailsContactIdIndex =
+        "\n CREATE INDEX createOrganizationsDetailsContactIdIndex ON Organizations(contactId);";
+static const char *createPhoneNumbersDetailsContactIdIndex =
+        "\n CREATE INDEX createPhoneNumbersDetailsContactIdIndex ON PhoneNumbers(contactId);";
+static const char *createPresencesDetailsContactIdIndex =
+        "\n CREATE INDEX createPresencesDetailsContactIdIndex ON Presences(contactId);";
+static const char *createRingtonesDetailsContactIdIndex =
+        "\n CREATE INDEX createRingtonesDetailsContactIdIndex ON Ringtones(contactId);";
+static const char *createTagsDetailsContactIdIndex =
+        "\n CREATE INDEX createTagsDetailsContactIdIndex ON Tags(contactId);";
+static const char *createUrlsDetailsContactIdIndex =
+        "\n CREATE INDEX createUrlsDetailsContactIdIndex ON Urls(contactId);";
+static const char *createTpMetadataDetailsContactIdIndex =
+        "\n CREATE INDEX createTpMetadataDetailsContactIdIndex ON TpMetadata(contactId);";
+
 static const char *createIdentitiesTable =
         "\n CREATE Table Identities ("
         "\n identity INTEGER PRIMARY KEY,"
@@ -432,6 +469,24 @@ static const char *createTables[] =
     createDetailsTable,
     createDetailsJoinIndex,
     createDetailsRemoveIndex,
+    createAddressesDetailsContactIdIndex,
+    createAnniversariesDetailsContactIdIndex,
+    createAvatarsDetailsContactIdIndex,
+    createBirthdaysDetailsContactIdIndex,
+    createEmailAddressesDetailsContactIdIndex,
+    createGlobalPresencesDetailsContactIdIndex,
+    createGuidsDetailsContactIdIndex,
+    createHobbiesDetailsContactIdIndex,
+    createNicknamesDetailsContactIdIndex,
+    createNotesDetailsContactIdIndex,
+    createOnlineAccountsDetailsContactIdIndex,
+    createOrganizationsDetailsContactIdIndex,
+    createPhoneNumbersDetailsContactIdIndex,
+    createPresencesDetailsContactIdIndex,
+    createRingtonesDetailsContactIdIndex,
+    createTagsDetailsContactIdIndex,
+    createUrlsDetailsContactIdIndex,
+    createTpMetadataDetailsContactIdIndex,
     createIdentitiesTable,
     createRelationshipsTable,
     createRemoveTrigger,
