@@ -39,6 +39,8 @@
 #include <QContactHobby>
 #include <QContactAvatar>
 #include <QContactAddress>
+#include <QContactPresence>
+#include <QContactNickname>
 #include <QContactDetailFilter>
 #include <QContactFetchHint>
 #include <QCoreApplication>
@@ -253,7 +255,7 @@ int main(int argc, char  *argv[])
     // Time some synchronous operations.  First, generate the test data.
     qsrand((int)asyncTotalElapsed);
     QList<int> nbrContacts;
-    nbrContacts << 10 << 100 << 500 << 1000 << 2000 << 10000;
+    nbrContacts << 10 << 100 << 500 << 1000 << 2000;
     QList<QList<QContact> > testData;
     qDebug() << "\n\n\n\n\n";
     qDebug() << "Generating test data for timings...";
@@ -473,6 +475,49 @@ int main(int argc, char  *argv[])
         ste = syncTimer.elapsed();
         qDebug() << "    removing test data took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
     }
+
+
+    // The next test is about updating existing contacts, amongst a large set.
+    // We're especially interested in presence updates, as these are common.
+    QStringList presenceAvatars = generateAvatarsList();
+    QList<QContact> contactsToUpdate;
+    for (int i = 0; i < 10; ++i) {
+        contactsToUpdate.append(prefillData.at(prefillData.size() - 1 - i));
+    }
+
+    qDebug() << "Performing presence update tests for" << contactsToUpdate.size() << "contacts:";
+    qint64 updatePresenceElapsed = 0;
+    for (int i = 0; i < 5; ++i) { // average it out over 5 runs.
+        // modify the presence, nickname and avatar of the test data
+        for (int j = 0; j < contactsToUpdate.size(); ++j) {
+            QString genstr = QString::number(i) + QString::number(j);
+            QContact curr = contactsToUpdate[j];
+            QContactPresence cp = curr.detail<QContactPresence>();
+            QContactNickname nn = curr.detail<QContactNickname>();
+            QContactAvatar av = curr.detail<QContactAvatar>();
+            cp.setNickname(genstr);
+            cp.setCustomMessage(genstr);
+            cp.setTimestamp(QDateTime::currentDateTime());
+            cp.setPresenceState(static_cast<QContactPresence::PresenceState>(i));
+            nn.setNickname(nn.nickname() + genstr);
+            av.setImageUrl(genstr + presenceAvatars.at(i));
+            curr.saveDetail(&cp);
+            curr.saveDetail(&nn);
+            curr.saveDetail(&av);
+            contactsToUpdate.replace(j, curr);
+        }
+
+        // perform a batch save.
+        syncTimer.start();
+        manager.saveContacts(&contactsToUpdate);
+        qint64 currUpdatePresenceElapsed = syncTimer.elapsed();
+        updatePresenceElapsed += currUpdatePresenceElapsed;
+        qDebug() << "    run" << i << "took" << currUpdatePresenceElapsed << "milliseconds ("
+                 << ((1.0 * currUpdatePresenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per contact )";
+    }
+    updatePresenceElapsed = updatePresenceElapsed / 5.00;
+    qDebug() << "Average time for presence updates (with 1000 existing in database):" << updatePresenceElapsed << "milliseconds ("
+             << ((1.0 * updatePresenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per contact )";
 
     return 0;
 }
