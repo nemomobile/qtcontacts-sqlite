@@ -41,6 +41,8 @@
 #include <QContactAddress>
 #include <QContactPresence>
 #include <QContactNickname>
+#include <QContactOnlineAccount>
+#include <QContactSyncTarget>
 #include <QContactDetailFilter>
 #include <QContactFetchHint>
 #include <QCoreApplication>
@@ -122,7 +124,7 @@ QContact generateContact()
     QContact retn;
     int random = qrand();
 
-    // We always have a name, however.
+    // We always have a name.
     QContactName name;
     name.setFirstName(firstNames.at(random % firstNames.size()));
     if ((random % 6) == 0) name.setMiddleName(middleNames.at(random % middleNames.size()));
@@ -271,6 +273,7 @@ int main(int argc, char  *argv[])
         testData.append(newTestData);
     }
 
+
     // Perform the timings - these all create new contacts and assume an "empty" initial database
     QElapsedTimer syncTimer;
     for (int i = 0; i < testData.size(); ++i) {
@@ -287,7 +290,7 @@ int main(int argc, char  *argv[])
         syncTimer.start();
         QList<QContact> readContacts = manager.contacts(QContactFilter(), QList<QContactSortOrder>(), fh);
         ste = syncTimer.elapsed();
-        qDebug() << "    reading all, all details, took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
+        qDebug() << "    reading all (" << readContacts.size() << "), all details, took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
 
 #ifdef USING_QTPIM
         fh.setDetailTypesHint(QList<QContactDetail::DetailType>() << QContactDisplayLabel::Type
@@ -342,7 +345,7 @@ int main(int argc, char  *argv[])
         syncTimer.start();
         readContacts = manager.contacts(firstNameStartsA, QList<QContactSortOrder>(), fh);
         ste = syncTimer.elapsed();
-        qDebug() << "    reading filtered, no relationships, took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
+        qDebug() << "    reading filtered (" << readContacts.size() << "), no relationships, took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
 
 #ifdef USING_QTPIM
         QList<QContactId> idsToRemove;
@@ -366,8 +369,7 @@ int main(int argc, char  *argv[])
     QList<int> smallerNbrContacts;
     smallerNbrContacts << 1 << 2 << 5 << 10 << 20 << 50;
     QList<QList<QContact> > smallerTestData;
-    qDebug() << "\n\n";
-    qDebug() << "Generating smaller test data for prefilled timings...";
+    qDebug() << "\n\nGenerating smaller test data for prefilled timings...";
     for (int i = 0; i < smallerNbrContacts.size(); ++i) {
         int howMany = smallerNbrContacts.at(i);
         QList<QContact> newTestData;
@@ -387,7 +389,7 @@ int main(int argc, char  *argv[])
     }
     qDebug() << "Prefilling database with" << prefillData.size() << "contacts... this will take a while...";
     manager.saveContacts(&prefillData);
-    qDebug() << "Now performing timings...";
+    qDebug() << "Now performing timings (shouldn't get aggregated)...";
     for (int i = 0; i < smallerTestData.size(); ++i) {
         QList<QContact> td = smallerTestData.at(i);
         qint64 ste = 0;
@@ -402,7 +404,7 @@ int main(int argc, char  *argv[])
         syncTimer.start();
         QList<QContact> readContacts = manager.contacts(QContactFilter(), QList<QContactSortOrder>(), fh);
         ste = syncTimer.elapsed();
-        qDebug() << "    reading all, all details, took" << ste << "milliseconds";
+        qDebug() << "    reading all (" << readContacts.size() << "), all details, took" << ste << "milliseconds";
 
 #ifdef USING_QTPIM
         fh.setDetailTypesHint(QList<QContactDetail::DetailType>() << QContactDisplayLabel::Type
@@ -457,7 +459,7 @@ int main(int argc, char  *argv[])
         syncTimer.start();
         readContacts = manager.contacts(firstNameStartsA, QList<QContactSortOrder>(), fh);
         ste = syncTimer.elapsed();
-        qDebug() << "    reading filtered, no relationships, took" << ste << "milliseconds";
+        qDebug() << "    reading filtered (" << readContacts.size() << "), no relationships, took" << ste << "milliseconds";
 
 #ifdef USING_QTPIM
         QList<QContactId> idsToRemove;
@@ -479,13 +481,13 @@ int main(int argc, char  *argv[])
 
     // The next test is about updating existing contacts, amongst a large set.
     // We're especially interested in presence updates, as these are common.
+    qDebug() << "\n\nPerforming presence update tests:";
     QStringList presenceAvatars = generateAvatarsList();
     QList<QContact> contactsToUpdate;
     for (int i = 0; i < 10; ++i) {
         contactsToUpdate.append(prefillData.at(prefillData.size() - 1 - i));
     }
 
-    qDebug() << "Performing presence update tests for" << contactsToUpdate.size() << "contacts:";
     qint64 updatePresenceElapsed = 0;
     for (int i = 0; i < 5; ++i) { // average it out over 5 runs.
         // modify the presence, nickname and avatar of the test data
@@ -516,8 +518,55 @@ int main(int argc, char  *argv[])
                  << ((1.0 * currUpdatePresenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per contact )";
     }
     updatePresenceElapsed = updatePresenceElapsed / 5.00;
-    qDebug() << "Average time for presence updates (with 1000 existing in database):" << updatePresenceElapsed << "milliseconds ("
+    qDebug() << "Average time for ( batch of" << contactsToUpdate.size() << ") presence updates (with 1000 existing in database):" << updatePresenceElapsed << "milliseconds ("
              << ((1.0 * updatePresenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per contact )";
+
+
+    // The next test is about saving contacts which should get aggregated into others.
+    // Aggregation is an expensive operation, so we expect these save operations to take longer.
+    qDebug() << "\n\nPerforming aggregation tests";
+    QList<QContact> contactsToAggregate;
+    for (int i = 0; i < 100; ++i) {
+        QContact existingContact = prefillData.at(prefillData.size() - 1 - i);
+        QContact contactToAggregate;
+        QContactSyncTarget newSyncTarget;
+        newSyncTarget.setSyncTarget(QString(QLatin1String("fetchtimes-aggregation")));
+        QContactName aggName = existingContact.detail<QContactName>(); // ensures it'll get aggregated
+        QContactOnlineAccount newOnlineAcct; // new data, which should get promoted up etc.
+        newOnlineAcct.setAccountUri(QString(QLatin1String("test-aggregation-%1@fetchtimes")).arg(i));
+        contactToAggregate.saveDetail(&newSyncTarget);
+        contactToAggregate.saveDetail(&aggName);
+        contactToAggregate.saveDetail(&newOnlineAcct);
+        contactsToAggregate.append(contactToAggregate);
+    }
+
+    syncTimer.start();
+    manager.saveContacts(&contactsToAggregate);
+    qint64 aggregationElapsed = syncTimer.elapsed();
+    qDebug() << "Average time for aggregation of" << contactsToAggregate.size() << "contacts (with 1000 existing in database):" << aggregationElapsed
+             << "milliseconds (" << ((1.0 * aggregationElapsed) / (1.0 * contactsToAggregate.size())) << " msec per aggregated contact )";
+
+    // Now perform the test again, this time with more aggregates, to test nonlinearity.
+    contactsToAggregate.clear();
+    for (int i = 200; i < 400; ++i) {
+        QContact existingContact = prefillData.at(prefillData.size() - 1 - i);
+        QContact contactToAggregate;
+        QContactSyncTarget newSyncTarget;
+        newSyncTarget.setSyncTarget(QString(QLatin1String("fetchtimes-aggregation")));
+        QContactName aggName = existingContact.detail<QContactName>(); // ensures it'll get aggregated
+        QContactOnlineAccount newOnlineAcct; // new data, which should get promoted up etc.
+        newOnlineAcct.setAccountUri(QString(QLatin1String("test-aggregation-%1@fetchtimes")).arg(i));
+        contactToAggregate.saveDetail(&newSyncTarget);
+        contactToAggregate.saveDetail(&aggName);
+        contactToAggregate.saveDetail(&newOnlineAcct);
+        contactsToAggregate.append(contactToAggregate);
+    }
+
+    syncTimer.start();
+    manager.saveContacts(&contactsToAggregate);
+    aggregationElapsed = syncTimer.elapsed();
+    qDebug() << "Average time for aggregation of" << contactsToAggregate.size() << "contacts (with 1000 existing in database):" << aggregationElapsed
+             << "milliseconds (" << ((1.0 * aggregationElapsed) / (1.0 * contactsToAggregate.size())) << " msec per aggregated contact )";
 
     return 0;
 }
