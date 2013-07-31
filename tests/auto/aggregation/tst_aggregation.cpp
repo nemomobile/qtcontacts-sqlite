@@ -99,6 +99,8 @@ private slots:
 
     void correctDetails();
 
+    void batchSemantics();
+
     void customSemantics();
 
 private:
@@ -1502,7 +1504,7 @@ void tst_Aggregation::alterRelationships()
     int addSpyCount = 0;
     int remSpyCount = 0;
 
-    // now add two new local contacts (no synctarget specified == automatically local)
+    // now add two new contacts (with different sync targets)
     QContact alice;
 
     QContactName an;
@@ -1511,12 +1513,20 @@ void tst_Aggregation::alterRelationships()
     an.setLastName("alterRelationships");
     alice.saveDetail(&an);
 
+    QContactSyncTarget aliceST;
+    aliceST.setSyncTarget("test-one");
+    alice.saveDetail(&aliceST);
+
     QContact bob;
 
     QContactName bn;
     bn.setMiddleName("Bob");
     bn.setLastName("alterRelationships");
     bob.saveDetail(&bn);
+
+    QContactSyncTarget bobST;
+    bobST.setSyncTarget("test-two");
+    bob.saveDetail(&bobST);
 
     m_addAccumulatedIds.clear();
     QVERIFY(m_cm->saveContact(&alice));
@@ -1529,7 +1539,7 @@ void tst_Aggregation::alterRelationships()
 
     QCOMPARE(m_cm->contactIds().size(), aggCount + 2); // 2 extra aggregate contacts
     aggCount = m_cm->contactIds().size();
-    QCOMPARE(m_cm->contactIds(allSyncTargets).size(), allCount + 4); // should have added locals + aggregates
+    QCOMPARE(m_cm->contactIds(allSyncTargets).size(), allCount + 4); // should have added 2 normal + 2 aggregates
     allCount = m_cm->contactIds(allSyncTargets).size();
 
     QContact localAlice;
@@ -1543,14 +1553,14 @@ void tst_Aggregation::alterRelationships()
         QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactName currName = curr.detail<QContactName>();
         if (currName.middleName() == QLatin1String("Alice") && currName.lastName() == QLatin1String("alterRelationships")) {
-            if (currSt.syncTarget() == QLatin1String("local")) {
+            if (currSt.syncTarget() == QLatin1String("test-one")) {
                 localAlice = curr;
             } else {
                 QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
                 aggregateAlice = curr;
             }
         } else if (currName.middleName() == QLatin1String("Bob") && currName.lastName() == QLatin1String("alterRelationships")) {
-            if (currSt.syncTarget() == QLatin1String("local")) {
+            if (currSt.syncTarget() == QLatin1String("test-two")) {
                 localBob = curr;
             } else {
                 QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
@@ -1597,14 +1607,14 @@ void tst_Aggregation::alterRelationships()
         QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactName currName = curr.detail<QContactName>();
         if (currName.middleName() == QLatin1String("Alice") && currName.lastName() == QLatin1String("alterRelationships")) {
-            if (currSt.syncTarget() == QLatin1String("local")) {
+            if (currSt.syncTarget() == QLatin1String("test-one")) {
                 localAlice = curr;
             } else {
                 QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
                 aggregateAlice = curr;
             }
         } else if (currName.middleName() == QLatin1String("Bob") && currName.lastName() == QLatin1String("alterRelationships")) {
-            if (currSt.syncTarget() == QLatin1String("local")) {
+            if (currSt.syncTarget() == QLatin1String("test-two")) {
                 localBob = curr;
             } else {
                 QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
@@ -1653,14 +1663,14 @@ void tst_Aggregation::alterRelationships()
         QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactName currName = curr.detail<QContactName>();
         if (currName.middleName() == QLatin1String("Alice") && currName.lastName() == QLatin1String("alterRelationships")) {
-            if (currSt.syncTarget() == QLatin1String("local")) {
+            if (currSt.syncTarget() == QLatin1String("test-one")) {
                 localAlice = curr;
             } else {
                 QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
                 aggregateAlice = curr;
             }
         } else if (currName.middleName() == QLatin1String("Bob") && currName.lastName() == QLatin1String("alterRelationships")) {
-            if (currSt.syncTarget() == QLatin1String("local")) {
+            if (currSt.syncTarget() == QLatin1String("test-two")) {
                 localBob = curr;
             } else {
                 QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
@@ -2338,6 +2348,96 @@ void tst_Aggregation::correctDetails()
                      xpct.detail<QContactHobby>().value(QContactHobby::FieldHobby));
         }
     }
+}
+
+void tst_Aggregation::batchSemantics()
+{
+    // for performance reasons, the engine assumes:
+    // 1) sync targets of all contacts in a batch save must be the same
+    // 2) no two contacts from the same sync target should be aggregated together
+
+    QContactDetailFilter allSyncTargets;
+    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
+    QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
+    int allContactsCount = allContacts.size();
+
+    QContact a, b, c;
+    QContactName aname, bname, cname;
+    QContactSyncTarget ast, bst, cst;
+    aname.setFirstName("a");
+    aname.setLastName("batch");
+    bname.setFirstName("b");
+    bname.setLastName("batch");
+    cname.setFirstName("c");
+    cname.setLastName("batch");
+    ast.setSyncTarget("async");
+    bst.setSyncTarget("bsync");
+    cst.setSyncTarget("csync");
+
+    a.saveDetail(&aname);
+    a.saveDetail(&ast);
+    b.saveDetail(&bname);
+    b.saveDetail(&bst);
+    c.saveDetail(&cname);
+    c.saveDetail(&cst);
+
+    // a) batch save should fail due to different sync targets.
+    QList<QContact> saveList;
+    saveList << a << b << c;
+    QVERIFY(!m_cm->saveContacts(&saveList));
+
+    // b) same as (a)
+    cst.setSyncTarget("bsync");
+    c.saveDetail(&cst);
+    saveList.clear();
+    saveList << a << b << c;
+    QVERIFY(!m_cm->saveContacts(&saveList));
+
+    // c) same as (a) although in this case, local / empty are considered identical
+    ast.setSyncTarget("local");
+    bst.setSyncTarget(QString());
+    cst.setSyncTarget("csync");
+    a.saveDetail(&ast);
+    b.saveDetail(&bst);
+    c.saveDetail(&cst);
+    saveList.clear();
+    saveList << a << b << c;
+    QVERIFY(!m_cm->saveContacts(&saveList));
+
+    // d) now it should succeed.
+    cst.setSyncTarget("local");
+    c.saveDetail(&cst);
+    saveList.clear();
+    saveList << a << b << c;
+    QVERIFY(m_cm->saveContacts(&saveList));
+
+    allContacts = m_cm->contacts(allSyncTargets);
+    int newContactsCount = allContacts.size() - allContactsCount;
+    QCOMPARE(newContactsCount, 6); // 3 local, 3 aggregate
+
+    // Now we test the semantic of "no two contacts from the same sync target should get aggregated"
+    QContact d, e;
+    QContactName dname, ename;
+    QContactSyncTarget dst, est;
+    dname.setFirstName("d");
+    dname.setLastName("batch");
+    ename.setFirstName("d");
+    ename.setLastName("batch");
+    ast.setSyncTarget("batch-sync");
+    bst.setSyncTarget("batch-sync");
+
+    d.saveDetail(&dname);
+    d.saveDetail(&dst);
+    e.saveDetail(&ename);
+    e.saveDetail(&est);
+
+    saveList.clear();
+    saveList << d << e;
+    QVERIFY(m_cm->saveContacts(&saveList));
+
+    allContacts = m_cm->contacts(allSyncTargets);
+    newContactsCount = allContacts.size() - allContactsCount;
+    QCOMPARE(newContactsCount, 10); // 5 local, 5 aggregate - d and e should not have been aggregated into one.
 }
 
 void tst_Aggregation::customSemantics()

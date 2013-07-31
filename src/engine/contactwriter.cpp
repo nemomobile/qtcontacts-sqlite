@@ -71,6 +71,9 @@ static const char *findLocalForAggregate =
 static const char *findAggregateForContact =
         "\n SELECT DISTINCT firstId FROM Relationships WHERE type = 'Aggregates' AND secondId = :localId";
 
+static const char *findMaximumContactId =
+        "\n SELECT max(contactId) FROM Contacts";
+
 static const char *findMatchForContact =
         "\n SELECT Matches.contactId, sum(Matches.score) AS total FROM ("
         "\n   SELECT contactId, 3 as score FROM EmailAddresses WHERE lowerEmailAddress IN ( :email )"
@@ -89,10 +92,15 @@ static const char *findMatchForContact =
         "\n ) AS Matches"
         "\n JOIN Contacts ON Contacts.contactId = Matches.contactId"
         "\n WHERE Contacts.syncTarget = 'aggregate'"
+        "\n AND Matches.contactId <= :maxAggregateId"
         "\n AND Matches.contactId NOT IN ("
-        "\n   SELECT secondId FROM Relationships WHERE firstId = :id AND type = 'IsNot'"
+        "\n   SELECT DISTINCT secondId FROM Relationships WHERE firstId = :id AND type = 'IsNot'"
         "\n   UNION"
-        "\n   SELECT firstId FROM Relationships WHERE secondId = :id AND type = 'IsNot'"
+        "\n   SELECT DISTINCT firstId FROM Relationships WHERE secondId = :id AND type = 'IsNot'"
+        "\n   UNION"
+        "\n   SELECT DISTINCT firstId FROM Relationships WHERE type = 'Aggregates' AND secondId IN ("
+        "\n     SELECT contactId FROM Contacts WHERE syncTarget = :syncTarget"
+        "\n   )"
         "\n )"
         "\n GROUP BY Matches.contactId"
         "\n ORDER BY total DESC"
@@ -485,6 +493,7 @@ ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &d
     , m_findConstituentsForAggregate(prepare(findConstituentsForAggregate, database))
     , m_findLocalForAggregate(prepare(findLocalForAggregate, database))
     , m_findAggregateForContact(prepare(findAggregateForContact, database))
+    , m_findMaximumContactId(prepare(findMaximumContactId, database))
     , m_findMatchForContact(prepare(findMatchForContact, database))
     , m_selectAggregateContactIds(prepare(selectAggregateContactIds, database))
     , m_childlessAggregateIds(prepare(childlessAggregateIds, database))
@@ -1600,7 +1609,6 @@ template <typename T> bool ContactWriter::writeDetails(
         *error = QContactManager::UnspecifiedError;
         return false;
     }
-
     removeQuery.finish();
 
     foreach (const T &detail, contact->details<T>()) {
@@ -1615,8 +1623,9 @@ template <typename T> bool ContactWriter::writeDetails(
         QVariant detailId = query.lastInsertId();
         query.finish();
 
-        if (!writeCommonDetails(contactId, detailId, detail, error))
+        if (!writeCommonDetails(contactId, detailId, detail, error)) {
             return false;
+        }
     }
     return true;
 }
@@ -1644,11 +1653,40 @@ QContactManager::Error ContactWriter::save(
     if (contacts->isEmpty())
         return QContactManager::NoError;
 
+    // Check that all of the contacts have the same sync target.
+    // Note that empty == "local" for all intents and purposes.
+    if (!withinAggregateUpdate) {
+        QString batchSyncTarget;
+        for (int i = 0; i < contacts->count(); ++i) {
+            // retrieve current contact's sync target
+            QString currSyncTarget = (*contacts)[i].detail<QContactSyncTarget>().syncTarget();
+            if (currSyncTarget.isEmpty()) {
+                currSyncTarget = QLatin1String("local");
+            }
+
+            // determine whether it's valid
+            if (batchSyncTarget.isEmpty()) {
+                batchSyncTarget = currSyncTarget;
+            } else if (batchSyncTarget != currSyncTarget) {
+                qWarning() << "Error: contacts from multiple sync targets specified in single batch save!";
+                return QContactManager::UnspecifiedError;
+            }
+        }
+    }
+
     if (!withinTransaction && !beginTransaction()) {
         // only create a transaction if we're not within one already
         qWarning() << "Unable to begin database transaction while saving contacts";
         return QContactManager::UnspecifiedError;
     }
+
+    // Find the maximum possible aggregate contact id.
+    // This assumes that no two contacts from the same synctarget should be aggregated together.
+    if (!m_findMaximumContactId.exec() || !m_findMaximumContactId.next()) {
+        qWarning() << "Failed to find max possible aggregate during batch save:" << m_findMaximumContactId.lastError().text();
+        return QContactManager::UnspecifiedError;
+    }
+    int maxAggregateId = m_findMaximumContactId.value(0).toInt();
 
     QContactManager::Error worstError = QContactManager::NoError;
     QContactManager::Error err = QContactManager::NoError;
@@ -1657,7 +1695,7 @@ QContactManager::Error ContactWriter::save(
         const QContactIdType contactId = ContactId::apiId(contact);
         bool aggregateUpdated = false;
         if (ContactId::databaseId(contactId) == 0) {
-            err = create(&contact, definitionMask, true, withinAggregateUpdate);
+            err = create(&contact, definitionMask, maxAggregateId, true, withinAggregateUpdate);
             if (err == QContactManager::NoError) {
                 m_addedIds.insert(ContactId::apiId(contact));
             } else {
@@ -2353,7 +2391,7 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
    aggregate contacts are searched for a match, and the matching
    one updated if it exists; or a new aggregate is created.
 */
-QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact, const DetailList &definitionMask, bool withinTransaction)
+QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact, const DetailList &definitionMask, int maxAggregateId, bool withinTransaction)
 {
     // 1) search for match
     // 2) if exists, update the existing aggregate (by default, non-clobber:
@@ -2370,9 +2408,9 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
     QStringList phoneNumbers;
     QStringList emailAddresses;
     QStringList accountUris;
+    QString syncTarget;
 
     quint32 contactId = ContactId::databaseId(*contact);
-
     foreach (const QContactName &detail, contact->details<QContactName>()) {
         firstName = detail.firstName().toLower();
         lastName = detail.lastName().toLower();
@@ -2391,6 +2429,10 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
     foreach (const QContactOnlineAccount &detail, contact->details<QContactOnlineAccount>()) {
         accountUris.append(detail.accountUri().toLower());
     }
+    syncTarget = contact->detail<QContactSyncTarget>().syncTarget();
+    if (syncTarget.isEmpty()) {
+        syncTarget = QLatin1String("local");
+    }
 
     static const QLatin1Char Percent('%');
 
@@ -2405,6 +2447,8 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
     m_findMatchForContact.bindValue(":number", phoneNumbers.join(","));
     m_findMatchForContact.bindValue(":email", emailAddresses.join(","));
     m_findMatchForContact.bindValue(":uri", accountUris.join(","));
+    m_findMatchForContact.bindValue(":maxAggregateId", maxAggregateId);
+    m_findMatchForContact.bindValue(":syncTarget", syncTarget);
 
     QContact matchingAggregate;
     bool found = false;
@@ -2444,7 +2488,6 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
     // whether it's an existing or new contact, we promote details.
     // XXX TODO: promote relationships!
     promoteDetailsToAggregate(*contact, &matchingAggregate, definitionMask);
-
     if (!found) {
         // need to create an aggregating contact first.
         QContactSyncTarget cst;
@@ -2669,10 +2712,16 @@ QContactManager::Error ContactWriter::aggregateOrphanedContacts(bool withinTrans
             return QContactManager::UnspecifiedError;
         }
 
+        if (!m_findMaximumContactId.exec() || !m_findMaximumContactId.next()) {
+            qWarning() << "Failed to find max possible aggregate for orphan:" << m_findMaximumContactId.lastError().text();
+            return QContactManager::UnspecifiedError;
+        }
+        int maxAggregateId = m_findMaximumContactId.value(0).toInt();
+
         QList<QContact>::iterator it = readList.begin(), end = readList.end();
         for ( ; it != end; ++it) {
             QContact &orphan(*it);
-            QContactManager::Error error = updateOrCreateAggregate(&orphan, DetailList(), withinTransaction);
+            QContactManager::Error error = updateOrCreateAggregate(&orphan, DetailList(), maxAggregateId, withinTransaction);
             if (error != QContactManager::NoError) {
                 qWarning() << "Failed to create aggregate for orphaned contact:" << ContactId::toString(orphan);
                 return error;
@@ -2714,7 +2763,7 @@ static bool updateGlobalPresence(QContact *contact)
     return true;
 }
 
-QContactManager::Error ContactWriter::create(QContact *contact, const DetailList &definitionMask, bool withinTransaction, bool withinAggregateUpdate)
+QContactManager::Error ContactWriter::create(QContact *contact, const DetailList &definitionMask, int maxAggregateId, bool withinTransaction, bool withinAggregateUpdate)
 {
 #ifndef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     Q_UNUSED(withinTransaction)
@@ -2738,7 +2787,6 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
         qWarning() << m_insertContact.lastError();
         return QContactManager::UnspecifiedError;
     }
-
     quint32 contactId = m_insertContact.lastInsertId().toUInt();
     m_insertContact.finish();
 
@@ -2751,7 +2799,7 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
         if (!withinAggregateUpdate) {
             // and either update the aggregate contact (if it exists) or create a new one (unless it is an aggregate contact).
             if (contact->detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget) != QLatin1String("aggregate")) {
-                writeErr = updateOrCreateAggregate(contact, definitionMask, withinTransaction);
+                writeErr = updateOrCreateAggregate(contact, definitionMask, maxAggregateId, withinTransaction);
             }
         }
 #endif
