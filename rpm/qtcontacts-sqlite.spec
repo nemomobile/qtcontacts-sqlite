@@ -1,5 +1,5 @@
 Name: qtcontacts-sqlite
-Version: 0.1.1
+Version: 0.1.2
 Release: 0
 Summary: SQLite-based plugin for QtContacts
 Group: System/Plugins
