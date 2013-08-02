@@ -1532,6 +1532,7 @@ QContactManager::Error ContactReader::queryContacts(
         const QString &tableName, QList<QContact> *contacts, const QContactFetchHint &fetchHint)
 {
     QSqlQuery query(m_database);
+    query.setForwardOnly(true);
     if (!query.exec(QString(QLatin1String(
             "\n SELECT Contacts.*"
             "\n FROM temp.%1 INNER JOIN Contacts ON temp.%1.contactId = Contacts.contactId"
@@ -1578,6 +1579,7 @@ QContactManager::Error ContactReader::queryContacts(
             if (!haveCachedQuery) {
                 // have to prepare the query.
                 const QString tableQueryStatement(tableTemplate.arg(QLatin1String(detail.table)));
+                table.query.setForwardOnly(true);
                 if (!table.query.prepare(tableQueryStatement)) {
                     qWarning() << "Failed to prepare table" << detail.table;
                     qWarning() << tableQueryStatement;
@@ -1627,6 +1629,7 @@ QContactManager::Error ContactReader::queryContacts(
             0
         };
 
+        table.query.setForwardOnly(true);
         if (!table.query.prepare(relationshipQuery)) {
             qWarning() << "Failed to prepare relationship table query";
             qWarning() << relationshipQuery;
@@ -1772,6 +1775,7 @@ QContactManager::Error ContactReader::readContactIds(
                 "\n ORDER BY %3;")).arg(join).arg(where).arg(orderBy);
 
     QSqlQuery query(m_database);
+    query.setForwardOnly(true);
     if (!query.prepare(queryString)) {
         qWarning() << "Failed to prepare contacts ids";
         qWarning() << query.lastError();
@@ -1808,6 +1812,7 @@ QContactManager::Error ContactReader::getIdentity(
         *contactId = selfId;
     } else {
         QSqlQuery query(m_database);
+        query.setForwardOnly(true);
         query.prepare(QLatin1String(
                 "\n SELECT contactId"
                 "\n FROM Identities"
@@ -1859,6 +1864,7 @@ QContactManager::Error ContactReader::readRelationships(
             "\n FROM Relationships") + where + QLatin1String(";");
 
     QSqlQuery query(m_database);
+    query.setForwardOnly(true);
     if (!query.prepare(statement)) {
         qWarning() << "Failed to prepare relationships query";
         qWarning() << query.lastError();
