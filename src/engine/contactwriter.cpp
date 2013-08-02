@@ -76,17 +76,23 @@ static const char *findMaximumContactId =
 
 static const char *findMatchForContact =
         "\n SELECT Matches.contactId, sum(Matches.score) AS total FROM ("
+        "\n   SELECT contactId, 20 as score FROM Contacts"
+        "\n      WHERE lowerLastName != '' AND lowerLastName = :lastName"
+        "\n      AND lowerFirstName != '' AND :firstName != '' AND (lowerFirstName = :firstName OR lowerFirstName LIKE :firstPartial)"
+        "\n   UNION"
+        "\n   SELECT contactId, 12 as score FROM Contacts"
+        "\n      WHERE (lowerLastName = '' OR :lastName = '')"
+        "\n      AND lowerFirstName != '' AND (lowerFirstName = :firstName OR lowerFirstName LIKE :firstPartial)"
+        "\n   UNION"
+        "\n   SELECT contactId, 12 as score FROM Contacts"
+        "\n      WHERE lowerLastName != '' AND lowerLastName = :lastName"
+        "\n      AND (lowerFirstName = '' OR :firstName = '')"
+        "\n   UNION"
         "\n   SELECT contactId, 3 as score FROM EmailAddresses WHERE lowerEmailAddress IN ( :email )"
         "\n   UNION"
         "\n   SELECT contactId, 3 as score FROM PhoneNumbers WHERE normalizedNumber IN ( :number )"
         "\n   UNION"
         "\n   SELECT contactId, 3 as score FROM OnlineAccounts WHERE lowerAccountUri IN ( :uri )"
-        "\n   UNION"
-        "\n   SELECT contactId, 3 as score FROM Contacts WHERE lowerFirstName != '' AND lowerFirstName = :firstName AND (lowerLastName = '' OR lowerLastName = :lastName)"
-        "\n   UNION"
-        "\n   SELECT contactId, 2 as score FROM Contacts WHERE lowerFirstName != '' AND lowerFirstName LIKE :firstPartial AND (lowerLastName = '' OR lowerLastName = :lastName)"
-        "\n   UNION"
-        "\n   SELECT contactId, 2 as score FROM Contacts WHERE lowerFirstName = '' AND lowerLastName != '' AND lowerLastName = :lastName"
         "\n   UNION"
         "\n   SELECT contactId, 1 as score FROM Nicknames WHERE lowerNickname != '' AND lowerNickname = :nickname"
         "\n ) AS Matches"
@@ -2436,12 +2442,12 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
 
     static const QLatin1Char Percent('%');
 
-    // Use a simple match algorithm, looking for exact matches on fields that should be individual,
+    // Use a simple match algorithm, looking for exact matches on name fields,
     // or accumulating points for name matches (including partial matches of first name).
 
     m_findMatchForContact.bindValue(":id", contactId);
     m_findMatchForContact.bindValue(":firstName", firstName);
-    m_findMatchForContact.bindValue(":firstPartial", firstName.prepend(Percent).append(Percent));
+    m_findMatchForContact.bindValue(":firstPartial", firstName.mid(0, 4).prepend(Percent).append(Percent));
     m_findMatchForContact.bindValue(":lastName", lastName);
     m_findMatchForContact.bindValue(":nickname", nickname);
     m_findMatchForContact.bindValue(":number", phoneNumbers.join(","));
@@ -2462,9 +2468,7 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
         quint32 score = m_findMatchForContact.value(1).toUInt();
         m_findMatchForContact.finish();
 
-        // Any match on a presumed-to-be-individual value (email address/account URI/phone number) is enough
-        static const quint32 MinimumMatchScore = 3;
-
+        static const quint32 MinimumMatchScore = 15;
         if (score >= MinimumMatchScore) {
             QList<QContactIdType> readIds;
             readIds.append(aggregateId);
