@@ -1305,6 +1305,10 @@ static QContactManager::Error createTemporaryContactIdsTable(
         }
     } else {
         // specified by id list
+        // NOTE: we must preserve the order of the bound ids being
+        // inserted (to match the order of the input list), so that
+        // the result of queryContacts() is ordered according to the
+        // order of input ids.
         const QString insertStatement = QString(QLatin1String(
                 "\n INSERT INTO temp.%1 (contactId)"
                 "\n VALUES(:contactId);"))
@@ -1487,46 +1491,38 @@ QContactManager::Error ContactReader::readContacts(
         const QList<QContactIdType> &contactIds,
         const QContactFetchHint &fetchHint)
 {
-    // XXX TODO: get rid of this query, just iterate over the returned results in memory
-    // and if the id doesn't match, insert an empty contact (and error) for that index.
-    QList<quint32> existingIds;
-    QSqlQuery queryExistingIds(m_database);
-    if (!queryExistingIds.exec("SELECT DISTINCT contactId FROM Contacts")) {
-        qWarning() << "Failed to query existing contacts";
-        qWarning() << queryExistingIds.lastError();
-        return QContactManager::UnspecifiedError;
-    }
-    while (queryExistingIds.next()) {
-        existingIds.append(queryExistingIds.value(0).toUInt());
-    }
-    queryExistingIds.finish();
-
-    QList<int> zeroIndices;
     QVariantList boundIds;
     for (int i = 0; i < contactIds.size(); ++i) {
-        quint32 currId = ContactId::databaseId(contactIds.at(i));
-        if (currId == 0 || !existingIds.contains(currId)) {
-            zeroIndices.append(i);
-        } else {
-            boundIds.append(currId);
-        }
+        boundIds.append(ContactId::databaseId(contactIds.at(i)));
     }
 
     QContactManager::Error createTempError = createTemporaryContactIdsTable(
             &m_database, table, false, boundIds, QString(), QString(), QString(), QVariantList());
 
+    contacts->reserve(contactIds.size());
     QContactManager::Error error = (createTempError == QContactManager::NoError)
             ? queryContacts(table, contacts, fetchHint)
             : createTempError;
 
     clearTemporaryContactIdsTable(&m_database, table);
 
-    for (int i = 0; i < zeroIndices.size(); ++i) {
-        contacts->insert(zeroIndices.at(i), QContact());
-        error = QContactManager::DoesNotExistError;
-    }
-    if (contacts && (contacts->size() != contactIds.size())) {
-        error = QContactManager::DoesNotExistError;
+    // the ordering of the queried contacts is identical to
+    // the ordering of the input contact ids list.
+    int contactIdsSize = contactIds.size();
+    int contactsSize = contacts->size();
+    if (contactIdsSize != contactsSize) {
+        for (int i = 0; i < contactIdsSize; ++i) {
+#ifdef USING_QTPIM
+            if (i >= contactsSize || (*contacts)[i].id() != contactIds[i]) {
+#else
+            if (i >= contactsSize || (*contacts)[i].localId() != contactIds[i]) {
+#endif
+                // the id list contained a contact id which doesn't exist
+                contacts->insert(i, QContact());
+                contactsSize++;
+                error = QContactManager::DoesNotExistError;
+            }
+        }
     }
 
     return error;
