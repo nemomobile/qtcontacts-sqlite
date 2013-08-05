@@ -471,12 +471,50 @@ void tst_QContactManager::dumpContactDifferences(const QContact& ca, const QCont
     }
 }
 
+static bool variantEqual(const QVariant &lhs, const QVariant &rhs)
+{
+#ifdef USING_QTPIM
+    // Work around incorrect result from QVariant::operator== when variants contain QList<int>
+    static const int QListIntType = QMetaType::type("QList<int>");
+
+    const int lhsType = lhs.userType();
+    if (lhsType != rhs.userType()) {
+        return false;
+    }
+
+    if (lhsType == QListIntType) {
+        return (lhs.value<QList<int> >() == rhs.value<QList<int> >());
+    }
+#endif
+    return (lhs == rhs);
+}
+
+static bool detailValuesEqual(const QContactDetail &lhs, const QContactDetail &rhs)
+{
+    const DetailMap lhsValues(detailValues(lhs));
+    const DetailMap rhsValues(detailValues(rhs));
+
+    if (lhsValues.count() != rhsValues.count()) {
+        return false;
+    }
+
+    DetailMap::const_iterator lit = lhsValues.constBegin(), lend = lhsValues.constEnd();
+    DetailMap::const_iterator rit = rhsValues.constBegin();
+    for ( ; lit != lend; ++lit, ++rit) {
+        if (!variantEqual(*lit, *rit)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 static bool detailsEquivalent(const QContactDetail &lhs, const QContactDetail &rhs)
 {
     // Same as operator== except ignores differences in accessConstraints values
     if (detailType(lhs) != detailType(rhs))
         return false;
-    return (detailValues(lhs) == detailValues(rhs));
+    return detailValuesEqual(lhs, rhs);
 }
 
 bool tst_QContactManager::isSuperset(const QContact& ca, const QContact& cb)
@@ -4337,6 +4375,9 @@ void tst_QContactManager::constituentOfSelf()
     foreach (const QContact &aggregator, m.contacts(relationshipFilter))
         QCOMPARE(aggregator.id(), selfId);
 
+    QContactStatusFlags flags = self.detail<QContactStatusFlags>();
+    QCOMPARE(flags.testFlag(QContactStatusFlags::IsOnline), false);
+
     // Do a presence update
     QContactPresence presence;
     presence.setPresenceState(QContactPresence::PresenceAway);
@@ -4355,6 +4396,9 @@ void tst_QContactManager::constituentOfSelf()
     self = m.contact(m.selfContactId());
     QVERIFY(detailsEquivalent(self.detail<QContactPresence>(), presence));
     QCOMPARE(self.detail<QContactGlobalPresence>().presenceState(), presence.presenceState());
+
+    flags = self.detail<QContactStatusFlags>();
+    QCOMPARE(flags.testFlag(QContactStatusFlags::IsOnline), true);
 
     // Update again
     presence = constituent.detail<QContactPresence>();
@@ -4376,6 +4420,22 @@ void tst_QContactManager::constituentOfSelf()
     foreach (const QContact &aggregator, m.contacts(relationshipFilter))
         QCOMPARE(aggregator.id(), selfId);
 
+    flags = self.detail<QContactStatusFlags>();
+    QCOMPARE(flags.testFlag(QContactStatusFlags::IsOnline), true);
+
+    // Offline status makes the contact no longer offline
+    presence = constituent.detail<QContactPresence>();
+    presence.setPresenceState(QContactPresence::PresenceOffline);
+    QVERIFY(constituent.saveDetail(&presence));
+
+    QVERIFY(m.saveContact(&constituent));
+    QVERIFY(m.error() == QContactManager::NoError);
+
+    self = m.contact(m.selfContactId());
+    QVERIFY(detailsEquivalent(self.detail<QContactPresence>(), presence));
+
+    flags = self.detail<QContactStatusFlags>();
+    QCOMPARE(flags.testFlag(QContactStatusFlags::IsOnline), false);
 }
 #endif
 
