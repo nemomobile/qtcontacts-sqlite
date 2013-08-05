@@ -93,6 +93,9 @@ private slots:
 
     void wasLocal();
 
+    void aggregationHeuristic_data();
+    void aggregationHeuristic();
+
     void regenerateAggregate();
 
     void detailUris();
@@ -1960,6 +1963,247 @@ void tst_Aggregation::wasLocal()
                 phoneNumber.number() == QLatin1String("2345678") ||
                 phoneNumber.number() == QLatin1String("7654321"));
     }
+}
+
+void tst_Aggregation::aggregationHeuristic_data()
+{
+    QTest::addColumn<bool>("shouldAggregate");
+    QTest::addColumn<QString>("aFirstName");
+    QTest::addColumn<QString>("aMiddleName");
+    QTest::addColumn<QString>("aLastName");
+    QTest::addColumn<QString>("aNickname");
+    QTest::addColumn<QString>("aPhoneNumber");
+    QTest::addColumn<QString>("aEmailAddress");
+    QTest::addColumn<QString>("aOnlineAccount");
+    QTest::addColumn<QString>("bFirstName");
+    QTest::addColumn<QString>("bMiddleName");
+    QTest::addColumn<QString>("bLastName");
+    QTest::addColumn<QString>("bNickname");
+    QTest::addColumn<QString>("bPhoneNumber");
+    QTest::addColumn<QString>("bEmailAddress");
+    QTest::addColumn<QString>("bOnlineAccount");
+
+    // shared details / family members
+    QTest::newRow("shared email") << false /* husband and wife, sharing email, should not get aggregated */
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "" << "gumboots@test.com" << ""
+        << "Jillian" << "Anastacia Faith" << "Gumboots" << "Jilly" << "" << "gumboots@test.com" << "";
+    QTest::newRow("shared phone") << false /* husband and wife, sharing phone, should not get aggregated */
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "" << ""
+        << "Jillian" << "Anastacia Faith" << "Gumboots" << "Jilly" << "111992888337" << "" << "";
+    QTest::newRow("shared phone+email") << false /* husband and wife, sharing phone+email, should not get aggregated */
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << ""
+        << "Jillian" << "Anastacia Faith" << "Gumboots" << "Jilly" << "111992888337" << "gumboots@test.com" << "";
+    QTest::newRow("shared phone+email+account") << false /* husband and wife, sharing phone+email+account, should not get aggregated */
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "gumboots@familysocial"
+        << "Jillian" << "Anastacia Faith" << "Gumboots" << "Jilly" << "111992888337" << "gumboots@test.com" << "gumboots@familysocial";
+
+    // different contactable details / same name
+    QTest::newRow("match name, different p/e/a") << true /* identical name match is enough to match the contact */
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "999118222773" << "freddy@test.net" << "fgumboots@coolsocial";
+
+    // fragment name, overlapping contactable
+    QTest::newRow("fragment fname, identical p/e/a") << true
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "Fred" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount";
+    QTest::newRow("fragment fname, identical p/e/a, order") << true
+        << "Fred" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount";
+    QTest::newRow("fragment mname, identical p/e/a") << true
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "Frederick" << "" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount";
+    QTest::newRow("fragment f/mname, identical p/e/a") << true
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "Fred" << "" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount";
+    QTest::newRow("fragment fname, identical p, no e/a") << true
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "" << ""
+        << "Fred" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "" << "";
+    QTest::newRow("fragment mname, identical p, no e/a") << true
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "" << ""
+        << "Frederick" << "" << "Gumboots" << "Freddy" << "111992888337" << "" << "";
+    QTest::newRow("fragment f/mname, identical p, no e/a") << true
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "" << ""
+        << "Fred" << "" << "Gumboots" << "Freddy" << "111992888337" << "" << "";
+    QTest::newRow("fragment fname, identical p, different e/a") << true
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "Fred" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "freddy@test.net" << "fgumboots@coolsocial";
+    QTest::newRow("fragment mname, identical p, different e/a") << true
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "Frederick" << "" << "Gumboots" << "Freddy" << "111992888337" << "freddy@test.net" << "fgumboots@coolsocial";
+    QTest::newRow("fragment f/mname, identical p, different e/a") << true
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "Fred" << "" << "Gumboots" << "Freddy" << "111992888337" << "freddy@test.net" << "fgumboots@coolsocial";
+    QTest::newRow("fragment fname, identical e, different p/a") << true
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "Fred" << "William Preston" << "Gumboots" << "Freddy" << "999118222773" << "gumboots@test.com" << "fgumboots@coolsocial";
+    QTest::newRow("fragment mname, identical e, different p/a") << true
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "Frederick" << "" << "Gumboots" << "Freddy" << "999118222773" << "gumboots@test.com" << "fgumboots@coolsocial";
+    QTest::newRow("fragment f/mname, identical e, different p/a") << true
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "Fred" << "" << "Gumboots" << "Freddy" << "999118222773" << "gumboots@test.com" << "fgumboots@coolsocial";
+    QTest::newRow("fragment fname, identical a, different p/e") << true
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "Fred" << "William Preston" << "Gumboots" << "Freddy" << "999118222773" << "freddy@test.net" << "freddy00001@socialaccount";
+    QTest::newRow("fragment mname, identical a, different p/e") << true
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "Frederick" << "" << "Gumboots" << "Freddy" << "999118222773" << "freddy@test.net" << "freddy00001@socialaccount";
+    QTest::newRow("fragment f/mname, identical a, different p/e") << true
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "Fred" << "" << "Gumboots" << "Freddy" << "999118222773" << "freddy@test.net" << "freddy00001@socialaccount";
+    QTest::newRow("fragment f/mname, identical p, no e/a/nick") << true
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "" << ""
+        << "Fred" << "" << "Gumboots" << "" << "111992888337" << "" << "";
+    QTest::newRow("fragment f/mname, identical p, no e/a/nick, name case") << true
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "" << ""
+        << "fred" << "" << "gumboots" << "" << "111992888337" << "" << "";
+
+    // identical contacts should be aggregated
+    QTest::newRow("identical, complete") << true
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount";
+    QTest::newRow("identical, -fname") << true
+        << "" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount";
+    QTest::newRow("identical, -mname") << true
+        << "Frederick" << "" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "Frederick" << "" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount";
+    QTest::newRow("identical, -lname") << true
+        << "Frederick" << "William Preston" << "" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "Frederick" << "William Preston" << "" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount";
+    QTest::newRow("identical, -nick") << true
+        << "Frederick" << "William Preston" << "Gumboots" << "" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "Frederick" << "William Preston" << "Gumboots" << "" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount";
+    QTest::newRow("identical, -phone") << true
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "" << "gumboots@test.com" << "freddy00001@socialaccount";
+    QTest::newRow("identical, -email") << true
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "" << "freddy00001@socialaccount"
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "" << "freddy00001@socialaccount";
+    QTest::newRow("identical, -account") << true
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << ""
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "";
+    QTest::newRow("identical, diff nick") << true
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "Frederick" << "William Preston" << "Gumboots" << "Ricky" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount";
+
+    // f/l name differences should stop aggregation.  middle name doesn't count in the aggregation heuristic.
+    QTest::newRow("fname different") << false
+        << "Frederick" << "" << "Gumboots" << "" << "111992888337" << "" << ""
+        << "Jillian" << "" << "Gumboots" << "" << "999118222773" << "" << "";
+    QTest::newRow("lname different") << false
+        << "Frederick" << "" << "Gumboots" << "" << "111992888337" << "" << ""
+        << "Frederick" << "" << "Galoshes" << "" << "999118222773" << "" << "";
+
+    // similarities in name, different contactable details
+    QTest::newRow("similar name, different p/e/a") << false /* Only the last names match; not enough */
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "" << "" << "Gumboots" << "" << "999118222773" << "anastacia@test.net" << "agumboots@coolsocial";
+}
+
+void tst_Aggregation::aggregationHeuristic()
+{
+    // this test exists to validate the findMatchingAggregate query.
+    QFETCH(bool, shouldAggregate);
+    QFETCH(QString, aFirstName);
+    QFETCH(QString, aMiddleName);
+    QFETCH(QString, aLastName);
+    QFETCH(QString, aNickname);
+    QFETCH(QString, aPhoneNumber);
+    QFETCH(QString, aEmailAddress);
+    QFETCH(QString, aOnlineAccount);
+    QFETCH(QString, bFirstName);
+    QFETCH(QString, bMiddleName);
+    QFETCH(QString, bLastName);
+    QFETCH(QString, bNickname);
+    QFETCH(QString, bPhoneNumber);
+    QFETCH(QString, bEmailAddress);
+    QFETCH(QString, bOnlineAccount);
+
+    QContact a, b;
+    QContactSyncTarget async, bsync;
+    QContactName aname, bname;
+    QContactNickname anick, bnick;
+    QContactPhoneNumber aphn, bphn;
+    QContactEmailAddress aem, bem;
+    QContactOnlineAccount aoa, boa;
+
+    // construct a
+    async.setSyncTarget("aggregation-heuristic-a");
+    a.saveDetail(&async);
+
+    aname.setFirstName(aFirstName);
+    aname.setMiddleName(aMiddleName);
+    aname.setLastName(aLastName);
+    if (!aFirstName.isEmpty() || !aMiddleName.isEmpty() || !aLastName.isEmpty()) {
+        a.saveDetail(&aname);
+    }
+
+    if (!aNickname.isEmpty()) {
+        anick.setNickname(aNickname);
+        a.saveDetail(&anick);
+    }
+
+    if (!aPhoneNumber.isEmpty()) {
+        aphn.setNumber(aPhoneNumber);
+        a.saveDetail(&aphn);
+    }
+
+    if (!aEmailAddress.isEmpty()) {
+        aem.setEmailAddress(aEmailAddress);
+        a.saveDetail(&aem);
+    }
+
+    if (!aOnlineAccount.isEmpty()) {
+        aoa.setAccountUri(aOnlineAccount);
+        a.saveDetail(&aoa);
+    }
+
+    // construct b
+    bsync.setSyncTarget("aggregation-heuristic-b");
+    b.saveDetail(&bsync);
+
+    bname.setFirstName(bFirstName);
+    bname.setMiddleName(bMiddleName);
+    bname.setLastName(bLastName);
+    if (!bFirstName.isEmpty() || !bMiddleName.isEmpty() || !bLastName.isEmpty()) {
+        b.saveDetail(&bname);
+    }
+
+    if (!bNickname.isEmpty()) {
+        bnick.setNickname(bNickname);
+        b.saveDetail(&bnick);
+    }
+
+    if (!bPhoneNumber.isEmpty()) {
+        bphn.setNumber(bPhoneNumber);
+        b.saveDetail(&bphn);
+    }
+
+    if (!bEmailAddress.isEmpty()) {
+        bem.setEmailAddress(bEmailAddress);
+        b.saveDetail(&bem);
+    }
+
+    if (!bOnlineAccount.isEmpty()) {
+        boa.setAccountUri(bOnlineAccount);
+        b.saveDetail(&boa);
+    }
+
+    // Now perform the saves and see if we get some aggregation as required.
+    int count = m_cm->contactIds().count();
+    QVERIFY(m_cm->saveContact(&a));
+    QCOMPARE(m_cm->contactIds().count(), (count+1));
+    QVERIFY(m_cm->saveContact(&b));
+    QCOMPARE(m_cm->contactIds().count(), shouldAggregate ? (count+1) : (count+2));
+
+#ifdef USING_QTPIM
+    m_cm->removeContact(a.id());
+    m_cm->removeContact(b.id());
+#else
+    m_cm->removeContact(a.localId());
+    m_cm->removeContact(b.localId());
+#endif
 }
 
 void tst_Aggregation::regenerateAggregate()
