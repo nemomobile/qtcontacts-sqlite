@@ -85,6 +85,7 @@ protected:
 
 private:
     QSqlDatabase m_database;
+    QMap<QString, QMap<QString, QSqlQuery> > m_cachedDetailTableQueries;
 };
 
 #endif

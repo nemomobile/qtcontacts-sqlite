@@ -1529,14 +1529,15 @@ QContactManager::Error ContactReader::readContacts(
 }
 
 QContactManager::Error ContactReader::queryContacts(
-        const QString &table, QList<QContact> *contacts, const QContactFetchHint &fetchHint)
+        const QString &tableName, QList<QContact> *contacts, const QContactFetchHint &fetchHint)
 {
     QSqlQuery query(m_database);
+    query.setForwardOnly(true);
     if (!query.exec(QString(QLatin1String(
             "\n SELECT Contacts.*"
             "\n FROM temp.%1 INNER JOIN Contacts ON temp.%1.contactId = Contacts.contactId"
-            "\n ORDER BY temp.%1.rowId ASC;")).arg(table))) {
-        qWarning() << "Failed to query from" << table;
+            "\n ORDER BY temp.%1.rowId ASC;")).arg(tableName))) {
+        qWarning() << "Failed to query from" << tableName;
         qWarning() << query.lastError();
         return QContactManager::UnspecifiedError;
     }
@@ -1551,7 +1552,7 @@ QContactManager::Error ContactReader::queryContacts(
             "\n FROM temp.%1"
             "\n  INNER JOIN %2 ON temp.%1.contactId = %2.contactId"
             "\n  LEFT JOIN Details ON %2.detailId = Details.detailId AND Details.detail = :detail"
-            "\n ORDER BY temp.%1.rowId ASC;")).arg(table);
+            "\n ORDER BY temp.%1.rowId ASC;")).arg(tableName);
 
 #ifdef USING_QTPIM
     const ContactWriter::DetailList &details = fetchHint.detailTypesHint();
@@ -1566,18 +1567,30 @@ QContactManager::Error ContactReader::queryContacts(
             continue;
 
         if (details.isEmpty() || details.contains(detail.detail)) {
+            // we need to query this particular detail table
+            // use cached prepared queries if available, else prepare and cache query.
+            bool haveCachedQuery = m_cachedDetailTableQueries[tableName].contains(detail.table);
             Table table = {
-                QSqlQuery(m_database),
+                haveCachedQuery ? m_cachedDetailTableQueries[tableName].value(detail.table) : QSqlQuery(m_database),
                 detail.read,
                 0
             };
 
-            const QString tableQueryStatement(tableTemplate.arg(QLatin1String(detail.table)));
-            if (!table.query.prepare(tableQueryStatement)) {
-                qWarning() << "Failed to prepare table" << detail.table;
-                qWarning() << tableQueryStatement;
-                qWarning() << table.query.lastError();
-            } else {
+            if (!haveCachedQuery) {
+                // have to prepare the query.
+                const QString tableQueryStatement(tableTemplate.arg(QLatin1String(detail.table)));
+                table.query.setForwardOnly(true);
+                if (!table.query.prepare(tableQueryStatement)) {
+                    qWarning() << "Failed to prepare table" << detail.table;
+                    qWarning() << tableQueryStatement;
+                    qWarning() << table.query.lastError();
+                } else {
+                    m_cachedDetailTableQueries[tableName].insert(detail.table, table.query);
+                    haveCachedQuery = true;
+                }
+            }
+
+            if (haveCachedQuery) {
 #ifdef USING_QTPIM
                 table.query.bindValue(0, QString::fromLatin1(detail.detailName));
 #else
@@ -1608,7 +1621,7 @@ QContactManager::Error ContactReader::queryContacts(
             "\n  INNER JOIN Relationships"
             "\n    ON (temp.%1.contactId = Relationships.firstId"
             "\n     OR temp.%1.contactId = Relationships.secondId)"
-            "\n ORDER BY temp.%1.rowId ASC;").arg(table);
+            "\n ORDER BY temp.%1.rowId ASC;").arg(tableName);
 
         Table table = {
             QSqlQuery(m_database),
@@ -1616,6 +1629,7 @@ QContactManager::Error ContactReader::queryContacts(
             0
         };
 
+        table.query.setForwardOnly(true);
         if (!table.query.prepare(relationshipQuery)) {
             qWarning() << "Failed to prepare relationship table query";
             qWarning() << relationshipQuery;
@@ -1761,6 +1775,7 @@ QContactManager::Error ContactReader::readContactIds(
                 "\n ORDER BY %3;")).arg(join).arg(where).arg(orderBy);
 
     QSqlQuery query(m_database);
+    query.setForwardOnly(true);
     if (!query.prepare(queryString)) {
         qWarning() << "Failed to prepare contacts ids";
         qWarning() << query.lastError();
@@ -1797,6 +1812,7 @@ QContactManager::Error ContactReader::getIdentity(
         *contactId = selfId;
     } else {
         QSqlQuery query(m_database);
+        query.setForwardOnly(true);
         query.prepare(QLatin1String(
                 "\n SELECT contactId"
                 "\n FROM Identities"
@@ -1848,6 +1864,7 @@ QContactManager::Error ContactReader::readRelationships(
             "\n FROM Relationships") + where + QLatin1String(";");
 
     QSqlQuery query(m_database);
+    query.setForwardOnly(true);
     if (!query.prepare(statement)) {
         qWarning() << "Failed to prepare relationships query";
         qWarning() << query.lastError();
