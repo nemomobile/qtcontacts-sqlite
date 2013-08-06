@@ -67,7 +67,8 @@ static const char *createContactsTable =
         "\n isFavorite BOOL,"
         "\n hasPhoneNumber BOOL DEFAULT 0,"
         "\n hasEmailAddress BOOL DEFAULT 0,"
-        "\n hasOnlineAccount BOOL DEFAULT 0);";
+        "\n hasOnlineAccount BOOL DEFAULT 0,"
+        "\n isOnline BOOL DEFAULT 0);";
 
 static const char *createAddressesTable =
         "\n CREATE TABLE Addresses ("
@@ -559,11 +560,28 @@ static bool setContactsHasOnlineAccount(QSqlDatabase &database)
 
 static const ExtraColumn contactsHasOnlineAccount = { "Contacts", "hasOnlineAccount", "BOOL", &setContactsHasOnlineAccount };
 
+static bool setContactsIsOnline(QSqlDatabase &database)
+{
+    QString statement = QString::fromLatin1(
+        "UPDATE Contacts "
+        "SET isOnline = 1 "
+        "WHERE contactId in ("
+            "SELECT DISTINCT contactId "
+            "FROM GlobalPresences "
+            "WHERE presenceState >= 1 "
+            "AND presenceState <= 5);");
+
+    return execute(database, statement);
+}
+
+static const ExtraColumn contactsIsOnline = { "Contacts", "isOnline", "BOOL", &setContactsIsOnline };
+
 static const ExtraColumn *extraColumns[] =
 {
     &contactsHasPhoneNumber,
     &contactsHasEmailAddress,
-    &contactsHasOnlineAccount
+    &contactsHasOnlineAccount,
+    &contactsIsOnline
 };
 
 static bool addColumn(const ExtraColumn *columnDef, QSqlDatabase &database)

@@ -150,7 +150,8 @@ static const char *insertContact =
         "\n  isFavorite,"
         "\n  hasPhoneNumber,"
         "\n  hasEmailAddress,"
-        "\n  hasOnlineAccount)"
+        "\n  hasOnlineAccount,"
+        "\n  isOnline)"
         "\n VALUES ("
         "\n  :displayLabel,"
         "\n  :firstName,"
@@ -168,7 +169,8 @@ static const char *insertContact =
         "\n  :isFavorite,"
         "\n  :hasPhoneNumber,"
         "\n  :hasEmailAccount,"
-        "\n  :hasOnlineAccount);";
+        "\n  :hasOnlineAccount,"
+        "\n  :isOnline);";
 
 static const char *updateContact =
         "\n UPDATE Contacts SET"
@@ -188,7 +190,8 @@ static const char *updateContact =
         "\n  isFavorite = :isFavorite,"
         "\n  hasPhoneNumber = CASE WHEN :valueKnown = 1 THEN :value ELSE hasPhoneNumber END, "
         "\n  hasEmailAddress = CASE WHEN :valueKnown = 1 THEN :value ELSE hasEmailAddress END, "
-        "\n  hasOnlineAccount = CASE WHEN :valueKnown = 1 THEN :value ELSE hasOnlineAccount END "
+        "\n  hasOnlineAccount = CASE WHEN :valueKnown = 1 THEN :value ELSE hasOnlineAccount END, "
+        "\n  isOnline = CASE WHEN :valueKnown = 1 THEN :value ELSE isOnline END "
         "\n WHERE contactId = :contactId;";
 
 static const char *removeContact =
@@ -2881,7 +2884,7 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
     m_engine.regenerateDisplayLabel(*contact);
 
     bindContactDetails(*contact, m_updateContact, definitionMask, true);
-    m_updateContact.bindValue(20, contactId);
+    m_updateContact.bindValue(22, contactId);
     if (!m_updateContact.exec()) {
         qWarning() << "Failed to update contact";
         qWarning() << m_updateContact.lastError();
@@ -3016,6 +3019,23 @@ void ContactWriter::bindContactDetails(const QContact &contact, QSqlQuery &query
         query.bindValue(19, value);
     } else {
         query.bindValue(16, value);
+    }
+
+    // isOnline is true if any presence details are not offline/unknown
+    valueKnown = definitionMask.isEmpty() || detailListContains<QContactPresence>(definitionMask);
+    value = false;
+    foreach (const QContactPresence &presence, contact.details<QContactPresence>()) {
+        if (presence.presenceState() >= QContactPresence::PresenceAvailable &&
+            presence.presenceState() <= QContactPresence::PresenceExtendedAway) {
+            value = true;
+            break;
+        }
+    }
+    if (update) {
+        query.bindValue(20, valueKnown);
+        query.bindValue(21, value);
+    } else {
+        query.bindValue(17, value);
     }
 }
 

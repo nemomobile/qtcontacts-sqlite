@@ -64,6 +64,7 @@ public:
         HasPhoneNumber = (1 << 0),
         HasEmailAddress = (1 << 1),
         HasOnlineAccount = (1 << 2),
+        IsOnline = (1 << 3),
     };
     Q_DECLARE_FLAGS(Flags, Flag)
 

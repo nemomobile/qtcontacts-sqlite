@@ -380,7 +380,7 @@ static void setValues(QContactPhoneNumber *detail, QSqlQuery *query, const int o
 
 static const FieldInfo presenceFields[] =
 {
-    { QContactPresence::FieldPresenceState, "presenceState", StringField },
+    { QContactPresence::FieldPresenceState, "presenceState", IntegerField },
     { QContactPresence::FieldTimestamp, "timestamp", DateField },
     { QContactPresence::FieldNickname, "nickname", StringField },
     { QContactPresence::FieldCustomMessage, "customMessage", StringField }
@@ -390,7 +390,7 @@ static void setValues(QContactPresence *detail, QSqlQuery *query, const int offs
 {
     typedef QContactPresence T;
 
-    setValue(detail, T::FieldPresenceState, query->value(offset + 0));
+    setValue(detail, T::FieldPresenceState, query->value(offset + 0).toInt());
     setValue(detail, T::FieldTimestamp    , query->value(offset + 1));
     setValue(detail, T::FieldNickname     , query->value(offset + 2));
     setValue(detail, T::FieldCustomMessage, query->value(offset + 3));
@@ -400,7 +400,7 @@ static void setValues(QContactGlobalPresence *detail, QSqlQuery *query, const in
 {
     typedef QContactPresence T;
 
-    setValue(detail, T::FieldPresenceState, query->value(offset + 0));
+    setValue(detail, T::FieldPresenceState, query->value(offset + 0).toInt());
     setValue(detail, T::FieldTimestamp    , query->value(offset + 1));
     setValue(detail, T::FieldNickname     , query->value(offset + 2));
     setValue(detail, T::FieldCustomMessage, query->value(offset + 3));
@@ -1719,6 +1719,7 @@ QContactManager::Error ContactReader::queryContacts(
             flags.setFlag(QContactStatusFlags::HasPhoneNumber, query.value(15).toBool());
             flags.setFlag(QContactStatusFlags::HasEmailAddress, query.value(16).toBool());
             flags.setFlag(QContactStatusFlags::HasOnlineAccount, query.value(17).toBool());
+            flags.setFlag(QContactStatusFlags::IsOnline, query.value(18).toBool());
             QContactManagerEngine::setDetailAccessConstraints(&flags, QContactDetail::ReadOnly | QContactDetail::Irremovable);
             contact.saveDetail(&flags);
 
