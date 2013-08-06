@@ -158,6 +158,12 @@ static const FieldInfo favoriteFields[] =
     { QContactFavorite::FieldFavorite, "isFavorite", BooleanField }
 };
 
+static const FieldInfo statusFlagsFields[] =
+{
+    // No specific field; tests hasPhoneNumber/hasEmailAddress/hasOnlineAccount/isOnline
+    { QContactStatusFlags::FieldFlags, "", OtherField }
+};
+
 static const FieldInfo addressFields[] =
 {
     { QContactAddress::FieldStreet, "street", StringField },
@@ -627,6 +633,7 @@ static const DetailInfo detailInfo[] =
     DEFINE_DETAIL_PRIMARY_TABLE(QContactTimestamp,    timestampFields),
     DEFINE_DETAIL_PRIMARY_TABLE(QContactGender,       genderFields),
     DEFINE_DETAIL_PRIMARY_TABLE(QContactFavorite,     favoriteFields),
+    DEFINE_DETAIL_PRIMARY_TABLE(QContactStatusFlags,  statusFlagsFields),
     DEFINE_DETAIL(QContactAddress       , Addresses      , addressFields      , false),
     DEFINE_DETAIL(QContactAnniversary   , Anniversaries  , anniversaryFields  , false),
     DEFINE_DETAIL(QContactAvatar        , Avatars        , avatarFields       , false),
@@ -767,6 +774,42 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
                         filter.value().toString().isEmpty())) { // match all sync targets if empty sync target filter
                 const QString comparison(QLatin1String("%1 IS NOT NULL"));
                 return detail.where().arg(comparison.arg(field.column));
+            }
+
+            if (field.fieldType == OtherField) {
+                if (filterOnField<QContactStatusFlags>(filter, QContactStatusFlags::FieldFlags)) {
+                    static const quint64 flags[] = { QContactStatusFlags::HasPhoneNumber,
+                                                 QContactStatusFlags::HasEmailAddress,
+                                                 QContactStatusFlags::HasOnlineAccount,
+                                                 QContactStatusFlags::IsOnline };
+                    static const char *flagColumns[] = { "hasPhoneNumber",
+                                                         "hasEmailAddress",
+                                                         "hasOnlineAccount",
+                                                         "isOnline" };
+
+                    quint64 flagsValue = filter.value().value<quint64>();
+
+                    QStringList clauses;
+                    if (filter.matchFlags() == QContactFilter::MatchExactly) {
+                        for (int i  = 0; i < lengthOf(flags); ++i) {
+                            clauses.append(QString::fromLatin1("%1 = %2").arg(flagColumns[i]).arg((flagsValue & flags[i]) ? 1 : 0));
+                        }
+                    } else if (filter.matchFlags() == QContactFilter::MatchContains) {
+                        for (int i  = 0; i < lengthOf(flags); ++i) {
+                            if (flagsValue & flags[i]) {
+                                clauses.append(QString::fromLatin1("%1 = 1").arg(flagColumns[i]));
+                            }
+                        }
+                    } else {
+                        qWarning() << "Unsupported flags matching contact status flags";
+                        continue;
+                    }
+
+                    if (!clauses.isEmpty()) {
+                        return detail.where().arg(clauses.join(QString::fromLatin1(" AND ")));
+                    }
+                    continue;
+                }
             }
 
             // TODO: We need case handling for StringListField, too

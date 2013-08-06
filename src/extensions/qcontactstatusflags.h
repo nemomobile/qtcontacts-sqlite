@@ -77,8 +77,11 @@ public:
 
     bool testFlag(Flag flag) const;
 
-    static QContactDetailFilter matchFlag(Flag flag);
+    static QContactDetailFilter matchFlag(Flag flag, QContactFilter::MatchFlags matchFlags = QContactFilter::MatchContains);
+    static QContactDetailFilter matchFlags(Flags flags, QContactFilter::MatchFlags matchFlags = QContactFilter::MatchContains);
 };
+
+Q_DECLARE_OPERATORS_FOR_FLAGS(QContactStatusFlags::Flags)
 
 #ifdef USING_QTPIM
 QT_END_NAMESPACE_CONTACTS

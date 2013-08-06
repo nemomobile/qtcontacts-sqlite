@@ -900,9 +900,11 @@ QContactManager::Error ContactWriter::saveRelationships(
         return QContactManager::InvalidRelationshipError;
     }
 
+#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     if (!aggregatesAffected.isEmpty()) {
         regenerateAggregates(aggregatesAffected.toList(), DetailList(), true);
     }
+#endif
 
     return QContactManager::NoError;
 }
@@ -1116,7 +1118,9 @@ QContactManager::Error ContactWriter::remove(const QList<QContactIdType> &contac
             return QContactManager::UnspecifiedError;
         }
         m_removeContact.finish();
-        m_removedIds.insert(realRemoveIds);
+        foreach (const QContactIdType &rrid, realRemoveIds) {
+            m_removedIds.insert(rrid);
+        }
         if (!withinTransaction && !commitTransaction()) {
             // only commit if we created a transaction.
             qWarning() << "Failed to commit removal";

@@ -77,7 +77,12 @@ bool QContactStatusFlags::testFlag(Flag flag) const
     return flags().testFlag(flag);
 }
 
-QContactDetailFilter QContactStatusFlags::matchFlag(Flag flag)
+QContactDetailFilter QContactStatusFlags::matchFlag(Flag flag, QContactFilter::MatchFlags matchFlags)
+{
+    return QContactStatusFlags::matchFlags(Flags(flag), matchFlags);
+}
+
+QContactDetailFilter QContactStatusFlags::matchFlags(Flags flags, QContactFilter::MatchFlags matchFlags)
 {
     QContactDetailFilter filter;
 #ifdef USING_QTPIM
@@ -85,8 +90,8 @@ QContactDetailFilter QContactStatusFlags::matchFlag(Flag flag)
 #else
     filter.setDetailDefinitionName(QContactStatusFlags::DefinitionName, FieldFlags);
 #endif
-    filter.setValue(static_cast<quint64>(flag));
-    filter.setMatchFlags(QContactFilter::MatchContains);
+    filter.setValue(static_cast<quint64>(flags));
+    filter.setMatchFlags(matchFlags);
     return filter;
 }
 
