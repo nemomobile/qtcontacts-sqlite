@@ -44,6 +44,8 @@
 #include "../../util.h"
 #include "../../qcontactmanagerdataholder.h"
 
+#include <QContactStatusFlags>
+
 //TESTED_COMPONENT=src/contacts
 //TESTED_CLASS=
 //TESTED_FILES=
@@ -171,6 +173,9 @@ private slots:
 
     void detailPhoneNumberFiltering();
     void detailPhoneNumberFiltering_data();
+
+    void statusFlagsFiltering();
+    void statusFlagsFiltering_data();
 
     void detailVariantFiltering();
     void detailVariantFiltering_data();
@@ -592,6 +597,55 @@ void tst_QContactManagerFiltering::detailPhoneNumberFiltering()
     QString output = convertIds(contacts, ids, 'a', 'k'); // don't include the convenience filtering contacts
     //SKIP_TEST("TODO: fix default implementation of phone number matching!", SkipSingle);
     QCOMPARE_UNSORTED(output, expected);
+}
+
+void tst_QContactManagerFiltering::statusFlagsFiltering_data()
+{
+    QTest::addColumn<QContactManager *>("cm");
+
+    for (int i = 0; i < managers.size(); i++) {
+        QContactManager *cm = managers.at(i);
+        QTest::newRow(qPrintable(cm->objectName())) << cm;
+    }
+}
+
+void tst_QContactManagerFiltering::statusFlagsFiltering()
+{
+    QFETCH(QContactManager*, cm);
+
+    // Test for correct matching of all contact properties
+    QSet<QContactIdType> phoneNumberIds = cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::HasPhoneNumber, QContactFilter::MatchContains)).toSet();
+    QSet<QContactIdType> emailAddressIds = cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::HasEmailAddress, QContactFilter::MatchContains)).toSet();
+    QSet<QContactIdType> onlineAccountIds = cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::HasOnlineAccount, QContactFilter::MatchContains)).toSet();
+    QSet<QContactIdType> onlineIds = cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::IsOnline, QContactFilter::MatchContains)).toSet();
+
+    // Also test for combination tests
+    QContactFilter filter(QContactStatusFlags::matchFlags(QContactStatusFlags::HasPhoneNumber | QContactStatusFlags::HasEmailAddress, QContactFilter::MatchContains));
+    QSet<QContactIdType> phoneAndEmailIds = cm->contactIds(filter).toSet();
+
+    filter = QContactStatusFlags::matchFlags(QContactStatusFlags::HasPhoneNumber, QContactFilter::MatchExactly);
+    QSet<QContactIdType> phoneOnlyIds = cm->contactIds(filter).toSet();
+
+    QList<QContactIdType> contacts = contactsAddedToManagers.values(cm);
+    foreach (const QContact &contact, cm->contacts(contacts)) {
+        QContactIdType contactId(ContactId::apiId(contact));
+
+        const bool hasPhoneNumber = !contact.details<QContactPhoneNumber>().isEmpty();
+        const bool hasEmailAddress = !contact.details<QContactEmailAddress>().isEmpty();
+        const bool hasOnlineAccount = !contact.details<QContactOnlineAccount>().isEmpty();
+
+        QContactGlobalPresence presence = contact.detail<QContactGlobalPresence>();
+        QContactPresence::PresenceState presenceState = presence.presenceState();
+        const bool isOnline = (presenceState != QContactPresence::PresenceUnknown) && (presenceState != QContactPresence::PresenceOffline);
+
+        QCOMPARE(phoneNumberIds.contains(contactId), hasPhoneNumber);
+        QCOMPARE(emailAddressIds.contains(contactId), hasEmailAddress);
+        QCOMPARE(onlineAccountIds.contains(contactId), hasOnlineAccount);
+        QCOMPARE(onlineIds.contains(contactId), isOnline);
+
+        QCOMPARE(phoneAndEmailIds.contains(contactId), (hasPhoneNumber && hasEmailAddress));
+        QCOMPARE(phoneOnlyIds.contains(contactId), (hasPhoneNumber && !hasEmailAddress && !hasOnlineAccount && !isOnline));
+    }
 }
 
 void tst_QContactManagerFiltering::detailVariantFiltering_data()
@@ -2958,7 +3012,7 @@ QList<QContactIdType> tst_QContactManagerFiltering::prepareModel(QContactManager
     emailAddr.setEmailAddress("Aaron@Aaronson.com");
     number.setNumber("5551212");
     string.setValue(definitionDetails.value("String").second, "Aaron Aaronson");
-    integer.setValue(definitionDetails.value("Integer").second, 10);
+    integer.setValue(definitionDetails.value("Integer").second, 3); // QContactPresence::PresenceBusy
     datetime.setValue(definitionDetails.value("DateTime").second, QDateTime(QDate(2009, 06, 29), QTime(16, 52, 23, 0)));
     boool.setValue(definitionDetails.value("Bool").second, true);
     ullong.setValue(definitionDetails.value("ULongLong").second, (qulonglong)120000000000LL); // 120B
@@ -2990,7 +3044,7 @@ QList<QContactIdType> tst_QContactManagerFiltering::prepareModel(QContactManager
     nick.setNickname("Sir Bob");
     number.setNumber("5553456");
     string.setValue(definitionDetails.value("String").second, "Bob Aaronsen");
-    integer.setValue(definitionDetails.value("Integer").second, 20);
+    integer.setValue(definitionDetails.value("Integer").second, 6); // QContactPresence::PresenceOffline
     dubble.setValue(definitionDetails.value("Double").second, 4.0);
     boool.setValue(definitionDetails.value("Bool").second, false);
     ullong.setValue(definitionDetails.value("ULongLong").second, (qulonglong) 80000000000LL); // 80B
@@ -3024,7 +3078,7 @@ QList<QContactIdType> tst_QContactManagerFiltering::prepareModel(QContactManager
     name.setFirstName("Boris");
     name.setLastName("Aaronsun");
     string.setValue(definitionDetails.value("String").second, "Boris Aaronsun");
-    integer.setValue(definitionDetails.value("Integer").second, -20);
+    integer.setValue(definitionDetails.value("Integer").second, 0); // QContactPresence::PresenceUnknown
     datetime.setValue(definitionDetails.value("DateTime").second, QDateTime(QDate(2009, 06, 29), QTime(16, 54, 17, 0)));
     llong.setValue(definitionDetails.value("LongLong").second, (qlonglong)8000000000LL); // 8B
     charr.setValue(definitionDetails.value("Char").second, QVariant(QChar('c')));
