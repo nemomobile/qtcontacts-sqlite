@@ -818,6 +818,9 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
             bool useNormalizedNumber = false;
             int globValue = filter.matchFlags() & 7;
 
+            // TODO: if MatchFixedString is specified but the field type is numeric, we need to
+            // cast the column to text for comparison
+
             // We need to perform case-insensitive matching if MatchFixedString is specified (unless
             // CaseSensitive is also specified)
             bool caseInsensitive = stringField &&
