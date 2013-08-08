@@ -697,27 +697,23 @@ static bool prepareDatabase(QSqlDatabase &database)
 
 QSqlDatabase ContactsDatabase::open(const QString &databaseName)
 {
+    // horrible hack: Qt4 didn't have GenericDataLocation so we hardcode DATA_DIR location.
+    QString privilegedDataDir(QString("%1/%2/")
+            .arg(QString::fromLatin1(QTCONTACTS_SQLITE_CENTRAL_DATA_DIR))
+            .arg(QString::fromLatin1(QTCONTACTS_SQLITE_PRIVILEGED_DIR)));
+    QString unprivilegedDataDir(QString::fromLatin1(QTCONTACTS_SQLITE_CENTRAL_DATA_DIR));
+
     // See if we can access the privileged version of the DB
-    QDir databaseDir(QString::fromLatin1(QTCONTACTS_SQLITE_PRIVILEGED_DATABASE_DIR));
-    if (!databaseDir.exists() || !databaseDir.isReadable()) {
-        // horrible hack: Qt4 didn't have GenericDataLocation so we hardcode database location.
-        databaseDir = QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR);
-        if (!databaseDir.exists()) {
-            // Create the directory tree if required
-            if (!databaseDir.mkpath(QString::fromLatin1("."))) {
-                qWarning() << "Unable to create database directory:" << databaseDir.path();
-                return QSqlDatabase();
-            }
-        }
+    QDir databaseDir(privilegedDataDir);
+    if (databaseDir.exists() && databaseDir.isReadable()) {
+        databaseDir = privilegedDataDir + QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR);
+    } else {
+        databaseDir = unprivilegedDataDir + QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR);
     }
 
-    // Create a directory to contain the DB files if required
-    databaseDir = QDir(databaseDir.path() + QString::fromLatin1("/qtcontacts-sqlite"));
-    if (!databaseDir.exists()) {
-        if (!databaseDir.mkpath(QString::fromLatin1("."))) {
-            qWarning() << "Unable to create contacts database directory:" << databaseDir.path();
-            return QSqlDatabase();
-        }
+    if (!databaseDir.exists() && !databaseDir.mkpath(QString::fromLatin1("."))) {
+        qWarning() << "Unable to create contacts database directory:" << databaseDir.path();
+        return QSqlDatabase();
     }
 
     const QString databaseFile = databaseDir.absoluteFilePath(QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_NAME));
