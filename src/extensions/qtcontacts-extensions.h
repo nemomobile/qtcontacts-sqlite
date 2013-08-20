@@ -122,6 +122,15 @@ quint32 internalContactId(const ApiContactIdType &);
 quint32 internalContactId(const QContactId &);
 #endif
 
+enum NormalizePhoneNumberFlags {
+    KeepPhoneNumberPunctuation = (1 << 0),
+    KeepPhoneNumberDialString = (1 << 1),
+    ValidatePhoneNumber = (1 << 2)
+};
+
+QString normalizePhoneNumber(const QString &input, NormalizePhoneNumberFlags flags);
+QString minimizePhoneNumber(const QString &input, int maxCharacters = 7);
+
 }
 
 #endif

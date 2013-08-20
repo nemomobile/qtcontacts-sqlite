@@ -21,7 +21,6 @@ INCLUDEPATH += \
 
 HEADERS += \
         semaphore_p.h \
-        constants_p.h \
         conversion_p.h \
         contactid_p.h \
         contactsdatabase.h \
