@@ -122,15 +122,18 @@ quint32 internalContactId(const ApiContactIdType &);
 quint32 internalContactId(const QContactId &);
 #endif
 
-enum NormalizePhoneNumberFlags {
+enum NormalizePhoneNumberFlag {
     KeepPhoneNumberPunctuation = (1 << 0),
     KeepPhoneNumberDialString = (1 << 1),
     ValidatePhoneNumber = (1 << 2)
 };
+Q_DECLARE_FLAGS(NormalizePhoneNumberFlags, NormalizePhoneNumberFlag)
 
 QString normalizePhoneNumber(const QString &input, NormalizePhoneNumberFlags flags);
 QString minimizePhoneNumber(const QString &input, int maxCharacters = 7);
 
 }
+
+Q_DECLARE_OPERATORS_FOR_FLAGS(QtContactsSqliteExtensions::NormalizePhoneNumberFlags)
 
 #endif

@@ -89,7 +89,16 @@ QString normalize(const QString &input, int flags, int maxCharacters)
             }
         } else if (dtmfChars.contains(*it)) {
             if ((flags & QtContactsSqliteExtensions::KeepPhoneNumberDialString) == 0) {
-                // No need to continue
+                // No need to continue accumulating
+                if (flags & QtContactsSqliteExtensions::ValidatePhoneNumber) {
+                    // Ensure the remaining characters are permissible
+                    while (++it != end) {
+                        if ((!(*it).isDigit()) && !allowedSeparators.contains(*it) && !dtmfChars.contains(*it)) {
+                            // Invalid character
+                            return QString();
+                        }
+                    }
+                }
                 break;
             } else if (firstDtmfIndex == -1) {
                 firstDtmfIndex = subset.length();
