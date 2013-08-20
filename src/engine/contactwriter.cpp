@@ -1593,6 +1593,7 @@ template <typename T> bool ContactWriter::writeCommonDetails(
         if (!m_insertDetail.exec()) {
             qWarning() << "Failed to write common details for" << detailTypeName<T>();
             qWarning() << m_insertDetail.lastError();
+            qWarning() << "detailUri:" << detailUri.value<QString>() << "linkedDetailUris:" << linkedDetailUris.value<QString>();
             *error = QContactManager::UnspecifiedError;
             return false;
         }
