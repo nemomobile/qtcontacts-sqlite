@@ -34,6 +34,102 @@
 
 #include "qtcontacts-extensions.h"
 
+namespace {
+
+QString normalize(const QString &input, int flags, int maxCharacters)
+{
+    // Allow '[' and ']' even though RFC3966 doesn't
+    static const QString allowedSeparators(QString::fromLatin1(" .-()[]"));
+    static const QString dtmfChars(QString::fromLatin1("pPwWxX#*"));
+    static const QString sipScheme(QString::fromLatin1("sips:"));
+    static const QString hashControl(QString::fromLatin1("#31#"));
+    static const QString starControl(QString::fromLatin1("*31#"));
+
+    static const QChar plus(QChar::fromLatin1('+'));
+    static const QChar colon(QChar::fromLatin1(':'));
+    static const QChar at(QChar::fromLatin1('@'));
+
+    // If this is a SIP URI (empty scheme means 'sips'), validate the identifier part
+    QString number(input);
+    if (number.startsWith(sipScheme) || number.startsWith(colon)) {
+        int colonIndex = number.indexOf(colon);
+        int atIndex = number.indexOf(at, colonIndex + 1);
+        if (atIndex != -1) {
+            number = number.mid(colonIndex + 1, (atIndex - colonIndex - 1));
+        }
+    }
+
+    QString subset;
+    subset.reserve(number.length());
+
+    QChar initialDigit;
+    int firstDtmfIndex = -1;
+
+    QString::const_iterator it = number.constBegin(), end = number.constEnd();
+    for ( ; it != end; ++it) {
+        if ((*it).isDigit()) {
+            // Convert to ASCII, capturing unicode digit values
+            const QChar digit(QChar::fromLatin1('0' + (*it).digitValue()));
+            subset.append(digit);
+            if (initialDigit.isNull()) {
+                initialDigit = digit;
+            }
+        } else if (*it == plus) {
+            if (initialDigit.isNull()) {
+                // This is the start of the diallable number
+                subset.append(*it);
+                initialDigit = *it;
+            } else if (flags & QtContactsSqliteExtensions::ValidatePhoneNumber) {
+                // Not valid in this location
+                return QString();
+            }
+        } else if (allowedSeparators.contains(*it)) {
+            if (flags & QtContactsSqliteExtensions::KeepPhoneNumberPunctuation) {
+                subset.append(*it);
+            }
+        } else if (dtmfChars.contains(*it)) {
+            if ((flags & QtContactsSqliteExtensions::KeepPhoneNumberDialString) == 0) {
+                // No need to continue
+                break;
+            } else if (firstDtmfIndex == -1) {
+                firstDtmfIndex = subset.length();
+            }
+            subset.append(*it);
+        } else if (flags & QtContactsSqliteExtensions::ValidatePhoneNumber) {
+            // Invalid character
+            return QString();
+        }
+    }
+
+    if ((flags & QtContactsSqliteExtensions::ValidatePhoneNumber) &&
+        (initialDigit == plus) && (firstDtmfIndex != -1)) {
+        // If this number starts with '+', it mustn't contain control codes
+        if ((subset.indexOf(hashControl, firstDtmfIndex) != -1) ||
+            (subset.indexOf(starControl, firstDtmfIndex) != -1)) {
+            return QString();
+        }
+    }
+
+    if (maxCharacters != -1) {
+        int characters = 0;
+        int index = (firstDtmfIndex == -1) ? (subset.length() - 1) : (firstDtmfIndex - 1);
+        for ( ; index > 0; --index) {
+            const QChar &c(subset.at(index));
+            if (c.isDigit() || c == plus) {
+                if (++characters == maxCharacters) {
+                    // Only include the digits from here
+                    subset = subset.mid(index);
+                    break;
+                }
+            }
+        }
+    }
+
+    return subset.trimmed();
+}
+
+}
+
 namespace QtContactsSqliteExtensions {
 
 ApiContactIdType apiContactId(quint32 iid)
@@ -75,6 +171,17 @@ quint32 internalContactId(const QContactId &id)
     return static_cast<quint32>(id.localId());
 }
 #endif
+
+QString normalizePhoneNumber(const QString &input, NormalizePhoneNumberFlags flags)
+{
+    return normalize(input, flags, -1);
+}
+
+QString minimizePhoneNumber(const QString &input, int maxCharacters)
+{
+    // Minimal form number should preserve DTMF dial string to differentiate PABX extensions
+    return normalize(input, KeepPhoneNumberDialString, maxCharacters);
+}
 
 }
 
