@@ -106,6 +106,8 @@ private slots:
 
     void customSemantics();
 
+    void changeLogFiltering();
+
 private:
     void waitForSignalPropagation();
 
@@ -2711,6 +2713,105 @@ void tst_Aggregation::customSemantics()
 
     // cleanup.
     m_cm->removeContact(removalId(alice));
+}
+
+#define TRIM_DT_MSECS(dt) QDateTime::fromString(dt.toUTC().toString("yyyy-MM-dd hh:mm:ss"), "yyyy-MM-dd hh:mm:ss")
+void tst_Aggregation::changeLogFiltering()
+{
+    // the qtcontacts-sqlite engine automatically adds creation and modification
+    // timestamps if they're not already set.
+    // NOTE: sqlite doesn't store milliseconds!
+
+    QTest::qWait(2000); // wait two seconds, to ensure unique timestamps for saved contacts.
+    QDateTime startTime = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
+    QDateTime minus5 = TRIM_DT_MSECS(startTime.addDays(-5));
+    QDateTime minus3 = TRIM_DT_MSECS(startTime.addDays(-3));
+    QDateTime minus2 = TRIM_DT_MSECS(startTime.addDays(-2));
+
+    // 1) if provided, should not be overwritten
+    QContact a;
+    QContactName an;
+    an.setFirstName("Alice");
+    a.saveDetail(&an);
+    QContactTimestamp at;
+    at.setCreated(minus5);
+    at.setLastModified(minus2);
+    a.saveDetail(&at);
+
+    QVERIFY(m_cm->saveContact(&a));
+    a = m_cm->contact(retrievalId(a));
+    at = a.detail<QContactTimestamp>();
+    QCOMPARE(at.created(), minus5);
+    QCOMPARE(at.lastModified(), minus2);
+
+    // 2) if modified timestamp not provided, should be automatically generated.
+    at.setLastModified(QDateTime());
+    a.saveDetail(&at);
+    QVERIFY(m_cm->saveContact(&a));
+    a = m_cm->contact(retrievalId(a));
+    at = a.detail<QContactTimestamp>();
+    QCOMPARE(at.created(), minus5);
+    QVERIFY(at.lastModified() >= startTime);
+    QVERIFY(at.lastModified() <= QDateTime::currentDateTimeUtc());
+
+    // 3) created timestamp should only be generated on creation, not normal save.
+    at.setCreated(QDateTime());
+    a.saveDetail(&at);
+    QVERIFY(m_cm->saveContact(&a));
+    a = m_cm->contact(retrievalId(a));
+    at = a.detail<QContactTimestamp>();
+    QCOMPARE(at.created(), QDateTime());
+    QVERIFY(at.lastModified() >= startTime);
+    QVERIFY(at.lastModified() <= QDateTime::currentDateTimeUtc());
+
+    QContact b;
+    QContactName bn;
+    bn.setFirstName("Bob");
+    b.saveDetail(&bn);
+    QVERIFY(m_cm->saveContact(&b));
+    b = m_cm->contact(retrievalId(b));
+    QContactTimestamp bt = b.detail<QContactTimestamp>();
+    QVERIFY(bt.created() >= startTime);
+    QVERIFY(bt.created() <= QDateTime::currentDateTimeUtc());
+    QVERIFY(bt.lastModified() >= startTime);
+    QVERIFY(bt.lastModified() <= QDateTime::currentDateTimeUtc());
+
+    // 4) ensure filtering works as expected.
+    // First, ensure timestamps are filterable;
+    // invalid date times are always included in filtered results.
+    at.setCreated(minus5);
+    at.setLastModified(minus2);
+    a.saveDetail(&at);
+    QVERIFY(m_cm->saveContact(&a));
+    a = m_cm->contact(retrievalId(a));
+    at = a.detail<QContactTimestamp>();
+    QCOMPARE(at.created(), minus5);
+    QCOMPARE(at.lastModified(), minus2);
+
+    QContactIntersectionFilter cif;
+    QContactDetailFilter stf;
+    setFilterDetail<QContactSyncTarget>(stf, QContactSyncTarget::FieldSyncTarget);
+    stf.setValue("local"); // explicitly ignore aggregates.
+    QContactChangeLogFilter clf;
+    clf.setSince(startTime);
+
+    clf.setEventType(QContactChangeLogFilter::EventAdded);
+    cif.clear(); cif << stf << clf;
+    QList<QContactIdType> filtered = m_cm->contactIds(cif);
+    QVERIFY(filtered.contains(retrievalId(b)));
+    QVERIFY(!filtered.contains(retrievalId(a)));
+
+    clf.setEventType(QContactChangeLogFilter::EventChanged);
+    cif.clear(); cif << stf << clf;
+    filtered = m_cm->contactIds(cif);
+    QVERIFY(filtered.contains(retrievalId(b)));
+    QVERIFY(!filtered.contains(retrievalId(a)));
+
+    clf.setSince(minus3); // a was modified at minus2 so it should now be included.
+    cif.clear(); cif << stf << clf;
+    filtered = m_cm->contactIds(cif);
+    QVERIFY(filtered.contains(retrievalId(b)));
+    QVERIFY(filtered.contains(retrievalId(a)));
 }
 
 QTEST_MAIN(tst_Aggregation)

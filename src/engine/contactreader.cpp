@@ -67,6 +67,7 @@
 #else
 #include <QContactLocalIdFilter>
 #endif
+#include <QContactChangeLogFilter>
 #include <QContactUnionFilter>
 #include <QContactIntersectionFilter>
 
@@ -749,6 +750,36 @@ static QString convertFilterValueToString(const QContactDetailFilter &filter, co
 }
 #endif
 
+static QString dateString(bool dateOnly, const QDateTime &qdt)
+{
+    if (dateOnly) {
+        //return QString(QLatin1String("date('%1')")).arg(qdt.toUTC().toString(Qt::ISODate));
+        return qdt.toUTC().toString(Qt::ISODate).mid(0, 10); // 'yyyy-MM-dd'
+    }
+
+    // note: quoting (via QString("'%1'").arg(...)) causes unit test failures
+    // because we bind the resultant value rather than use substring replacement
+    // and a bound string value is quoted by Qt.
+    return qdt.toUTC().toString(Qt::ISODate);
+}
+
+static QString dateString(const DetailInfo &detail, const QDateTime &qdt)
+{
+#ifdef USING_QTPIM
+    if (detail.detail == QContactBirthday::Type
+            || detail.detail == QContactAnniversary::Type) {
+#else
+    if (detail.detail == QContactBirthday::DefinitionName
+            || detail.detail == QContactAnniversary::DefinitionName) {
+#endif
+        // just interested in the date, not the whole date time
+        return dateString(true, qdt);
+    }
+
+    return dateString(false, qdt);
+}
+
+
 static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bindings, bool *failed)
 {
     if (filter.matchFlags() & QContactFilter::MatchKeypadCollation) {
@@ -813,6 +844,7 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
             }
 
             // TODO: We need case handling for StringListField, too
+            bool dateField = field.fieldType == DateField;
             bool stringField = field.fieldType == StringField;
             bool phoneNumberMatch = filter.matchFlags() & QContactFilter::MatchPhoneNumber;
             bool useNormalizedNumber = false;
@@ -871,7 +903,9 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
             } else {
 #ifdef USING_QTPIM
                 const QVariant &v(filter.value());
-                if (!stringField && (v.type() == QVariant::Bool)) {
+                if (dateField) {
+                    bindValue = dateString(detail, v.toDateTime());
+                } else if (!stringField && (v.type() == QVariant::Bool)) {
                     // Convert to "1"/"0" rather than "true"/"false"
                     bindValue = QString::number(v.toBool() ? 1 : 0);
                 } else {
@@ -939,6 +973,7 @@ static QString buildWhere(const QContactDetailRangeFilter &filter, QVariantList 
             }
 
             QString comparison;
+            bool dateField = field.fieldType == DateField;
             bool stringField = field.fieldType == StringField;
             bool caseInsensitive = stringField &&
                                    filter.matchFlags() & QContactFilter::MatchFixedString &&
@@ -946,7 +981,11 @@ static QString buildWhere(const QContactDetailRangeFilter &filter, QVariantList 
 
             bool needsAnd = false;
             if (filter.minValue().isValid()) {
-                bindings->append(filter.minValue());
+                if (dateField) {
+                    bindings->append(dateString(detail, filter.minValue().toDateTime()));
+                } else {
+                    bindings->append(filter.minValue());
+                }
                 if (caseInsensitive) {
                     comparison = (filter.rangeFlags() & QContactDetailRangeFilter::ExcludeLower)
                             ? QString(QLatin1String("%1 > lower(?)"))
@@ -962,7 +1001,11 @@ static QString buildWhere(const QContactDetailRangeFilter &filter, QVariantList 
             if (filter.maxValue().isValid()) {
                 if (needsAnd)
                     comparison += QLatin1String(" AND ");
-                bindings->append(filter.maxValue());
+                if (dateField) {
+                    bindings->append(dateString(detail, filter.maxValue().toDateTime()));
+                } else {
+                    bindings->append(filter.maxValue());
+                }
                 if (caseInsensitive) {
                     comparison += (filter.rangeFlags() & QContactDetailRangeFilter::IncludeUpper)
                             ? QString(QLatin1String("%1 <= lower(?)"))
@@ -1107,6 +1150,23 @@ static QString buildWhere(const QContactRelationshipFilter &filter, QVariantList
     return statement;
 }
 
+static QString buildWhere(const QContactChangeLogFilter &filter, QVariantList *bindings, bool *failed)
+{
+    static const QString statement(QLatin1String("Contacts.%1 >= ?"));
+    bindings->append(dateString(false, filter.since()));
+    switch (filter.eventType()) {
+        case QContactChangeLogFilter::EventAdded:
+            return statement.arg(QLatin1String("created"));
+        case QContactChangeLogFilter::EventChanged:
+            return statement.arg(QLatin1String("modified"));
+        default: break;
+    }
+
+    *failed = true;
+    qWarning() << "Cannot buildWhere with changelog filter on removed timestamps";
+    return QLatin1String("FALSE");
+}
+
 static QString buildWhere(const QContactFilter &filter, QVariantList *bindings, bool *failed);
 
 static QString buildWhere(const QContactUnionFilter &filter, QVariantList *bindings, bool *failed)
@@ -1153,6 +1213,8 @@ static QString buildWhere(const QContactFilter &filter, QVariantList *bindings, 
         return buildWhere(static_cast<const QContactDetailFilter &>(filter), bindings, failed);
     case QContactFilter::ContactDetailRangeFilter:
         return buildWhere(static_cast<const QContactDetailRangeFilter &>(filter), bindings, failed);
+    case QContactFilter::ChangeLogFilter:
+        return buildWhere(static_cast<const QContactChangeLogFilter &>(filter), bindings, failed);
     case QContactFilter::RelationshipFilter:
         return buildWhere(static_cast<const QContactRelationshipFilter &>(filter), bindings, failed);
     case QContactFilter::IntersectionFilter:
@@ -1439,6 +1501,7 @@ bool includesSelfId(const QContactFilter &filter)
     case QContactFilter::DefaultFilter:
     case QContactFilter::ContactDetailFilter:
     case QContactFilter::ContactDetailRangeFilter:
+    case QContactFilter::ChangeLogFilter:
     case QContactFilter::RelationshipFilter:
         return false;
 
@@ -1848,6 +1911,7 @@ QContactManager::Error ContactReader::readContactIds(
         }
         contactIdsAvailable(*contactIds);
     } while (query.isValid());
+
     return QContactManager::NoError;
 }
 
