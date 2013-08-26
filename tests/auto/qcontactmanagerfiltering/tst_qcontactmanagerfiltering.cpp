@@ -725,6 +725,7 @@ void tst_QContactManagerFiltering::detailVariantFiltering_data()
          * Date times
          * A has QDateTime(QDate(2009, 06, 29), QTime(16, 52, 23, 0))
          * C has QDateTime(QDate(2009, 06, 29), QTime(16, 54, 17, 0))
+         * NOTE: value presence filtering can fail due to automatic timestamp insertion by qtcontacts-sqlite backend
          */
         const QDateTime adt(QDate(2009, 06, 29), QTime(16, 52, 23, 0));
         const QDateTime cdt(QDate(2009, 06, 29), QTime(16, 54, 17, 0));

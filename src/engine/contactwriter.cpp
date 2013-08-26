@@ -2775,6 +2775,31 @@ static bool updateGlobalPresence(QContact *contact)
     return true;
 }
 
+static bool updateTimestamp(QContact *contact, bool setCreationTimestamp)
+{
+    QContactTimestamp timestamp = contact->detail<QContactTimestamp>();
+    QDateTime createdTime = timestamp.created().toUTC();
+    QDateTime modifiedTime = timestamp.lastModified().toUTC();
+    bool needsSave = false;
+
+    if (!modifiedTime.isValid()) {
+        modifiedTime = QDateTime::currentDateTimeUtc();
+        timestamp.setLastModified(modifiedTime);
+        needsSave = true;
+    }
+
+    if (setCreationTimestamp && !createdTime.isValid()) {
+        timestamp.setCreated(modifiedTime);
+        needsSave = true;
+    }
+
+    if (needsSave) {
+        return contact->saveDetail(&timestamp);
+    }
+
+    return true;
+}
+
 QContactManager::Error ContactWriter::create(QContact *contact, const DetailList &definitionMask, int maxAggregateId, bool withinTransaction, bool withinAggregateUpdate)
 {
 #ifndef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
@@ -2792,6 +2817,9 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
 
     // update the display label for this contact
     m_engine.regenerateDisplayLabel(*contact);
+
+    // update the timestamp if necessary
+    updateTimestamp(contact, true); // set creation timestamp
 
     bindContactDetails(*contact, m_insertContact, DetailList(), false);
     if (!m_insertContact.exec()) {
@@ -2868,6 +2896,9 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
         qWarning() << "Contact failed detail constraints";
         return writeError;
     }
+
+    // update the modification timestamp
+    updateTimestamp(contact, false);
 
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     if (!withinAggregateUpdate && oldSyncTarget == QLatin1String("aggregate")) {
@@ -2983,8 +3014,8 @@ void ContactWriter::bindContactDetails(const QContact &contact, QSqlQuery &query
     query.bindValue(9, stv);
 
     QContactTimestamp timestamp = contact.detail<QContactTimestamp>();
-    query.bindValue(10, timestamp.value<QDateTime>(QContactTimestamp::FieldCreationTimestamp));
-    query.bindValue(11, timestamp.value<QDateTime>(QContactTimestamp::FieldModificationTimestamp));
+    query.bindValue(10, timestamp.value<QDateTime>(QContactTimestamp::FieldCreationTimestamp).toUTC());
+    query.bindValue(11, timestamp.value<QDateTime>(QContactTimestamp::FieldModificationTimestamp).toUTC());
 
     QContactGender gender = contact.detail<QContactGender>();
 #ifdef USING_QTPIM
