@@ -1701,6 +1701,7 @@ QContactManager::Error ContactWriter::save(
         return QContactManager::UnspecifiedError;
     }
     int maxAggregateId = m_findMaximumContactId.value(0).toInt();
+    m_findMaximumContactId.finish();
 
     QContactManager::Error worstError = QContactManager::NoError;
     QContactManager::Error err = QContactManager::NoError;
@@ -1713,7 +1714,7 @@ QContactManager::Error ContactWriter::save(
             if (err == QContactManager::NoError) {
                 m_addedIds.insert(ContactId::apiId(contact));
             } else {
-                qWarning() << "Error creating contact:" << err;
+                qWarning() << "Error creating contact:" << err << "syncTarget:" << contact.detail<QContactSyncTarget>().syncTarget();
             }
         } else {
             err = update(&contact, definitionMask, &aggregateUpdated, true, withinAggregateUpdate);
@@ -2729,6 +2730,7 @@ QContactManager::Error ContactWriter::aggregateOrphanedContacts(bool withinTrans
             return QContactManager::UnspecifiedError;
         }
         int maxAggregateId = m_findMaximumContactId.value(0).toInt();
+        m_findMaximumContactId.finish();
 
         QList<QContact>::iterator it = readList.begin(), end = readList.end();
         for ( ; it != end; ++it) {
