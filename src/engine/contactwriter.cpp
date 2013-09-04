@@ -2989,10 +2989,10 @@ void ContactWriter::bindContactDetails(const QContact &contact, QSqlQuery &query
 #ifdef USING_QTPIM
     QContactDisplayLabel label = contact.detail<QContactDisplayLabel>();
     if (!label.isEmpty()) {
-        query.bindValue(0, label.label());
+        query.bindValue(0, label.label().trimmed());
     }
 #else
-    query.bindValue(0, contact.displayLabel());
+    query.bindValue(0, contact.displayLabel().trimmed());
 #endif
 
     const QContactName name = contact.detail<QContactName>();
