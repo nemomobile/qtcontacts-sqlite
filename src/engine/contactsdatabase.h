@@ -45,6 +45,10 @@ public:
     static QSqlDatabase open(const QString &databaseName);
     static QSqlQuery prepare(const char *statement, const QSqlDatabase &database);
 
+    static bool beginTransaction(QSqlDatabase &database);
+    static bool commitTransaction(QSqlDatabase &database);
+    static bool rollbackTransaction(QSqlDatabase &database);
+
     static QString expandQuery(const QString &queryString, const QVariantList &bindings);
     static QString expandQuery(const QString &queryString, const QMap<QString, QVariant> &bindings);
     static QString expandQuery(const QSqlQuery &query);

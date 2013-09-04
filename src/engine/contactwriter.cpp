@@ -571,7 +571,7 @@ bool ContactWriter::beginTransaction()
     // on write contention, and the backed-off process may never get access
     // if other processes are performing regular writes.
     if (m_databaseMutex->lock()) {
-        if (m_database.transaction())
+        if (ContactsDatabase::beginTransaction(m_database))
             return true;
 
         m_databaseMutex->unlock();
@@ -582,7 +582,7 @@ bool ContactWriter::beginTransaction()
 
 bool ContactWriter::commitTransaction()
 {
-    if (!m_database.commit()) {
+    if (!ContactsDatabase::commitTransaction(m_database)) {
         qWarning() << "Commit error:" << m_database.lastError();
         rollbackTransaction();
         return false;
@@ -611,7 +611,7 @@ bool ContactWriter::commitTransaction()
 
 void ContactWriter::rollbackTransaction()
 {
-    m_database.rollback();
+    ContactsDatabase::rollbackTransaction(m_database);
     if (m_databaseMutex->isLocked()) {
         m_databaseMutex->unlock();
     } else {
