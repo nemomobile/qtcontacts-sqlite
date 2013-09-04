@@ -48,6 +48,9 @@ static const char *setupTempStore =
 static const char *setupJournal =
         "\n PRAGMA journal_mode = WAL;";
 
+static const char *setupSynchronous =
+        "\n PRAGMA synchronous = FULL;";
+
 static const char *createContactsTable =
         "\n CREATE TABLE Contacts ("
         "\n contactId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
@@ -685,7 +688,8 @@ static bool prepareDatabase(QSqlDatabase &database)
 {
     if (!execute(database, QLatin1String(setupEncoding))
             || !execute(database, QLatin1String(setupTempStore))
-            || !execute(database, QLatin1String(setupJournal))) {
+            || !execute(database, QLatin1String(setupJournal))
+            || !execute(database, QLatin1String(setupSynchronous))) {
         return false;
     }
 
