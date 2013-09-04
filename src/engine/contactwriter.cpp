@@ -2995,40 +2995,43 @@ void ContactWriter::bindContactDetails(const QContact &contact, QSqlQuery &query
     query.bindValue(0, contact.displayLabel());
 #endif
 
-    QContactName name = contact.detail<QContactName>();
-    query.bindValue(1, name.value<QString>(QContactName::FieldFirstName));
-    query.bindValue(2, name.value<QString>(QContactName::FieldFirstName).toLower());
-    query.bindValue(3, name.value<QString>(QContactName::FieldLastName));
-    query.bindValue(4, name.value<QString>(QContactName::FieldLastName).toLower());
-    query.bindValue(5, name.value<QString>(QContactName::FieldMiddleName));
-    query.bindValue(6, name.value<QString>(QContactName::FieldPrefix));
-    query.bindValue(7, name.value<QString>(QContactName::FieldSuffix));
+    const QContactName name = contact.detail<QContactName>();
+    const QString firstName(name.value<QString>(QContactName::FieldFirstName).trimmed());
+    const QString lastName(name.value<QString>(QContactName::FieldLastName).trimmed());
+
+    query.bindValue(1, firstName);
+    query.bindValue(2, firstName.toLower());
+    query.bindValue(3, lastName);
+    query.bindValue(4, lastName.toLower());
+    query.bindValue(5, name.value<QString>(QContactName::FieldMiddleName).trimmed());
+    query.bindValue(6, name.value<QString>(QContactName::FieldPrefix).trimmed());
+    query.bindValue(7, name.value<QString>(QContactName::FieldSuffix).trimmed());
 #ifdef USING_QTPIM
-    query.bindValue(8, name.value<QString>(QContactName__FieldCustomLabel));
+    query.bindValue(8, name.value<QString>(QContactName__FieldCustomLabel).trimmed());
 #else
-    query.bindValue(8, name.value<QString>(QContactName::FieldCustomLabel));
+    query.bindValue(8, name.value<QString>(QContactName::FieldCustomLabel).trimmed());
 #endif
 
-    QContactSyncTarget starget = contact.detail<QContactSyncTarget>();
+    const QContactSyncTarget starget = contact.detail<QContactSyncTarget>();
     QString stv = starget.syncTarget();
     if (stv.isEmpty())
         stv = QLatin1String("local"); // by default, it is a "local device" contact.
     query.bindValue(9, stv);
 
-    QContactTimestamp timestamp = contact.detail<QContactTimestamp>();
+    const QContactTimestamp timestamp = contact.detail<QContactTimestamp>();
     query.bindValue(10, timestamp.value<QDateTime>(QContactTimestamp::FieldCreationTimestamp).toUTC());
     query.bindValue(11, timestamp.value<QDateTime>(QContactTimestamp::FieldModificationTimestamp).toUTC());
 
-    QContactGender gender = contact.detail<QContactGender>();
+    const QContactGender gender = contact.detail<QContactGender>();
 #ifdef USING_QTPIM
-    QString gv(gender.gender() == QContactGender::GenderFemale ? QString::fromLatin1("Female") :
-               gender.gender() == QContactGender::GenderMale ? QString::fromLatin1("Male") : QString());
+    const QString gv(gender.gender() == QContactGender::GenderFemale ? QString::fromLatin1("Female") :
+                     gender.gender() == QContactGender::GenderMale ? QString::fromLatin1("Male") : QString());
 #else
-    QString gv(gender.value<QString>(QContactGender::FieldGender));
+    const QString gv(gender.value<QString>(QContactGender::FieldGender).trimmed());
 #endif
     query.bindValue(12, gv);
 
-    QContactFavorite favorite = contact.detail<QContactFavorite>();
+    const QContactFavorite favorite = contact.detail<QContactFavorite>();
     query.bindValue(13, favorite.isFavorite());
 
     // Does this contact contain the information needed to update hasPhoneNumber?
@@ -3081,12 +3084,12 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactAddress &d
 {
     typedef QContactAddress T;
     m_insertAddress.bindValue(0, contactId);
-    m_insertAddress.bindValue(1, detailValue(detail, T::FieldStreet));
-    m_insertAddress.bindValue(2, detailValue(detail, T::FieldPostOfficeBox));
-    m_insertAddress.bindValue(3, detailValue(detail, T::FieldRegion));
-    m_insertAddress.bindValue(4, detailValue(detail, T::FieldLocality));
-    m_insertAddress.bindValue(5, detailValue(detail, T::FieldPostcode));
-    m_insertAddress.bindValue(6, detailValue(detail, T::FieldCountry));
+    m_insertAddress.bindValue(1, detail.value<QString>(T::FieldStreet).trimmed());
+    m_insertAddress.bindValue(2, detail.value<QString>(T::FieldPostOfficeBox).trimmed());
+    m_insertAddress.bindValue(3, detail.value<QString>(T::FieldRegion).trimmed());
+    m_insertAddress.bindValue(4, detail.value<QString>(T::FieldLocality).trimmed());
+    m_insertAddress.bindValue(5, detail.value<QString>(T::FieldPostcode).trimmed());
+    m_insertAddress.bindValue(6, detail.value<QString>(T::FieldCountry).trimmed());
     return m_insertAddress;
 }
 
@@ -3109,8 +3112,8 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactAvatar &de
 {
     typedef QContactAvatar T;
     m_insertAvatar.bindValue(0, contactId);
-    m_insertAvatar.bindValue(1, detailValue(detail, T::FieldImageUrl));
-    m_insertAvatar.bindValue(2, detailValue(detail, T::FieldVideoUrl));
+    m_insertAvatar.bindValue(1, detail.value<QString>(T::FieldImageUrl).trimmed());
+    m_insertAvatar.bindValue(2, detail.value<QString>(T::FieldVideoUrl).trimmed());
     m_insertAvatar.bindValue(3, detailValue(detail, QContactAvatar__FieldAvatarMetadata));
     return m_insertAvatar;
 }
@@ -3127,9 +3130,10 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactBirthday &
 QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactEmailAddress &detail)
 {
     typedef QContactEmailAddress T;
+    const QString address(detail.value<QString>(T::FieldEmailAddress).trimmed());
     m_insertEmailAddress.bindValue(0, contactId);
-    m_insertEmailAddress.bindValue(1, detailValue(detail, T::FieldEmailAddress));
-    m_insertEmailAddress.bindValue(2, detail.value<QString>(T::FieldEmailAddress).toLower());
+    m_insertEmailAddress.bindValue(1, address);
+    m_insertEmailAddress.bindValue(2, address.toLower());
     return m_insertEmailAddress;
 }
 
@@ -3139,8 +3143,8 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactGlobalPres
     m_insertGlobalPresence.bindValue(0, contactId);
     m_insertGlobalPresence.bindValue(1, detailValue(detail, T::FieldPresenceState));
     m_insertGlobalPresence.bindValue(2, detailValue(detail, T::FieldTimestamp));
-    m_insertGlobalPresence.bindValue(3, detailValue(detail, T::FieldNickname));
-    m_insertGlobalPresence.bindValue(4, detailValue(detail, T::FieldCustomMessage));
+    m_insertGlobalPresence.bindValue(3, detail.value<QString>(T::FieldNickname).trimmed());
+    m_insertGlobalPresence.bindValue(4, detail.value<QString>(T::FieldCustomMessage).trimmed());
     return m_insertGlobalPresence;
 }
 
@@ -3163,9 +3167,10 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactHobby &det
 QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactNickname &detail)
 {
     typedef QContactNickname T;
+    const QString nickname(detail.value<QString>(T::FieldNickname).trimmed());
     m_insertNickname.bindValue(0, contactId);
-    m_insertNickname.bindValue(1, detailValue(detail, T::FieldNickname));
-    m_insertNickname.bindValue(2, detail.value<QString>(T::FieldNickname).toLower());
+    m_insertNickname.bindValue(1, nickname);
+    m_insertNickname.bindValue(2, nickname.toLower());
     return m_insertNickname;
 }
 
@@ -3180,9 +3185,10 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactNote &deta
 QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactOnlineAccount &detail)
 {
     typedef QContactOnlineAccount T;
+    const QString uri(detail.value<QString>(T::FieldAccountUri).trimmed());
     m_insertOnlineAccount.bindValue(0, contactId);
-    m_insertOnlineAccount.bindValue(1, detailValue(detail, T::FieldAccountUri));
-    m_insertOnlineAccount.bindValue(2, detail.value<QString>(T::FieldAccountUri).toLower());
+    m_insertOnlineAccount.bindValue(1, uri);
+    m_insertOnlineAccount.bindValue(2, uri.toLower());
 #ifdef USING_QTPIM
     m_insertOnlineAccount.bindValue(3, OnlineAccount::protocol(detail.protocol()));
 #else
@@ -3205,12 +3211,12 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactOrganizati
 {
     typedef QContactOrganization T;
     m_insertOrganization.bindValue(0, contactId);
-    m_insertOrganization.bindValue(1, detailValue(detail, T::FieldName));
-    m_insertOrganization.bindValue(2, detailValue(detail, T::FieldRole));
-    m_insertOrganization.bindValue(3, detailValue(detail, T::FieldTitle));
-    m_insertOrganization.bindValue(4, detailValue(detail, T::FieldLocation));
+    m_insertOrganization.bindValue(1, detail.value<QString>(T::FieldName).trimmed());
+    m_insertOrganization.bindValue(2, detail.value<QString>(T::FieldRole).trimmed());
+    m_insertOrganization.bindValue(3, detail.value<QString>(T::FieldTitle).trimmed());
+    m_insertOrganization.bindValue(4, detail.value<QString>(T::FieldLocation).trimmed());
     m_insertOrganization.bindValue(5, detail.department().join(QLatin1String(";")));
-    m_insertOrganization.bindValue(6, detailValue(detail, T::FieldLogoUrl));
+    m_insertOrganization.bindValue(6, detail.value<QString>(T::FieldLogoUrl).trimmed());
     return m_insertOrganization;
 }
 
@@ -3218,7 +3224,7 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactPhoneNumbe
 {
     typedef QContactPhoneNumber T;
     m_insertPhoneNumber.bindValue(0, contactId);
-    m_insertPhoneNumber.bindValue(1, detailValue(detail, T::FieldNumber));
+    m_insertPhoneNumber.bindValue(1, detail.value<QString>(T::FieldNumber).trimmed());
 #ifdef USING_QTPIM
     m_insertPhoneNumber.bindValue(2, PhoneNumber::subTypeList(detail.subTypes()).join(QLatin1String(";")));
 #else
@@ -3234,8 +3240,8 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactPresence &
     m_insertPresence.bindValue(0, contactId);
     m_insertPresence.bindValue(1, detailValue(detail, T::FieldPresenceState));
     m_insertPresence.bindValue(2, detailValue(detail, T::FieldTimestamp));
-    m_insertPresence.bindValue(3, detailValue(detail, T::FieldNickname));
-    m_insertPresence.bindValue(4, detailValue(detail, T::FieldCustomMessage));
+    m_insertPresence.bindValue(3, detail.value<QString>(T::FieldNickname).trimmed());
+    m_insertPresence.bindValue(4, detail.value<QString>(T::FieldCustomMessage).trimmed());
     return m_insertPresence;
 }
 
@@ -3243,8 +3249,8 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactRingtone &
 {
     typedef QContactRingtone T;
     m_insertRingtone.bindValue(0, contactId);
-    m_insertRingtone.bindValue(1, detailValue(detail, T::FieldAudioRingtoneUrl));
-    m_insertRingtone.bindValue(2, detailValue(detail, T::FieldVideoRingtoneUrl));
+    m_insertRingtone.bindValue(1, detail.value<QString>(T::FieldAudioRingtoneUrl).trimmed());
+    m_insertRingtone.bindValue(2, detail.value<QString>(T::FieldVideoRingtoneUrl).trimmed());
     return m_insertRingtone;
 }
 
@@ -3252,7 +3258,7 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactTag &detai
 {
     typedef QContactTag T;
     m_insertTag.bindValue(0, contactId);
-    m_insertTag.bindValue(1, detailValue(detail, T::FieldTag));
+    m_insertTag.bindValue(1, detail.value<QString>(T::FieldTag).trimmed());
     return m_insertTag;
 }
 
@@ -3260,7 +3266,7 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactUrl &detai
 {
     typedef QContactUrl T;
     m_insertUrl.bindValue(0, contactId);
-    m_insertUrl.bindValue(1, detailValue(detail, T::FieldUrl));
+    m_insertUrl.bindValue(1, detail.value<QString>(T::FieldUrl).trimmed());
 #ifdef USING_QTPIM
     m_insertUrl.bindValue(2, Url::subType(detail.subType()));
 #else
