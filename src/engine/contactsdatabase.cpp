@@ -529,6 +529,23 @@ static bool execute(QSqlDatabase &database, const QString &statement)
     }
 }
 
+static bool beginTransaction(QSqlDatabase &database)
+{
+    // Use immediate lock acquisition; we should already have an IPC lock, so
+    // there will be no lock contention with other writing processes
+    return execute(database, QString::fromLatin1("BEGIN IMMEDIATE TRANSACTION"));
+}
+
+static bool commitTransaction(QSqlDatabase &database)
+{
+    return execute(database, QString::fromLatin1("COMMIT TRANSACTION"));
+}
+
+static bool rollbackTransaction(QSqlDatabase &database)
+{
+    return execute(database, QString::fromLatin1("ROLLBACK TRANSACTION"));
+}
+
 static bool setContactsHasDetail(QSqlDatabase &database, const QString &column, const QString &table)
 {
     QString statement = QString::fromLatin1(
@@ -629,7 +646,7 @@ template <typename T, int N> static int lengthOf(const T(&)[N]) { return N; }
 
 static bool upgradeDatabase(QSqlDatabase &database)
 {
-    if (!database.transaction())
+    if (!beginTransaction(database))
         return false;
 
     bool error = false;
@@ -657,10 +674,10 @@ static bool upgradeDatabase(QSqlDatabase &database)
     }
 
     if (error) {
-        database.rollback();
+        rollbackTransaction(database);
         return false;
     } else {
-        return database.commit();
+        return commitTransaction(database);
     }
 }
 
@@ -672,7 +689,7 @@ static bool prepareDatabase(QSqlDatabase &database)
         return false;
     }
 
-    if (!database.transaction())
+    if (!beginTransaction(database))
         return false;
 
     bool error = false;
@@ -688,10 +705,10 @@ static bool prepareDatabase(QSqlDatabase &database)
         }
     }
     if (error) {
-        database.rollback();
+        rollbackTransaction(database);
         return false;
     } else {
-        return database.commit();
+        return commitTransaction(database);
     }
 }
 
@@ -744,6 +761,21 @@ QSqlDatabase ContactsDatabase::open(const QString &databaseName)
     }
 
     return database;
+}
+
+bool ContactsDatabase::beginTransaction(QSqlDatabase &database)
+{
+    return ::beginTransaction(database);
+}
+
+bool ContactsDatabase::commitTransaction(QSqlDatabase &database)
+{
+    return ::commitTransaction(database);
+}
+
+bool ContactsDatabase::rollbackTransaction(QSqlDatabase &database)
+{
+    return ::rollbackTransaction(database);
 }
 
 QSqlQuery ContactsDatabase::prepare(const char *statement, const QSqlDatabase &database)
