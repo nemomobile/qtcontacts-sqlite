@@ -503,10 +503,11 @@ template <typename T> static void readDetail(
     do {
         T detail;
 
-        QString detailUriValue = query->value(0).toString();
-        QString linkedDetailUrisValue = query->value(1).toString();
-        QString contextValue = query->value(2).toString();
-        int accessConstraints = query->value(3).toInt();
+        const QString detailUriValue = query->value(0).toString();
+        const QString linkedDetailUrisValue = query->value(1).toString();
+        const QString contextValue = query->value(2).toString();
+        const int accessConstraints = query->value(3).toInt();
+        const QString provenance = query->value(4).toString();
 
         if (!detailUriValue.isEmpty()) {
             setValue(&detail,
@@ -537,10 +538,12 @@ template <typename T> static void readDetail(
 #endif
         }
         QContactManagerEngine::setDetailAccessConstraints(&detail, static_cast<QContactDetail::AccessConstraints>(accessConstraints));
-        setValues(&detail, query, 6);
+        setValue(&detail, QContactDetail__FieldProvenance, provenance);
+
+        setValues(&detail, query, 7);
 
         contact->saveDetail(&detail);
-    } while (query->next() && (currentId = query->value(5).toUInt()) == contactId);
+    } while (query->next() && (currentId = query->value(6).toUInt()) == contactId);
 }
 
 static QContactRelationship makeRelationship(const QString &type, quint32 firstId, quint32 secondId)
@@ -1657,6 +1660,7 @@ QContactManager::Error ContactReader::queryContacts(
             "\n  Details.linkedDetailUris,"
             "\n  Details.contexts,"
             "\n  Details.accessConstraints,"
+            "\n  Details.provenance,"
             "\n  %2.*"
             "\n FROM temp.%1"
             "\n  INNER JOIN %2 ON temp.%1.contactId = %2.contactId"
@@ -1709,7 +1713,7 @@ QContactManager::Error ContactReader::queryContacts(
                     qWarning() << "Failed to query table" << detail.table;
                     qWarning() << table.query.lastError();
                 } else if (table.query.next()) {
-                    table.currentId = table.query.value(5).toUInt();
+                    table.currentId = table.query.value(6).toUInt();
                     tables.append(table);
                 }
             }

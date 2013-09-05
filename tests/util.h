@@ -266,13 +266,99 @@ typedef QMap<int, QVariant> DetailMap;
 typedef QVariantMap DetailMap;
 #endif
 
-DetailMap detailValues(const QContactDetail &detail)
+DetailMap detailValues(const QContactDetail &detail, bool includeProvenance = true)
 {
 #ifdef USING_QTPIM
-    return detail.values();
+    DetailMap rv(detail.values());
 #else
-    return detail.variantValues();
+    DetailMap rv(detail.variantValues());
 #endif
+
+    if (!includeProvenance) {
+        DetailMap::iterator it = rv.begin();
+        while (it != rv.end()) {
+            if (it.key() == QContactDetail__FieldProvenance) {
+                it = rv.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
+    return rv;
+}
+
+static bool variantEqual(const QVariant &lhs, const QVariant &rhs)
+{
+#ifdef USING_QTPIM
+    // Work around incorrect result from QVariant::operator== when variants contain QList<int>
+    static const int QListIntType = QMetaType::type("QList<int>");
+
+    const int lhsType = lhs.userType();
+    if (lhsType != rhs.userType()) {
+        return false;
+    }
+
+    if (lhsType == QListIntType) {
+        return (lhs.value<QList<int> >() == rhs.value<QList<int> >());
+    }
+#endif
+    return (lhs == rhs);
+}
+
+static bool detailValuesEqual(const QContactDetail &lhs, const QContactDetail &rhs)
+{
+    const DetailMap lhsValues(detailValues(lhs, false));
+    const DetailMap rhsValues(detailValues(rhs, false));
+
+    if (lhsValues.count() != rhsValues.count()) {
+        return false;
+    }
+
+    DetailMap::const_iterator lit = lhsValues.constBegin(), lend = lhsValues.constEnd();
+    DetailMap::const_iterator rit = rhsValues.constBegin();
+    for ( ; lit != lend; ++lit, ++rit) {
+        if (!variantEqual(*lit, *rit)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool detailValuesSuperset(const QContactDetail &lhs, const QContactDetail &rhs)
+{
+    // True if all values in rhs are present in lhs
+    const DetailMap lhsValues(detailValues(lhs, false));
+    const DetailMap rhsValues(detailValues(rhs, false));
+
+    if (lhsValues.count() < rhsValues.count()) {
+        return false;
+    }
+
+    foreach (const DetailMap::key_type &key, rhsValues.keys()) {
+        if (!variantEqual(lhsValues[key], rhsValues[key])) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool detailsEquivalent(const QContactDetail &lhs, const QContactDetail &rhs)
+{
+    // Same as operator== except ignores differences in accessConstraints values
+    if (detailType(lhs) != detailType(rhs))
+        return false;
+    return detailValuesEqual(lhs, rhs);
+}
+
+static bool detailsSuperset(const QContactDetail &lhs, const QContactDetail &rhs)
+{
+    // True is lhs is a superset of rhs
+    if (detailType(lhs) != detailType(rhs))
+        return false;
+    return detailValuesSuperset(lhs, rhs);
 }
 
 bool validContactType(const QContact &contact)

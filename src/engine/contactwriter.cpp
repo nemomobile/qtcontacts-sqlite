@@ -440,7 +440,8 @@ static const char *insertDetail =
         "\n  detailUri,"
         "\n  linkedDetailUris,"
         "\n  contexts,"
-        "\n  accessConstraints)"
+        "\n  accessConstraints,"
+        "\n  provenance)"
         "\n VALUES ("
         "\n  :contactId,"
         "\n  :detailId,"
@@ -448,7 +449,8 @@ static const char *insertDetail =
         "\n  :detailUri,"
         "\n  :linkedDetailUris,"
         "\n  :contexts,"
-        "\n  :accessConstraints);";
+        "\n  :accessConstraints,"
+        "\n  :provenance);";
 
 static const char *insertIdentity =
         "\n INSERT OR REPLACE INTO Identities ("
@@ -1441,13 +1443,26 @@ typedef QMap<int, QVariant> DetailMap;
 typedef QVariantMap DetailMap;
 #endif
 
-DetailMap detailValues(const QContactDetail &detail)
+DetailMap detailValues(const QContactDetail &detail, bool includeProvenance = true)
 {
 #ifdef USING_QTPIM
-    return detail.values();
+    DetailMap rv(detail.values());
 #else
-    return detail.variantValues();
+    DetailMap rv(detail.variantValues());
 #endif
+
+    if (!includeProvenance) {
+        DetailMap::iterator it = rv.begin();
+        while (it != rv.end()) {
+            if (it.key() == QContactDetail__FieldProvenance) {
+                it = rv.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
+    return rv;
 }
 
 static bool variantEqual(const QVariant &lhs, const QVariant &rhs)
@@ -1470,8 +1485,8 @@ static bool variantEqual(const QVariant &lhs, const QVariant &rhs)
 
 static bool detailValuesEqual(const QContactDetail &lhs, const QContactDetail &rhs)
 {
-    const DetailMap lhsValues(detailValues(lhs));
-    const DetailMap rhsValues(detailValues(rhs));
+    const DetailMap lhsValues(detailValues(lhs, false));
+    const DetailMap rhsValues(detailValues(rhs, false));
 
     if (lhsValues.count() != rhsValues.count()) {
         return false;
@@ -1491,8 +1506,8 @@ static bool detailValuesEqual(const QContactDetail &lhs, const QContactDetail &r
 static bool detailValuesSuperset(const QContactDetail &lhs, const QContactDetail &rhs)
 {
     // True if all values in rhs are present in lhs
-    const DetailMap lhsValues(detailValues(lhs));
-    const DetailMap rhsValues(detailValues(rhs));
+    const DetailMap lhsValues(detailValues(lhs, false));
+    const DetailMap rhsValues(detailValues(rhs, false));
 
     if (lhsValues.count() < rhsValues.count()) {
         return false;
@@ -1579,7 +1594,8 @@ template <typename T> bool ContactWriter::writeCommonDetails(
     const QVariant detailUri = detailValue(detail, QContactDetail::FieldDetailUri);
     const QVariant linkedDetailUris = detailLinkedUris(detail);
     const QVariant contexts = detailContexts(detail);
-    int accessConstraints = static_cast<int>(detail.accessConstraints());
+    const int accessConstraints = static_cast<int>(detail.accessConstraints());
+    const QVariant provenance = detailValue(detail, QContactDetail__FieldProvenance);
 
     if (detailUri.isValid() || linkedDetailUris.isValid() || contexts.isValid() || accessConstraints > 0) {
         m_insertDetail.bindValue(0, contactId);
@@ -1589,6 +1605,7 @@ template <typename T> bool ContactWriter::writeCommonDetails(
         m_insertDetail.bindValue(4, linkedDetailUris);
         m_insertDetail.bindValue(5, contexts);
         m_insertDetail.bindValue(6, accessConstraints);
+        m_insertDetail.bindValue(7, provenance);
 
         if (!m_insertDetail.exec()) {
             qWarning() << "Failed to write common details for" << detailTypeName<T>();
@@ -1625,7 +1642,10 @@ template <typename T> bool ContactWriter::writeDetails(
     }
     removeQuery.finish();
 
-    foreach (const T &detail, contact->details<T>()) {
+    QList<T> contactDetails(contact->details<T>());
+    typename QList<T>::iterator it = contactDetails.begin(), end = contactDetails.end();
+    for ( ; it != end; ++it) {
+        T &detail(*it);
         QSqlQuery &query = bindDetail(contactId, detail);
         if (!query.exec()) {
             qWarning() << "Failed to write details for" << detailTypeName<T>();
@@ -1636,6 +1656,13 @@ template <typename T> bool ContactWriter::writeDetails(
 
         QVariant detailId = query.lastInsertId();
         query.finish();
+
+        QString provenance(detail.value(QContactDetail__FieldProvenance).toString());
+        if (provenance.isEmpty()) {
+            provenance = QString::fromLatin1("%1:%2").arg(contactId).arg(detailId.toUInt());
+            detail.setValue(QContactDetail__FieldProvenance, provenance);
+            contact->saveDetail(&detail);
+        }
 
         if (!writeCommonDetails(contactId, detailId, detail, error)) {
             return false;
@@ -2020,39 +2047,39 @@ static void promoteDetailsToLocal(const QList<QContactDetail> addDelta, const QL
     qWarning() << "promoteDetailsToLocal: IGNORED" << notPresentInLocal.size() << "details:" << ignoredStr;
 #endif
 
-    foreach (QContactDetail det, addDelta) {
-        if (detailType(det) == detailType<QContactGuid>() ||
-            detailType(det) == detailType<QContactSyncTarget>() ||
-            detailType(det) == detailType<QContactDisplayLabel>() ||
-            detailType(det) == detailType<QContactStatusFlags>() ||
-            (!definitionMask.isEmpty() && !detailListContains(definitionMask, det))) {
+    foreach (const QContactDetail &original, addDelta) {
+        if (detailType(original) == detailType<QContactGuid>() ||
+            detailType(original) == detailType<QContactSyncTarget>() ||
+            detailType(original) == detailType<QContactDisplayLabel>() ||
+            detailType(original) == detailType<QContactStatusFlags>() ||
+            (!definitionMask.isEmpty() && !detailListContains(definitionMask, original))) {
             continue; // don't save these details.  Guid MUST be globally unique.
         }
 
         // handle unique details specifically.
-        if (detailType(det) == detailType<QContactName>()) {
+        if (detailType(original) == detailType<QContactName>()) {
             QContactName lcn = localContact->detail<QContactName>();
-            lcn.setPrefix(det.value<QString>(QContactName::FieldPrefix));
-            lcn.setFirstName(det.value<QString>(QContactName::FieldFirstName));
-            lcn.setMiddleName(det.value<QString>(QContactName::FieldMiddleName));
-            lcn.setLastName(det.value<QString>(QContactName::FieldLastName));
-            lcn.setSuffix(det.value<QString>(QContactName::FieldSuffix));
+            lcn.setPrefix(original.value<QString>(QContactName::FieldPrefix));
+            lcn.setFirstName(original.value<QString>(QContactName::FieldFirstName));
+            lcn.setMiddleName(original.value<QString>(QContactName::FieldMiddleName));
+            lcn.setLastName(original.value<QString>(QContactName::FieldLastName));
+            lcn.setSuffix(original.value<QString>(QContactName::FieldSuffix));
 #ifdef USING_QTPIM
-            lcn.setValue(QContactName__FieldCustomLabel, det.value(QContactName__FieldCustomLabel));
+            lcn.setValue(QContactName__FieldCustomLabel, original.value(QContactName__FieldCustomLabel));
 #else
-            lcn.setCustomLabel(det.value<QString>(QContactName::FieldCustomLabel));
+            lcn.setCustomLabel(original.value<QString>(QContactName::FieldCustomLabel));
 #endif
             localContact->saveDetail(&lcn);
-        } else if (detailType(det) == detailType<QContactTimestamp>()) {
+        } else if (detailType(original) == detailType<QContactTimestamp>()) {
             QContactTimestamp lts = localContact->detail<QContactTimestamp>();
-            lts.setLastModified(det.value<QDateTime>(QContactTimestamp::FieldModificationTimestamp));
-            lts.setCreated(det.value<QDateTime>(QContactTimestamp::FieldCreationTimestamp));
+            lts.setLastModified(original.value<QDateTime>(QContactTimestamp::FieldModificationTimestamp));
+            lts.setCreated(original.value<QDateTime>(QContactTimestamp::FieldCreationTimestamp));
             localContact->saveDetail(&lts);
-        } else if (detailType(det) == detailType<QContactGender>()) {
+        } else if (detailType(original) == detailType<QContactGender>()) {
             QContactGender lg = localContact->detail<QContactGender>();
 #ifdef USING_QTPIM
             // Gender is a string in QtMobility
-            QString gender(det.value<QString>(QContactGender::FieldGender));
+            QString gender(original.value<QString>(QContactGender::FieldGender));
             if (gender.startsWith(QChar::fromLatin1('f'), Qt::CaseInsensitive)) {
                 lg.setGender(QContactGender::GenderFemale);
             } else if (gender.startsWith(QChar::fromLatin1('m'), Qt::CaseInsensitive)) {
@@ -2061,19 +2088,20 @@ static void promoteDetailsToLocal(const QList<QContactDetail> addDelta, const QL
                 lg.setGender(QContactGender::GenderUnspecified);
             }
 #else
-            lg.setGender(det.value<QString>(QContactGender::FieldGender));
+            lg.setGender(original.value<QString>(QContactGender::FieldGender));
 #endif
             localContact->saveDetail(&lg);
-        } else if (detailType(det) == detailType<QContactFavorite>()) {
+        } else if (detailType(original) == detailType<QContactFavorite>()) {
             QContactFavorite lf = localContact->detail<QContactFavorite>();
-            lf.setFavorite(det.value<bool>(QContactFavorite::FieldFavorite));
+            lf.setFavorite(original.value<bool>(QContactFavorite::FieldFavorite));
             localContact->saveDetail(&lf);
-        } else if (detailType(det) == detailType<QContactBirthday>()) {
+        } else if (detailType(original) == detailType<QContactBirthday>()) {
             QContactBirthday bd = localContact->detail<QContactBirthday>();
-            bd.setDateTime(det.value<QDateTime>(QContactBirthday::FieldBirthday));
+            bd.setDateTime(original.value<QDateTime>(QContactBirthday::FieldBirthday));
             localContact->saveDetail(&bd);
         } else {
             // other details can be saved to the local contact (if they don't already exist).
+            QContactDetail det(original);
             adjustDetailUrisForLocal(det);
 
             // This is a pretty crude heuristic.  The detail equality
@@ -2083,7 +2111,7 @@ static void promoteDetailsToLocal(const QList<QContactDetail> addDelta, const QL
 
             // Don't promote details already in the local, or those not originally present in the local
             QList<QContactDetail> noPromoteDetails(localContact->details() + notPresentInLocal);
-            foreach (QContactDetail ld, noPromoteDetails) {
+            foreach (const QContactDetail &ld, noPromoteDetails) {
                 if (detailsEquivalent(det, ld)) {
                     needsPromote = false;
                     break;
@@ -2091,6 +2119,9 @@ static void promoteDetailsToLocal(const QList<QContactDetail> addDelta, const QL
             }
 
             if (needsPromote) {
+                // Remove any provenance in this detail so it attaches to the local
+                det.setValue(QContactDetail__FieldProvenance, QString());
+
                 localContact->saveDetail(&det);
             }
         }
@@ -2294,14 +2325,12 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
 {
     static const ContactWriter::DetailList unpromotedDetailTypes(getUnpromotedDetailTypes());
 
-    QList<QContactDetail> currDetails = contact.details();
-    for (int j = 0; j < currDetails.size(); ++j) {
-        QContactDetail currDet = currDetails.at(j);
-        if (unpromotedDetailTypes.contains(detailType(currDet))) {
+    foreach (const QContactDetail &original, contact.details()) {
+        if (unpromotedDetailTypes.contains(detailType(original))) {
             // don't promote this detail.
             continue;
         }
-        if (!definitionMask.isEmpty() && !detailListContains(definitionMask, currDet)) {
+        if (!definitionMask.isEmpty() && !detailListContains(definitionMask, original)) {
             // skip this detail
             continue;
         }
@@ -2309,9 +2338,9 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
         // promote this detail to the aggregate.  Depending on uniqueness,
         // this consists either of composition or duplication.
         // Note: Composed (unique) details won't have any detailUri!
-        if (detailType(currDet) == detailType<QContactName>()) {
+        if (detailType(original) == detailType<QContactName>()) {
             // name involves composition
-            QContactName cname(currDet);
+            QContactName cname(original);
             QContactName aname(aggregate->detail<QContactName>());
             if (!cname.prefix().isEmpty() && aname.prefix().isEmpty())
                 aname.setPrefix(cname.prefix());
@@ -2332,20 +2361,20 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
                 aname.setCustomLabel(cname.customLabel());
 #endif
             aggregate->saveDetail(&aname);
-        } else if (detailType(currDet) == detailType<QContactTimestamp>()) {
+        } else if (detailType(original) == detailType<QContactTimestamp>()) {
             // timestamp involves composition
             // XXX TODO: how do we handle creation timestamps?
             // From some sync sources, the creation timestamp
             // will precede the existence of the local device.
-            QContactTimestamp cts(currDet);
+            QContactTimestamp cts(original);
             QContactTimestamp ats(aggregate->detail<QContactTimestamp>());
             if (cts.lastModified().isValid() && (!ats.lastModified().isValid() || cts.lastModified() > ats.lastModified())) {
                 ats.setLastModified(cts.lastModified());
                 aggregate->saveDetail(&ats);
             }
-        } else if (detailType(currDet) == detailType<QContactGender>()) {
+        } else if (detailType(original) == detailType<QContactGender>()) {
             // gender involves composition
-            QContactGender cg(currDet);
+            QContactGender cg(original);
             QContactGender ag(aggregate->detail<QContactGender>());
 #ifdef USING_QTPIM
             if (!cg.gender() != QContactGender::GenderUnspecified && ag.gender() == QContactGender::GenderUnspecified) {
@@ -2355,17 +2384,17 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
                 ag.setGender(cg.gender());
                 aggregate->saveDetail(&ag);
             }
-        } else if (detailType(currDet) == detailType<QContactFavorite>()) {
+        } else if (detailType(original) == detailType<QContactFavorite>()) {
             // favorite involves composition
-            QContactFavorite cf(currDet);
+            QContactFavorite cf(original);
             QContactFavorite af(aggregate->detail<QContactFavorite>());
             if (cf.isFavorite() && !af.isFavorite()) {
                 af.setFavorite(true);
                 aggregate->saveDetail(&af);
             }
-        } else if (detailType(currDet) == detailType<QContactBirthday>()) {
+        } else if (detailType(original) == detailType<QContactBirthday>()) {
             // birthday involves composition (at least, it's unique)
-            QContactBirthday cb(currDet);
+            QContactBirthday cb(original);
             QContactBirthday ab(aggregate->detail<QContactBirthday>());
             if (!ab.dateTime().isValid() && cb.dateTime().isValid()) {
                 ab.setDateTime(cb.dateTime());
@@ -2376,15 +2405,15 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
             // Only duplicate from contact to the aggregate if an identical detail doesn't already exist in the aggregate.
             // We also modify any detail uris by prepending "aggregate:" to the start,
             // to ensure uniqueness.
-            adjustDetailUrisForAggregate(currDet);
+            QContactDetail det(original);
+            adjustDetailUrisForAggregate(det);
 
             // This is a pretty crude heuristic.  The detail equality
             // algorithm only attempts to match values, not key/value pairs.
             // XXX TODO: use a better heuristic to minimise duplicates.
             bool needsPromote = true;
-            QList<QContactDetail> allADetails = aggregate->details();
-            foreach (QContactDetail ad, allADetails) {
-                if (detailsEquivalent(currDet, ad)) {
+            foreach (const QContactDetail &ad, aggregate->details()) {
+                if (detailsEquivalent(det, ad)) {
                     needsPromote = false;
                     break;
                 }
@@ -2393,9 +2422,13 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
             if (needsPromote) {
                 QString syncTarget(contact.detail<QContactSyncTarget>().value<QString>(QContactSyncTarget::FieldSyncTarget));
                 if (!syncTarget.isEmpty() && syncTarget != QLatin1String("local")) {
-                    QContactManagerEngine::setDetailAccessConstraints(&currDet, QContactDetail::ReadOnly | QContactDetail::Irremovable);
+                    QContactManagerEngine::setDetailAccessConstraints(&det, QContactDetail::ReadOnly | QContactDetail::Irremovable);
                 }
-                aggregate->saveDetail(&currDet);
+
+                // Store the provenance of this promoted detail
+                det.setValue(QContactDetail__FieldProvenance, original.value<QString>(QContactDetail__FieldProvenance));
+
+                aggregate->saveDetail(&det);
             }
         }
     }

@@ -47,6 +47,18 @@ static const char *changedAccumulationSlot = SLOT(chgAccumulationSlot(QList<QCon
 static const char *removedAccumulationSlot = SLOT(remAccumulationSlot(QList<QContactLocalId>));
 #endif
 
+QString detailProvenance(const QContactDetail &detail)
+{
+    return detail.value<QString>(QContactDetail__FieldProvenance);
+}
+
+QString detailProvenanceContact(const QContactDetail &detail)
+{
+    // The contact element is the first part up to ':'
+    const QString provenance(detailProvenance(detail));
+    return provenance.left(provenance.indexOf(QChar::fromLatin1(':')));
+}
+
 }
 
 class tst_Aggregation : public QObject
@@ -252,6 +264,12 @@ void tst_Aggregation::createSingleLocal()
     QVERIFY(foundAggregateAlice);
     QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
     QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
+
+    // Test the provenance of details
+    QContactPhoneNumber localDetail(localAlice.detail<QContactPhoneNumber>());
+    QContactPhoneNumber aggregateDetail(aggregateAlice.detail<QContactPhoneNumber>());
+    QVERIFY(!detailProvenance(localDetail).isEmpty());
+    QCOMPARE(detailProvenance(aggregateDetail), detailProvenance(localDetail));
 }
 
 void tst_Aggregation::createMultipleLocal()
@@ -355,6 +373,18 @@ void tst_Aggregation::createMultipleLocal()
     QVERIFY(relatedContactIds(aggregateBob.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localBob.id()));
     QVERIFY(!relatedContactIds(localBob.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
     QVERIFY(!relatedContactIds(aggregateBob.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
+
+    // Test the provenance of details
+    QContactPhoneNumber localAliceDetail(localAlice.detail<QContactPhoneNumber>());
+    QContactPhoneNumber aggregateAliceDetail(aggregateAlice.detail<QContactPhoneNumber>());
+    QVERIFY(!detailProvenance(localAliceDetail).isEmpty());
+    QCOMPARE(detailProvenance(aggregateAliceDetail), detailProvenance(localAliceDetail));
+
+    QContactPhoneNumber localBobDetail(localBob.detail<QContactPhoneNumber>());
+    QContactPhoneNumber aggregateBobDetail(aggregateBob.detail<QContactPhoneNumber>());
+    QVERIFY(!detailProvenance(localBobDetail).isEmpty());
+    QCOMPARE(detailProvenance(aggregateBobDetail), detailProvenance(localBobDetail));
+    QVERIFY(detailProvenance(localBobDetail) != detailProvenance(localAliceDetail));
 }
 
 void tst_Aggregation::createSingleLocalAndSingleSync()
@@ -495,16 +525,13 @@ void tst_Aggregation::createSingleLocalAndSingleSync()
                 && currPhn.number() == QLatin1String("34567")
                 && currEm.emailAddress() == QLatin1String("alice@test.com")) {
             if (currSt.syncTarget() == QLatin1String("local")) {
-                QCOMPARE(curr.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby), QString()); // local shouldn't get it
                 localAlice = curr;
                 foundLocalAlice = true;
             } else if (currSt.syncTarget() == QLatin1String("test")) {
-                QCOMPARE(curr.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby), QLatin1String("tennis")); // came from here
                 testAlice = curr;
                 foundTestAlice = true;
             } else {
                 QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
-                QCOMPARE(curr.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby), QLatin1String("tennis")); // aggregated to here
                 aggregateAlice = curr;
                 foundAggregateAlice = true;
             }
@@ -518,6 +545,18 @@ void tst_Aggregation::createSingleLocalAndSingleSync()
     QVERIFY(relatedContactIds(testAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
     QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
     QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(testAlice.id()));
+
+    // Verify the propagation of details
+    QContactHobby localDetail(localAlice.detail<QContactHobby>());
+    QContactHobby testDetail(testAlice.detail<QContactHobby>());
+    QContactHobby aggregateDetail(aggregateAlice.detail<QContactHobby>());
+
+    QCOMPARE(testDetail.value<QString>(QContactHobby::FieldHobby), QLatin1String("tennis")); // came from here
+    QVERIFY(!detailProvenance(testDetail).isEmpty());
+    QCOMPARE(aggregateDetail.value<QString>(QContactHobby::FieldHobby), QLatin1String("tennis")); // aggregated to here
+    QCOMPARE(detailProvenance(aggregateDetail), detailProvenance(testDetail));
+    QCOMPARE(localDetail.value<QString>(QContactHobby::FieldHobby), QString()); // local shouldn't get it
+    QVERIFY(detailProvenance(localDetail).isEmpty());
 }
 
 void tst_Aggregation::updateSingleLocal()
@@ -614,18 +653,22 @@ void tst_Aggregation::updateSingleLocal()
     // reload them, and compare.
     localAlice = m_cm->contact(retrievalId(localAlice));
     aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
-    QCOMPARE(localAlice.detail<QContactEmailAddress>().value<QString>(QContactEmailAddress::FieldEmailAddress), QString::fromLatin1("alice4@test.com"));
-    QCOMPARE(aggregateAlice.detail<QContactEmailAddress>().value<QString>(QContactEmailAddress::FieldEmailAddress), QString::fromLatin1("alice4@test.com"));
-    QCOMPARE(localAlice.detail<QContactPhoneNumber>().value<QString>(QContactPhoneNumber::FieldNumber), QString::fromLatin1("4444"));
-    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().value<QString>(QContactPhoneNumber::FieldNumber), QString::fromLatin1("4444"));
-    QVERIFY(localAlice.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby).isEmpty());
-    QVERIFY(aggregateAlice.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby).isEmpty());
     QCOMPARE(localAlice.details<QContactEmailAddress>().size(), 1);
     QCOMPARE(localAlice.details<QContactPhoneNumber>().size(), 1);
     QCOMPARE(localAlice.details<QContactHobby>().size(), 0);
     QCOMPARE(aggregateAlice.details<QContactEmailAddress>().size(), 1);
     QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().size(), 1);
     QCOMPARE(aggregateAlice.details<QContactHobby>().size(), 0);
+    QCOMPARE(localAlice.detail<QContactEmailAddress>().value<QString>(QContactEmailAddress::FieldEmailAddress), QString::fromLatin1("alice4@test.com"));
+    QVERIFY(!detailProvenance(localAlice.detail<QContactEmailAddress>()).isEmpty());
+    QCOMPARE(aggregateAlice.detail<QContactEmailAddress>().value<QString>(QContactEmailAddress::FieldEmailAddress), QString::fromLatin1("alice4@test.com"));
+    QCOMPARE(detailProvenance(aggregateAlice.detail<QContactEmailAddress>()), detailProvenance(localAlice.detail<QContactEmailAddress>()));
+    QCOMPARE(localAlice.detail<QContactPhoneNumber>().value<QString>(QContactPhoneNumber::FieldNumber), QString::fromLatin1("4444"));
+    QVERIFY(!detailProvenance(localAlice.detail<QContactPhoneNumber>()).isEmpty());
+    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().value<QString>(QContactPhoneNumber::FieldNumber), QString::fromLatin1("4444"));
+    QCOMPARE(detailProvenance(aggregateAlice.detail<QContactPhoneNumber>()), detailProvenance(localAlice.detail<QContactPhoneNumber>()));
+    QVERIFY(localAlice.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby).isEmpty());
+    QVERIFY(aggregateAlice.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby).isEmpty());
 
     // now do an update with a definition mask.  We need to be certain that no masked details were lost.
     ae = localAlice.detail<QContactEmailAddress>();
@@ -676,6 +719,10 @@ void tst_Aggregation::updateSingleAggregate()
     QContactHobby ah;
     ah.setHobby("tennis");
     alice.saveDetail(&ah);
+
+    QContactNickname ak;
+    ak.setNickname("Ally");
+    alice.saveDetail(&ak);
 
     m_addAccumulatedIds.clear();
     QVERIFY(m_cm->saveContact(&alice));
@@ -740,18 +787,29 @@ void tst_Aggregation::updateSingleAggregate()
     // reload them, and compare.
     localAlice = m_cm->contact(retrievalId(localAlice));
     aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
-    QCOMPARE(localAlice.detail<QContactEmailAddress>().value<QString>(QContactEmailAddress::FieldEmailAddress), QLatin1String("alice5@test.com"));
-    QCOMPARE(aggregateAlice.detail<QContactEmailAddress>().value<QString>(QContactEmailAddress::FieldEmailAddress), QLatin1String("alice5@test.com"));
-    QCOMPARE(localAlice.detail<QContactPhoneNumber>().value<QString>(QContactPhoneNumber::FieldNumber), QLatin1String("555"));
-    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().value<QString>(QContactPhoneNumber::FieldNumber), QLatin1String("555"));
-    QVERIFY(localAlice.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby).isEmpty());
-    QVERIFY(aggregateAlice.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby).isEmpty());
     QCOMPARE(localAlice.details<QContactEmailAddress>().size(), 1);
     QCOMPARE(localAlice.details<QContactPhoneNumber>().size(), 1);
     QCOMPARE(localAlice.details<QContactHobby>().size(), 0);
+    QCOMPARE(localAlice.details<QContactNickname>().size(), 1);
     QCOMPARE(aggregateAlice.details<QContactEmailAddress>().size(), 1);
     QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().size(), 1);
     QCOMPARE(aggregateAlice.details<QContactHobby>().size(), 0);
+    QCOMPARE(aggregateAlice.details<QContactNickname>().size(), 1);
+    QCOMPARE(localAlice.detail<QContactEmailAddress>().value<QString>(QContactEmailAddress::FieldEmailAddress), QLatin1String("alice5@test.com"));
+    QVERIFY(!detailProvenance(localAlice.detail<QContactEmailAddress>()).isEmpty());
+    QCOMPARE(aggregateAlice.detail<QContactEmailAddress>().value<QString>(QContactEmailAddress::FieldEmailAddress), QLatin1String("alice5@test.com"));
+    QCOMPARE(detailProvenance(aggregateAlice.detail<QContactEmailAddress>()), detailProvenance(localAlice.detail<QContactEmailAddress>()));
+    QCOMPARE(localAlice.detail<QContactPhoneNumber>().value<QString>(QContactPhoneNumber::FieldNumber), QLatin1String("555"));
+    QVERIFY(!detailProvenance(localAlice.detail<QContactPhoneNumber>()).isEmpty());
+    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().value<QString>(QContactPhoneNumber::FieldNumber), QLatin1String("555"));
+    QCOMPARE(detailProvenance(aggregateAlice.detail<QContactPhoneNumber>()), detailProvenance(localAlice.detail<QContactPhoneNumber>()));
+    QVERIFY(localAlice.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby).isEmpty());
+    QVERIFY(aggregateAlice.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby).isEmpty());
+    QCOMPARE(localAlice.detail<QContactNickname>().value<QString>(QContactNickname::FieldNickname), QLatin1String("Ally"));
+    QVERIFY(!detailProvenance(localAlice.detail<QContactNickname>()).isEmpty());
+    QCOMPARE(aggregateAlice.detail<QContactNickname>().value<QString>(QContactNickname::FieldNickname), QLatin1String("Ally"));
+    QCOMPARE(detailProvenance(aggregateAlice.detail<QContactNickname>()), detailProvenance(localAlice.detail<QContactNickname>()));
+    QCOMPARE(detailProvenanceContact(localAlice.detail<QContactNickname>()), detailProvenanceContact(localAlice.detail<QContactEmailAddress>()));
 }
 
 void tst_Aggregation::updateAggregateOfLocalAndSync()
@@ -771,6 +829,10 @@ void tst_Aggregation::updateAggregateOfLocalAndSync()
     QContactEmailAddress aem;
     aem.setEmailAddress("aliceP@test.com");
     alice.saveDetail(&aem);
+
+    QContactNickname ak;
+    ak.setNickname("Ally");
+    alice.saveDetail(&ak);
 
     QVERIFY(m_cm->saveContact(&alice));
 
@@ -839,20 +901,30 @@ void tst_Aggregation::updateAggregateOfLocalAndSync()
 
     // regenerate and ensure we get what we expect.
     aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
+    QCOMPARE(aggregateAlice.details<QContactNickname>().size(), 1);     // original, comes from the local contact
+    QVERIFY(!detailProvenance(aggregateAlice.detail<QContactNickname>()).isEmpty());
     QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().size(), 1);  // modified, comes from the local contact
-    QCOMPARE(aggregateAlice.details<QContactEmailAddress>().size(), 2); // modified local, now have two different values
-    QCOMPARE(aggregateAlice.details<QContactHobby>().size(), 1);        // couldn't remove, comes from the sync contact
-    QCOMPARE(aggregateAlice.details<QContactNote>().size(), 1);         // couldn't modify, comes from the sync contact
-
+    QCOMPARE(detailProvenanceContact(aggregateAlice.detail<QContactPhoneNumber>()), detailProvenanceContact(aggregateAlice.detail<QContactNickname>()));
     QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().value<QString>(QContactPhoneNumber::FieldNumber), QString::fromLatin1("11115"));
+    QCOMPARE(aggregateAlice.details<QContactHobby>().size(), 1);        // couldn't remove, comes from the sync contact
+    QVERIFY(!detailProvenance(aggregateAlice.detail<QContactHobby>()).isEmpty());
     QCOMPARE(aggregateAlice.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby), QString::fromLatin1("tennis"));
+    QCOMPARE(aggregateAlice.details<QContactNote>().size(), 1);         // couldn't modify, comes from the sync contact
+    QCOMPARE(detailProvenanceContact(aggregateAlice.detail<QContactNote>()), detailProvenanceContact(aggregateAlice.detail<QContactHobby>()));
+    QVERIFY(detailProvenanceContact(aggregateAlice.detail<QContactNote>()) != detailProvenanceContact(aggregateAlice.detail<QContactNickname>()));
     QCOMPARE(aggregateAlice.detail<QContactNote>().value<QString>(QContactNote::FieldNote), QString::fromLatin1("noteworthy note"));
-    QList<QContactEmailAddress> aaems = aggregateAlice.details<QContactEmailAddress>(); // order is undefined.
-    if (aaems.at(0).emailAddress() == QLatin1String("aliceP@test.com")) {
+
+    QList<QContactEmailAddress> aaems = aggregateAlice.details<QContactEmailAddress>();
+    QCOMPARE(aaems.size(), 2); // modified local, now have two different values
+    if (aaems.at(0).emailAddress() == QLatin1String("aliceP@test.com")) { // order is undefined.
+        QCOMPARE(detailProvenanceContact(aaems.at(0)), detailProvenanceContact(aggregateAlice.detail<QContactHobby>()));
         QCOMPARE(aaems.at(1).emailAddress(), QLatin1String("aliceP2@test.com"));
+        QCOMPARE(detailProvenanceContact(aaems.at(1)), detailProvenanceContact(aggregateAlice.detail<QContactNickname>()));
     } else {
         QCOMPARE(aaems.at(0).emailAddress(), QLatin1String("aliceP2@test.com"));
+        QCOMPARE(detailProvenanceContact(aaems.at(0)), detailProvenanceContact(aggregateAlice.detail<QContactNickname>()));
         QCOMPARE(aaems.at(1).emailAddress(), QLatin1String("aliceP@test.com"));
+        QCOMPARE(detailProvenanceContact(aaems.at(1)), detailProvenanceContact(aggregateAlice.detail<QContactHobby>()));
     }
 }
 
@@ -983,33 +1055,21 @@ void tst_Aggregation::promotionToSingleLocal()
     foundAggregateAlice = false;
     foreach (const QContact &curr, allContacts) {
         QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
-        QContactEmailAddress currEm = curr.detail<QContactEmailAddress>();
-        QContactPhoneNumber currPhn = curr.detail<QContactPhoneNumber>();
         QContactName currName = curr.detail<QContactName>();
-        QContactFavorite currFav = curr.detail<QContactFavorite>();
         if (currName.firstName() == QLatin1String("Single")
                 && currName.middleName() == QLatin1String("Promotion")
                 && currName.lastName() == QLatin1String("ToAggregate")) {
             if (currSt.syncTarget() == QLatin1String("test")) {
                 QVERIFY(!foundSyncAlice); // found more than one = error...
-                QCOMPARE(currEm.emailAddress(), QLatin1String("spta@test.com"));
-                QCOMPARE(currPhn.number(), QString());
-                QVERIFY(!currFav.isFavorite());
                 syncAlice = curr;
                 foundSyncAlice = true;
             } else if (currSt.syncTarget() == QLatin1String("local")) {
                 QVERIFY(!foundLocalAlice); // found more than one = error...
-                QCOMPARE(currEm.emailAddress(), QString());
-                QCOMPARE(currPhn.number(), QLatin1String("11111"));
-                QVERIFY(currFav.isFavorite());
                 localAlice = curr;
                 foundLocalAlice = true;
             } else {
                 QVERIFY(!foundAggregateAlice); // found more than one = error...
                 QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
-                QCOMPARE(currEm.emailAddress(), QLatin1String("spta@test.com"));
-                QCOMPARE(currPhn.number(), QLatin1String("11111"));
-                QVERIFY(currFav.isFavorite());
                 aggregateAlice = curr;
                 foundAggregateAlice = true;
             }
@@ -1027,6 +1087,24 @@ void tst_Aggregation::promotionToSingleLocal()
     QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
     QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(syncAlice.id()));
 
+    QCOMPARE(localAlice.detail<QContactEmailAddress>().emailAddress(), QString());
+    QCOMPARE(localAlice.detail<QContactPhoneNumber>().number(), QLatin1String("11111"));
+    QVERIFY(!detailProvenance(localAlice.detail<QContactPhoneNumber>()).isEmpty());
+    QVERIFY(localAlice.detail<QContactFavorite>().isFavorite());
+
+    QCOMPARE(syncAlice.detail<QContactEmailAddress>().emailAddress(), QLatin1String("spta@test.com"));
+    QVERIFY(!detailProvenance(syncAlice.detail<QContactEmailAddress>()).isEmpty());
+    QVERIFY(detailProvenanceContact(syncAlice.detail<QContactEmailAddress>()) != detailProvenanceContact(localAlice.detail<QContactPhoneNumber>()));
+    QCOMPARE(syncAlice.detail<QContactPhoneNumber>().number(), QString());
+    QVERIFY(!syncAlice.detail<QContactFavorite>().isFavorite());
+
+    QCOMPARE(aggregateAlice.detail<QContactEmailAddress>().emailAddress(), QLatin1String("spta@test.com"));
+    QCOMPARE(detailProvenance(aggregateAlice.detail<QContactEmailAddress>()), detailProvenance(syncAlice.detail<QContactEmailAddress>()));
+    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().number(), QLatin1String("11111"));
+    QCOMPARE(detailProvenance(aggregateAlice.detail<QContactPhoneNumber>()), detailProvenance(localAlice.detail<QContactPhoneNumber>()));
+    QVERIFY(detailProvenanceContact(aggregateAlice.detail<QContactPhoneNumber>()) != detailProvenanceContact(aggregateAlice.detail<QContactEmailAddress>()));
+    QVERIFY(aggregateAlice.detail<QContactFavorite>().isFavorite());
+
     // now unfavorite aggregate alice.  ensure that it propagates properly.
     afav = aggregateAlice.detail<QContactFavorite>();
     afav.setFavorite(false);
@@ -1039,38 +1117,43 @@ void tst_Aggregation::promotionToSingleLocal()
     foundAggregateAlice = false;
     foreach (const QContact &curr, allContacts) {
         QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
-        QContactEmailAddress currEm = curr.detail<QContactEmailAddress>();
-        QContactPhoneNumber currPhn = curr.detail<QContactPhoneNumber>();
         QContactName currName = curr.detail<QContactName>();
-        QContactFavorite currFav = curr.detail<QContactFavorite>();
         if (currName.firstName() == QLatin1String("Single")
                 && currName.middleName() == QLatin1String("Promotion")
                 && currName.lastName() == QLatin1String("ToAggregate")) {
             if (currSt.syncTarget() == QLatin1String("test")) {
                 QVERIFY(!foundSyncAlice); // found more than one = error...
-                QCOMPARE(currEm.emailAddress(), QLatin1String("spta@test.com"));
-                QCOMPARE(currPhn.number(), QString());
-                QVERIFY(!currFav.isFavorite());
                 syncAlice = curr;
                 foundSyncAlice = true;
             } else if (currSt.syncTarget() == QLatin1String("local")) {
                 QVERIFY(!foundLocalAlice); // found more than one = error...
-                QCOMPARE(currEm.emailAddress(), QString());
-                QCOMPARE(currPhn.number(), QLatin1String("11111"));
-                QVERIFY(!currFav.isFavorite());
                 localAlice = curr;
                 foundLocalAlice = true;
             } else {
                 QVERIFY(!foundAggregateAlice); // found more than one = error...
                 QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
-                QCOMPARE(currEm.emailAddress(), QLatin1String("spta@test.com"));
-                QCOMPARE(currPhn.number(), QLatin1String("11111"));
-                QVERIFY(!currFav.isFavorite());
                 aggregateAlice = curr;
                 foundAggregateAlice = true;
             }
         }
     }
+
+    // ensure that we found them all
+    QVERIFY(foundLocalAlice);
+    QVERIFY(foundSyncAlice);
+    QVERIFY(foundAggregateAlice);
+
+    QCOMPARE(localAlice.detail<QContactEmailAddress>().emailAddress(), QString());
+    QCOMPARE(localAlice.detail<QContactPhoneNumber>().number(), QLatin1String("11111"));
+    QVERIFY(!localAlice.detail<QContactFavorite>().isFavorite());
+
+    QCOMPARE(syncAlice.detail<QContactEmailAddress>().emailAddress(), QLatin1String("spta@test.com"));
+    QCOMPARE(syncAlice.detail<QContactPhoneNumber>().number(), QString());
+    QVERIFY(!syncAlice.detail<QContactFavorite>().isFavorite());
+
+    QCOMPARE(aggregateAlice.detail<QContactEmailAddress>().emailAddress(), QLatin1String("spta@test.com"));
+    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().number(), QLatin1String("11111"));
+    QVERIFY(!aggregateAlice.detail<QContactFavorite>().isFavorite());
 }
 
 void tst_Aggregation::uniquenessConstraints()

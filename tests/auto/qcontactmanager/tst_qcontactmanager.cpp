@@ -471,52 +471,6 @@ void tst_QContactManager::dumpContactDifferences(const QContact& ca, const QCont
     }
 }
 
-static bool variantEqual(const QVariant &lhs, const QVariant &rhs)
-{
-#ifdef USING_QTPIM
-    // Work around incorrect result from QVariant::operator== when variants contain QList<int>
-    static const int QListIntType = QMetaType::type("QList<int>");
-
-    const int lhsType = lhs.userType();
-    if (lhsType != rhs.userType()) {
-        return false;
-    }
-
-    if (lhsType == QListIntType) {
-        return (lhs.value<QList<int> >() == rhs.value<QList<int> >());
-    }
-#endif
-    return (lhs == rhs);
-}
-
-static bool detailValuesEqual(const QContactDetail &lhs, const QContactDetail &rhs)
-{
-    const DetailMap lhsValues(detailValues(lhs));
-    const DetailMap rhsValues(detailValues(rhs));
-
-    if (lhsValues.count() != rhsValues.count()) {
-        return false;
-    }
-
-    DetailMap::const_iterator lit = lhsValues.constBegin(), lend = lhsValues.constEnd();
-    DetailMap::const_iterator rit = rhsValues.constBegin();
-    for ( ; lit != lend; ++lit, ++rit) {
-        if (!variantEqual(*lit, *rit)) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-static bool detailsEquivalent(const QContactDetail &lhs, const QContactDetail &rhs)
-{
-    // Same as operator== except ignores differences in accessConstraints values
-    if (detailType(lhs) != detailType(rhs))
-        return false;
-    return detailValuesEqual(lhs, rhs);
-}
-
 bool tst_QContactManager::isSuperset(const QContact& ca, const QContact& cb)
 {
     // returns true if contact ca is a superset of contact cb
@@ -549,7 +503,7 @@ bool tst_QContactManager::isSuperset(const QContact& ca, const QContact& cb)
         foreach (QContactDetail d2, bDetails) {
             if (detailType(d) == detailType(d2)) {
                 bool canRemove = true;
-                DetailMap d2map = detailValues(d2);
+                DetailMap d2map = detailValues(d2, false);
                 foreach (DetailMap::key_type key, d2map.keys()) {
                     if (d.value(key) != d2.value(key)) {
                         // d can have _more_ keys than d2,
