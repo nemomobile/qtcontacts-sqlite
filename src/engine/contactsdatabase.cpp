@@ -226,7 +226,8 @@ static const char *createDetailsTable =
         "\n detailUri TEXT UNIQUE,"
         "\n linkedDetailUris TEXT,"
         "\n contexts TEXT,"
-        "\n accessConstraints INTEGER);";
+        "\n accessConstraints INTEGER,"
+        "\n provenance TEXT);";
 
 static const char *createDetailsJoinIndex =
         "\n CREATE INDEX DetailsJoinIndex ON Details(detailId, detail);";
@@ -596,12 +597,15 @@ static bool setContactsIsOnline(QSqlDatabase &database)
 
 static const ExtraColumn contactsIsOnline = { "Contacts", "isOnline", "BOOL", &setContactsIsOnline };
 
+static const ExtraColumn detailsProvenance = { "Details", "provenance", "TEXT", 0 };
+
 static const ExtraColumn *extraColumns[] =
 {
     &contactsHasPhoneNumber,
     &contactsHasEmailAddress,
     &contactsHasOnlineAccount,
-    &contactsIsOnline
+    &contactsIsOnline,
+    &detailsProvenance
 };
 
 static bool addColumn(const ExtraColumn *columnDef, QSqlDatabase &database)
