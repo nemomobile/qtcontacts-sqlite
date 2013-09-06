@@ -55,8 +55,9 @@ QTM_BEGIN_NAMESPACE
 #endif
 
 #ifdef USING_QTPIM
-// In QContactDetail, we support the provenance property
+// In QContactDetail, we support the provenance and modifiable properties
 static const int QContactDetail__FieldProvenance = (QContactDetail::FieldLinkedDetailUris+1);
+static const int QContactDetail__FieldModifiable = (QContactDetail::FieldLinkedDetailUris+2);
 
 // In QContactDetail::contexts(), we support additional values, "Default" and "Large"
 static const int QContactDetail__ContextDefault = (QContactDetail::ContextOther+1);
@@ -88,6 +89,7 @@ static const QContactDetail::DetailType QContactDetail__TypeStatusFlags = static
 #else
 // Declared as static:
 Q_DECLARE_LATIN1_CONSTANT(QContactDetail__FieldProvenance, "Provenance") = { "Provenance" };
+Q_DECLARE_LATIN1_CONSTANT(QContactDetail__FieldModifiable, "Modifiable") = { "Modifiable" };
 
 Q_DECLARE_LATIN1_CONSTANT(QContactDetail__ContextDefault, "Default") = { "Default" };
 Q_DECLARE_LATIN1_CONSTANT(QContactDetail__ContextLarge, "Large") = { "Large" };
