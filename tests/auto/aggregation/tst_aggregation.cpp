@@ -94,6 +94,7 @@ private slots:
     void updateSingleLocal();
     void updateSingleAggregate();
     void updateAggregateOfLocalAndSync();
+    void updateAggregateOfLocalAndModifiableSync();
 
     void promotionToSingleLocal();
     void uniquenessConstraints();
@@ -926,6 +927,222 @@ void tst_Aggregation::updateAggregateOfLocalAndSync()
         QCOMPARE(aaems.at(1).emailAddress(), QLatin1String("aliceP@test.com"));
         QCOMPARE(detailProvenanceContact(aaems.at(1)), detailProvenanceContact(aggregateAlice.detail<QContactHobby>()));
     }
+}
+
+void tst_Aggregation::updateAggregateOfLocalAndModifiableSync()
+{
+    // local alice
+    QContact alice;
+    {
+        QContactName name;
+        name.setFirstName("Alice");
+        name.setMiddleName("In");
+        name.setLastName("PromotedLand");
+        alice.saveDetail(&name);
+
+        QContactNickname nickname;
+        nickname.setNickname("Ally");
+        alice.saveDetail(&nickname);
+
+        QContactPhoneNumber aph;
+        aph.setNumber("11111");
+        alice.saveDetail(&aph);
+    }
+    QVERIFY(m_cm->saveContact(&alice));
+
+    const QContactName &localName(alice.detail<QContactName>());
+
+    {
+        // first syncTarget alice
+        QContact testAlice;
+
+        QContactName name;
+        name.setFirstName(localName.firstName());
+        name.setMiddleName(localName.middleName());
+        name.setLastName(localName.lastName());
+        testAlice.saveDetail(&name);
+
+        QContactRingtone ringtone;
+        ringtone.setAudioRingtoneUrl(QUrl("http://example.org/crickets.mp3"));
+        testAlice.saveDetail(&ringtone);
+
+        QContactEmailAddress emailAddress;
+        emailAddress.setEmailAddress("aliceP@test.com");
+        emailAddress.setValue(QContactDetail__FieldModifiable, true);
+        testAlice.saveDetail(&emailAddress);
+
+        QContactNote note;
+        note.setNote("noteworthy note");
+        note.setValue(QContactDetail__FieldModifiable, true);
+        testAlice.saveDetail(&note);
+
+        QContactHobby hobby;
+        hobby.setHobby("tennis");
+        hobby.setValue(QContactDetail__FieldModifiable, false);
+        testAlice.saveDetail(&hobby);
+
+        QContactSyncTarget syncTarget;
+        syncTarget.setSyncTarget("test");
+        testAlice.saveDetail(&syncTarget);
+
+        QVERIFY(m_cm->saveContact(&testAlice));
+    }
+
+    {
+        // second syncTarget alice
+        QContact trialAlice;
+
+        QContactName name;
+        name.setFirstName(localName.firstName());
+        name.setMiddleName(localName.middleName());
+        name.setLastName(localName.lastName());
+        trialAlice.saveDetail(&name);
+
+        QContactTag tag;
+        tag.setTag("Fiction");
+        trialAlice.saveDetail(&tag);
+
+        QContactEmailAddress emailAddress;
+        emailAddress.setEmailAddress("alice@example.org");
+        emailAddress.setValue(QContactDetail__FieldModifiable, true);
+        trialAlice.saveDetail(&emailAddress);
+
+        QContactOrganization organization;
+        organization.setRole("CEO");
+        organization.setValue(QContactDetail__FieldModifiable, true);
+        trialAlice.saveDetail(&organization);
+
+        QContactSyncTarget syncTarget;
+        syncTarget.setSyncTarget("trial");
+        trialAlice.saveDetail(&syncTarget);
+
+        QVERIFY(m_cm->saveContact(&trialAlice));
+    }
+
+    // now grab the aggregate alice
+    QContact aggregateAlice;
+    {
+        QContactRelationshipFilter filter;
+        setFilterContact(filter, alice);
+        filter.setRelatedContactRole(QContactRelationship::Second);
+        setFilterType(filter, QContactRelationship::Aggregates);
+        QList<QContact> allAggregatesOfAlice = m_cm->contacts(filter);
+        QCOMPARE(allAggregatesOfAlice.size(), 1);
+        aggregateAlice = allAggregatesOfAlice.at(0);
+    }
+
+    // Verify the aggregate state
+    QCOMPARE(aggregateAlice.details<QContactNickname>().size(), 1);
+    QVERIFY(!detailProvenance(aggregateAlice.detail<QContactNickname>()).isEmpty());
+
+    // Nickname found only in the local contact
+    const QString localContact(detailProvenanceContact(aggregateAlice.detail<QContactNickname>()));
+
+    QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().size(), 1);
+    QCOMPARE(detailProvenanceContact(aggregateAlice.detail<QContactPhoneNumber>()), localContact);
+
+    QCOMPARE(aggregateAlice.details<QContactRingtone>().size(), 1);
+    QVERIFY(!detailProvenance(aggregateAlice.detail<QContactRingtone>()).isEmpty());
+    QVERIFY(detailProvenanceContact(aggregateAlice.detail<QContactRingtone>()) != localContact);
+
+    // Ringtone found only in the 'test' contact
+    const QString testContact(detailProvenanceContact(aggregateAlice.detail<QContactRingtone>()));
+
+    QCOMPARE(aggregateAlice.details<QContactEmailAddress>().size(), 2);
+    QVERIFY(!detailProvenance(aggregateAlice.details<QContactEmailAddress>().at(0)).isEmpty());
+    QVERIFY(detailProvenanceContact(aggregateAlice.details<QContactEmailAddress>().at(0)) != localContact);
+    QVERIFY(!detailProvenance(aggregateAlice.details<QContactEmailAddress>().at(1)).isEmpty());
+    QVERIFY(detailProvenanceContact(aggregateAlice.details<QContactEmailAddress>().at(1)) != localContact);
+    QVERIFY(detailProvenanceContact(aggregateAlice.details<QContactEmailAddress>().at(0)) != detailProvenanceContact(aggregateAlice.details<QContactEmailAddress>().at(1)));
+
+    QCOMPARE(aggregateAlice.details<QContactNote>().size(), 1);
+    QCOMPARE(detailProvenanceContact(aggregateAlice.detail<QContactNote>()), testContact);
+
+    QCOMPARE(aggregateAlice.details<QContactHobby>().size(), 1);
+    QCOMPARE(detailProvenanceContact(aggregateAlice.detail<QContactHobby>()), testContact);
+
+    QCOMPARE(aggregateAlice.details<QContactTag>().size(), 1);
+    QVERIFY(!detailProvenance(aggregateAlice.detail<QContactTag>()).isEmpty());
+    QVERIFY(detailProvenanceContact(aggregateAlice.detail<QContactTag>()) != localContact);
+    QVERIFY(detailProvenanceContact(aggregateAlice.detail<QContactTag>()) != testContact);
+
+    // Tag found only in the 'trial' contact
+    const QString trialContact(detailProvenanceContact(aggregateAlice.detail<QContactTag>()));
+
+    QCOMPARE(aggregateAlice.details<QContactOrganization>().size(), 1);
+    QCOMPARE(detailProvenanceContact(aggregateAlice.detail<QContactOrganization>()), trialContact);
+
+    // now ensure that updates / modifies / removals work as expected
+    {
+        // locally-originated detail - should be modified
+        QContactPhoneNumber phoneNumber = aggregateAlice.detail<QContactPhoneNumber>();
+        phoneNumber.setNumber("22222");
+        QVERIFY(aggregateAlice.saveDetail(&phoneNumber));
+
+        // modifiable sync details - should be modified in each contact
+        foreach (QContactEmailAddress emailAddress, aggregateAlice.details<QContactEmailAddress>()) {
+            if (emailAddress.emailAddress() == QString::fromLatin1("aliceP@test.com")) {
+                emailAddress.setEmailAddress("aliceP2@test.com");
+                QVERIFY(aggregateAlice.saveDetail(&emailAddress));
+            } else {
+                emailAddress.setEmailAddress("alice2@example.org");
+                QVERIFY(aggregateAlice.saveDetail(&emailAddress));
+            }
+        }
+
+        // modifiable sync detail - should be removed
+        QContactNote note = aggregateAlice.detail<QContactNote>();
+        QVERIFY(aggregateAlice.removeDetail(&note));
+
+        // modifiable sync detail - should be removed
+        QContactOrganization organization = aggregateAlice.detail<QContactOrganization>();
+        QVERIFY(aggregateAlice.removeDetail(&organization));
+
+        // unmodifiable sync detail - modification should be pushed to local
+        QContactHobby hobby = aggregateAlice.detail<QContactHobby>();
+        hobby.setHobby("crochet");
+        QVERIFY(aggregateAlice.saveDetail(&hobby));
+    }
+
+    QVERIFY(m_cm->saveContact(&aggregateAlice));
+    aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
+
+    QCOMPARE(aggregateAlice.details<QContactNickname>().size(), 1);
+    QVERIFY(!detailProvenance(aggregateAlice.detail<QContactNickname>()).isEmpty());
+
+    QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().size(), 1);
+    QCOMPARE(detailProvenanceContact(aggregateAlice.detail<QContactPhoneNumber>()), localContact);
+    QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().at(0).number(), QString::fromLatin1("22222"));
+
+    QList<QContactEmailAddress> aaeas = aggregateAlice.details<QContactEmailAddress>();
+    QCOMPARE(aaeas.size(), 2);
+    if (aaeas.at(0).emailAddress() == QString::fromLatin1("aliceP2@test.com")) {
+        QCOMPARE(detailProvenanceContact(aaeas.at(0)), testContact);
+        QCOMPARE(detailProvenanceContact(aaeas.at(1)), trialContact);
+        QCOMPARE(aaeas.at(1).emailAddress(), QString::fromLatin1("alice2@example.org"));
+    } else {
+        QCOMPARE(detailProvenanceContact(aaeas.at(0)), trialContact);
+        QCOMPARE(aaeas.at(0).emailAddress(), QString::fromLatin1("alice2@example.org"));
+        QCOMPARE(detailProvenanceContact(aaeas.at(1)), testContact);
+        QCOMPARE(aaeas.at(1).emailAddress(), QString::fromLatin1("aliceP2@test.com"));
+    }
+
+    QCOMPARE(aggregateAlice.details<QContactNote>().size(), 0);
+
+    QList<QContactHobby> aahs = aggregateAlice.details<QContactHobby>();
+    QCOMPARE(aahs.size(), 2);
+    if (aahs.at(0).hobby() == QString::fromLatin1("tennis")) {
+        QCOMPARE(detailProvenanceContact(aahs.at(0)), testContact);
+        QCOMPARE(aahs.at(1).hobby(), QString::fromLatin1("crochet"));
+        QCOMPARE(detailProvenanceContact(aahs.at(1)), localContact);
+    } else {
+        QCOMPARE(aahs.at(0).hobby(), QString::fromLatin1("crochet"));
+        QCOMPARE(detailProvenanceContact(aahs.at(0)), localContact);
+        QCOMPARE(aahs.at(1).hobby(), QString::fromLatin1("tennis"));
+        QCOMPARE(detailProvenanceContact(aahs.at(1)), testContact);
+    }
+
+    QCOMPARE(aggregateAlice.details<QContactOrganization>().size(), 0);
 }
 
 void tst_Aggregation::promotionToSingleLocal()

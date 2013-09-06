@@ -112,6 +112,8 @@ private:
     QContactManager::Error removeRelationships(const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap);
 
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
+    QContactManager::Error calculateDelta(QContact *contact, const ContactWriter::DetailList &definitionMask,
+                                          QList<QContactDetail> *addDelta, QList<QContactDetail> *removeDelta, QList<QContact> *writeList);
     QContactManager::Error updateOrCreateAggregate(QContact *contact, const DetailList &definitionMask, int maxAggregateId, bool withinTransaction);
     QContactManager::Error updateLocalAndAggregate(QContact *contact, const DetailList &definitionMask, bool withinTransaction);
     void regenerateAggregates(const QList<quint32> &aggregateIds, const DetailList &definitionMask, bool withinTransaction);
@@ -165,6 +167,7 @@ private:
     QSqlQuery m_orphanContactIds;
     QSqlQuery m_checkContactExists;
     QSqlQuery m_existingContactIds;
+    QSqlQuery m_modifiableDetails;
     QSqlQuery m_selfContactId;
     QSqlQuery m_insertContact;
     QSqlQuery m_updateContact;
