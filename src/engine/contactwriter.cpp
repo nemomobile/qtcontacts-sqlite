@@ -61,8 +61,7 @@ using namespace Conversion;
 #endif
 
 static const char *findConstituentsForAggregate =
-        "\n SELECT contactId FROM Contacts WHERE contactId IN ("
-        "\n SELECT secondId FROM Relationships WHERE firstId = :aggregateId AND type = 'Aggregates')";
+        "\n SELECT secondId FROM Relationships WHERE firstId = :aggregateId AND type = 'Aggregates'";
 
 static const char *findConstituentsForAggregateIds =
         "\n SELECT Relationships.secondId"
@@ -71,8 +70,12 @@ static const char *findConstituentsForAggregateIds =
         "\n WHERE Relationships.type = 'Aggregates'";
 
 static const char *findLocalForAggregate =
-        "\n SELECT contactId FROM Contacts WHERE syncTarget = 'local' AND contactId IN ("
-        "\n SELECT secondId FROM Relationships WHERE firstId = :aggregateId AND type = 'Aggregates')";
+        "\n SELECT DISTINCT Contacts.contactId"
+        "\n FROM Contacts"
+        "\n JOIN Relationships ON Relationships.secondId = Contacts.contactId"
+        "\n WHERE Contacts.syncTarget = 'local'"
+        "\n AND Relationships.firstId = :aggregateId"
+        "\n AND Relationships.type = 'Aggregates'";
 
 static const char *findAggregateForContact =
         "\n SELECT DISTINCT firstId FROM Relationships WHERE type = 'Aggregates' AND secondId = :localId";
