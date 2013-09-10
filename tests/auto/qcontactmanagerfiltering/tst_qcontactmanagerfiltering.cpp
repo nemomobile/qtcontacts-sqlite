@@ -353,6 +353,9 @@ void tst_QContactManagerFiltering::detailStringFiltering_data()
         newMRow("Name == Aaron, case sensitive", manager) << manager << name << firstname << QVariant("Aaron") << (int)(QContactFilter::MatchCaseSensitive) << "a";
         newMRow("Name == aaron, case sensitive", manager) << manager << name << firstname << QVariant("aaron") << (int)(QContactFilter::MatchCaseSensitive) << es;
 
+        newMRow("Name is empty", manager) << manager << name << firstname << QVariant("") << 0 << es;
+        newMRow("Last name is empty", manager) << manager << name << lastname << QVariant("") << 0 << "hijk";
+
         newMRow("Name == A, begins", manager) << manager << name << firstname << QVariant("A") << (int)(QContactFilter::MatchStartsWith) << "a";
         newMRow("Name == Aaron, begins", manager) << manager << name << firstname << QVariant("Aaron") << (int)(QContactFilter::MatchStartsWith) << "a";
         newMRow("Name == aaron, begins", manager) << manager << name << firstname << QVariant("aaron") << (int)(QContactFilter::MatchStartsWith) << "a";
