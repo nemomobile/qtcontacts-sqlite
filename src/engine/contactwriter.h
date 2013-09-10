@@ -214,6 +214,9 @@ private:
     QSqlQuery m_removeOriginMetadata;
     QSqlQuery m_removeDetail;
     QSqlQuery m_removeIdentity;
+    QSqlQuery m_findConstituentsForAggregateIds;
+    QSqlQuery m_findAggregateForContactIds;
+    QSqlQuery m_selectAggregateContactIds;
     ContactReader *m_reader;
 
     QSet<QContactIdType> m_addedIds;
