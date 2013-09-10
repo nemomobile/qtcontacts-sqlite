@@ -162,7 +162,6 @@ private:
     QSqlQuery m_findAggregateForContact;
     QSqlQuery m_findMaximumContactId;
     QSqlQuery m_findMatchForContact;
-    QSqlQuery m_selectAggregateContactIds;
     QSqlQuery m_childlessAggregateIds;
     QSqlQuery m_orphanContactIds;
     QSqlQuery m_checkContactExists;

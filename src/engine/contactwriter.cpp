@@ -64,12 +64,24 @@ static const char *findConstituentsForAggregate =
         "\n SELECT contactId FROM Contacts WHERE contactId IN ("
         "\n SELECT secondId FROM Relationships WHERE firstId = :aggregateId AND type = 'Aggregates')";
 
+static const char *findConstituentsForAggregateIds =
+        "\n SELECT Relationships.secondId"
+        "\n FROM Relationships"
+        "\n JOIN temp.%1 ON Relationships.firstId = temp.%1.contactId"
+        "\n WHERE Relationships.type = 'Aggregates'";
+
 static const char *findLocalForAggregate =
         "\n SELECT contactId FROM Contacts WHERE syncTarget = 'local' AND contactId IN ("
         "\n SELECT secondId FROM Relationships WHERE firstId = :aggregateId AND type = 'Aggregates')";
 
 static const char *findAggregateForContact =
         "\n SELECT DISTINCT firstId FROM Relationships WHERE type = 'Aggregates' AND secondId = :localId";
+
+static const char *findAggregateForContactIds =
+        "\n SELECT DISTINCT Relationships.firstId"
+        "\n FROM Relationships"
+        "\n JOIN temp.%1 ON Relationships.secondId = temp.%1.contactId"
+        "\n WHERE Relationships.type = 'Aggregates'";
 
 static const char *findMaximumContactId =
         "\n SELECT max(contactId) FROM Contacts";
@@ -113,7 +125,10 @@ static const char *findMatchForContact =
         "\n LIMIT 1";
 
 static const char *selectAggregateContactIds =
-        "\n SELECT contactId FROM Contacts WHERE syncTarget = 'aggregate' AND contactId = :possibleAggregateId";
+        "\n SELECT Contacts.contactId"
+        "\n FROM Contacts"
+        "\n JOIN temp.%1 ON Contacts.ContactId = temp.%1.ContactId"
+        "\n WHERE Contacts.syncTarget = 'aggregate'";
 
 static const char *childlessAggregateIds =
         "\n SELECT contactId FROM Contacts WHERE syncTarget = 'aggregate' AND contactId NOT IN ("
@@ -511,7 +526,6 @@ ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &d
     , m_findAggregateForContact(prepare(findAggregateForContact, database))
     , m_findMaximumContactId(prepare(findMaximumContactId, database))
     , m_findMatchForContact(prepare(findMatchForContact, database))
-    , m_selectAggregateContactIds(prepare(selectAggregateContactIds, database))
     , m_childlessAggregateIds(prepare(childlessAggregateIds, database))
     , m_orphanContactIds(prepare(orphanContactIds, database))
     , m_checkContactExists(prepare(checkContactExists, database))
@@ -1143,27 +1157,39 @@ QContactManager::Error ContactWriter::remove(const QList<QContactIdType> &contac
     // we can remove all related contacts.
     QList<quint32> aggregatesOfRemoved;
     QList<quint32> aggregatesToRemove;
-    m_selectAggregateContactIds.bindValue(":possibleAggregateId", boundRealRemoveIds);
-    if (!m_selectAggregateContactIds.execBatch()) {
-        qWarning() << "Failed to select aggregate contact ids during remove";
-        qWarning() << m_selectAggregateContactIds.lastError();
-        return QContactManager::UnspecifiedError;
-    }
-    while (m_selectAggregateContactIds.next()) {
-        aggregatesToRemove.append(m_selectAggregateContactIds.value(0).toUInt());
-    }
-    m_selectAggregateContactIds.finish();
 
-    m_findAggregateForContact.bindValue(":localId", boundRealRemoveIds);
-    if (!m_findAggregateForContact.execBatch()) {
-        qWarning() << "Failed to fetch aggregator contact ids during remove";
-        qWarning() << m_findAggregateForContact.lastError();
+    const QString tempTableName(QString::fromLatin1("selectAggregates"));
+    if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, tempTableName, boundRealRemoveIds)) {
         return QContactManager::UnspecifiedError;
+    } else {
+        // Use the temporary table for both queries
+        {
+            QString statement(QString::fromLatin1(selectAggregateContactIds).arg(tempTableName));
+            QSqlQuery query(m_database);
+            if (!query.prepare(statement) || !query.exec()) {
+                qWarning() << "Failed to select aggregate contact ids during remove";
+                qWarning() << query.lastError();
+                return QContactManager::UnspecifiedError;
+            }
+            while (query.next()) {
+                aggregatesToRemove.append(query.value(0).toUInt());
+            }
+        }
+        {
+            QString statement(QString::fromLatin1(findAggregateForContactIds).arg(tempTableName));
+            QSqlQuery query(m_database);
+            if (!query.prepare(statement) || !query.exec()) {
+                qWarning() << "Failed to fetch aggregator contact ids during remove";
+                qWarning() << query.lastError();
+                return QContactManager::UnspecifiedError;
+            }
+            while (query.next()) {
+                aggregatesOfRemoved.append(query.value(0).toUInt());
+            }
+        }
+
+        ContactsDatabase::clearTemporaryContactIdsTable(m_database, tempTableName);
     }
-    while (m_findAggregateForContact.next()) {
-        aggregatesOfRemoved.append(m_findAggregateForContact.value(0).toUInt());
-    }
-    m_findAggregateForContact.finish();
 
     QVariantList boundNonAggregatesToRemove;
     QVariantList boundAggregatesToRemove;
@@ -1202,23 +1228,33 @@ QContactManager::Error ContactWriter::remove(const QList<QContactIdType> &contac
 
     // remove the aggregate contacts - and any contacts they aggregate
     if (boundAggregatesToRemove.size() > 0) {
-        // first, get the list of contacts which are aggregated by the aggregate contacts we are going to remove
-        m_findConstituentsForAggregate.bindValue(":aggregateId", boundAggregatesToRemove);
-        if (!m_findConstituentsForAggregate.execBatch()) {
-            qWarning() << "Failed to fetch contacts aggregated by removed aggregates";
-            qWarning() << m_findConstituentsForAggregate.lastError();
+        const QString tempTableName(QString::fromLatin1("selectAggregates"));
+        if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, tempTableName, boundAggregatesToRemove)) {
             if (!withinTransaction) {
                 // only rollback the transaction if we created it
                 rollbackTransaction();
             }
             return QContactManager::UnspecifiedError;
+        } else {
+            QString statement(QString::fromLatin1(findConstituentsForAggregateIds).arg(tempTableName));
+            QSqlQuery query(m_database);
+            if (!query.prepare(statement) || !query.exec()) {
+                qWarning() << "Failed to fetch contacts aggregated by removed aggregates";
+                qWarning() << query.lastError();
+                if (!withinTransaction) {
+                    // only rollback the transaction if we created it
+                    rollbackTransaction();
+                }
+                return QContactManager::UnspecifiedError;
+            }
+            while (query.next()) {
+                quint32 dbId = query.value(0).toUInt();
+                boundAggregatesToRemove.append(dbId); // we just add it to the big list of bound "remove these"
+                realRemoveIds.append(ContactId::apiId(dbId));
+            }
+
+            ContactsDatabase::clearTemporaryContactIdsTable(m_database, tempTableName);
         }
-        while (m_findConstituentsForAggregate.next()) {
-            quint32 dbId = m_findConstituentsForAggregate.value(0).toUInt();
-            boundAggregatesToRemove.append(dbId); // we just add it to the big list of bound "remove these"
-            realRemoveIds.append(ContactId::apiId(dbId));
-        }
-        m_findConstituentsForAggregate.finish();
 
         // remove the aggregates + the aggregated
         m_removeContact.bindValue(QLatin1String(":contactId"), boundAggregatesToRemove);
