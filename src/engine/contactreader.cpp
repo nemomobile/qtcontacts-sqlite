@@ -920,18 +920,28 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
 #endif
             }
 
-            if (stringField && (globValue == QContactFilter::MatchStartsWith)) {
-                bindValue = bindValue + QLatin1String("*");
-                comparison += QLatin1String(" GLOB ?");
-                bindings->append(bindValue);
-            } else if (stringField && (globValue == QContactFilter::MatchContains)) {
-                bindValue = QLatin1String("*") + bindValue + QLatin1String("*");
-                comparison += QLatin1String(" GLOB ?");
-                bindings->append(bindValue);
-            } else if (stringField && (globValue == QContactFilter::MatchEndsWith)) {
-                bindValue = QLatin1String("*") + bindValue;
-                comparison += QLatin1String(" GLOB ?");
-                bindings->append(bindValue);
+            if (stringField) {
+                if (globValue == QContactFilter::MatchStartsWith) {
+                    bindValue = bindValue + QLatin1String("*");
+                    comparison += QLatin1String(" GLOB ?");
+                    bindings->append(bindValue);
+                } else if (globValue == QContactFilter::MatchContains) {
+                    bindValue = QLatin1String("*") + bindValue + QLatin1String("*");
+                    comparison += QLatin1String(" GLOB ?");
+                    bindings->append(bindValue);
+                } else if (globValue == QContactFilter::MatchEndsWith) {
+                    bindValue = QLatin1String("*") + bindValue;
+                    comparison += QLatin1String(" GLOB ?");
+                    bindings->append(bindValue);
+                } else {
+                    if (bindValue.isEmpty()) {
+                        // An empty string test should match a NULL column also (no way to specify isNull from qtcontacts)
+                        comparison = QString::fromLatin1("COALESCE(%1,'') = ''").arg(comparison);
+                    } else {
+                        comparison += QLatin1String(" = ?");
+                        bindings->append(bindValue);
+                    }
+                }
             } else {
                 if (phoneNumberMatch && !useNormalizedNumber) {
                     bindValue = QLatin1String("*") + bindValue;
