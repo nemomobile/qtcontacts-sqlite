@@ -1341,130 +1341,6 @@ struct Table
     quint32 currentId;
 };
 
-static QContactManager::Error createTemporaryContactIdsTable(
-        QSqlDatabase *db, const QString &table, bool filter, // required for both "filter" and "by id"
-        const QVariantList &boundIds,                        // for "read contacts by id" only
-        const QString &join, const QString &where, const QString &orderBy, const QVariantList boundValues)
-{
-    // Create the temporary table (if we haven't already).
-    QSqlQuery tableQuery(*db);
-    const QString createStatement = QString(QLatin1String(
-            "\n CREATE TABLE IF NOT EXISTS temp.%1 ("
-            "\n contactId INTEGER);")).arg(table);
-    if (!tableQuery.prepare(createStatement)) {
-        qWarning() << "Failed to prepare temporary table query";
-        qWarning() << tableQuery.lastError();
-        qWarning() << createStatement;
-        return QContactManager::UnspecifiedError;
-    }
-    if (!tableQuery.exec()) {
-        qWarning() << "Failed to create temporary table";
-        qWarning() << tableQuery.lastError();
-        qWarning() << createStatement;
-        return QContactManager::UnspecifiedError;
-    }
-    tableQuery.finish();
-
-    // Delete all existing records.  This is just in case the
-    // previous clearTemporaryContactIdsTable function failed.
-    // XXX TODO: for performance reasons, should remove this query.
-    QSqlQuery deleteRecordsQuery(*db);
-    const QString deleteRecordsStatement = QString(QLatin1String(
-            "\n DELETE FROM temp.%1")).arg(table);
-    if (!deleteRecordsQuery.prepare(deleteRecordsStatement)) {
-        qWarning() << "Failed to prepare delete records query";
-        qWarning() << deleteRecordsQuery.lastError();
-        qWarning() << deleteRecordsStatement;
-        return QContactManager::UnspecifiedError;
-    }
-    if (!deleteRecordsQuery.exec()) {
-        qWarning() << "Failed to delete temporary records";
-        qWarning() << deleteRecordsQuery.lastError();
-        qWarning() << deleteRecordsStatement;
-        return QContactManager::UnspecifiedError;
-    }
-    deleteRecordsQuery.finish();
-
-    // insert into the temporary table, all of the ids
-    // which will be specified either by id list, or by filter.
-    QSqlQuery insertQuery(*db);
-    if (filter) {
-        // specified by filter
-        const QString insertStatement = QString(QLatin1String(
-                "\n INSERT INTO temp.%1 (contactId)"
-                "\n SELECT Contacts.contactId"
-                "\n FROM Contacts %2"
-                "\n %3"
-                "\n ORDER BY %4;"))
-                .arg(table).arg(join).arg(where).arg(orderBy);
-        if (!insertQuery.prepare(insertStatement)) {
-            qWarning() << "Failed to prepare temporary contact ids";
-            qWarning() << insertQuery.lastError();
-            qWarning() << insertStatement;
-            return QContactManager::UnspecifiedError;
-        }
-        for (int i = 0; i < boundValues.count(); ++i) {
-            insertQuery.bindValue(i, boundValues.at(i));
-        }
-        if (!insertQuery.exec()) {
-            qWarning() << "Failed to insert temporary contact ids";
-            qWarning() << insertQuery.lastError();
-            qWarning() << insertStatement;
-            return QContactManager::UnspecifiedError;
-        } else {
-            debugFilterExpansion("Contacts selection:", insertStatement, boundValues);
-        }
-    } else {
-        // specified by id list
-        // NOTE: we must preserve the order of the bound ids being
-        // inserted (to match the order of the input list), so that
-        // the result of queryContacts() is ordered according to the
-        // order of input ids.
-        const QString insertStatement = QString(QLatin1String(
-                "\n INSERT INTO temp.%1 (contactId)"
-                "\n VALUES(:contactId);"))
-                .arg(table);
-        if (!insertQuery.prepare(insertStatement)) {
-            qWarning() << "Failed to prepare temporary contact ids";
-            qWarning() << insertQuery.lastError();
-            qWarning() << insertStatement;
-            return QContactManager::UnspecifiedError;
-        }
-        insertQuery.bindValue(0, boundIds);
-        if (!insertQuery.execBatch()) {
-            qWarning() << "Failed to insert temporary contact ids";
-            qWarning() << insertQuery.lastError();
-            qWarning() << insertStatement;
-            return QContactManager::UnspecifiedError;
-        }
-    }
-    insertQuery.finish();
-    return QContactManager::NoError;
-}
-
-static void clearTemporaryContactIdsTable(QSqlDatabase *db, const QString &table)
-{
-    QSqlQuery dropTableQuery(*db);
-    const QString dropTableStatement = QString(QLatin1String(
-            "\n DROP TABLE temp.%1")).arg(table);
-    if (!dropTableQuery.prepare(dropTableStatement) || !dropTableQuery.exec()) {
-        // couldn't drop the table, just delete all entries instead.
-        QSqlQuery deleteRecordsQuery(*db);
-        const QString deleteRecordsStatement = QString(QLatin1String(
-                "\n DELETE FROM temp.%1")).arg(table);
-        if (!deleteRecordsQuery.prepare(deleteRecordsStatement)) {
-            qWarning() << "FATAL ERROR: Failed to prepare delete records query - the next query may return spurious results";
-            qWarning() << deleteRecordsQuery.lastError();
-            qWarning() << deleteRecordsStatement;
-        }
-        if (!deleteRecordsQuery.exec()) {
-            qWarning() << "FATAL ERROR: Failed to delete temporary records - the next query may return spurious results";
-            qWarning() << deleteRecordsQuery.lastError();
-            qWarning() << deleteRecordsStatement;
-        }
-    }
-}
-
 namespace {
 
 // The selfId is fixed - DB ID 1 is the 'self' local contact, and DB ID 2 is the aggregate
@@ -1585,14 +1461,13 @@ QContactManager::Error ContactReader::readContacts(
 
     where = expandWhere(where, filter);
 
-    QContactManager::Error createTempError = createTemporaryContactIdsTable(
-            &m_database, table, true, QVariantList(), join, where, orderBy, bindings);
-
-    QContactManager::Error error = (createTempError == QContactManager::NoError)
-            ? queryContacts(table, contacts, fetchHint)
-            : createTempError;
-
-    clearTemporaryContactIdsTable(&m_database, table);
+    QContactManager::Error error = QContactManager::NoError;
+    if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, table, join, where, orderBy, bindings)) {
+        error = QContactManager::UnspecifiedError;
+    } else {
+        error = queryContacts(table, contacts, fetchHint);
+        ContactsDatabase::clearTemporaryContactIdsTable(m_database, table);
+    }
 
     return error;
 }
@@ -1608,15 +1483,15 @@ QContactManager::Error ContactReader::readContacts(
         boundIds.append(ContactId::databaseId(contactIds.at(i)));
     }
 
-    QContactManager::Error createTempError = createTemporaryContactIdsTable(
-            &m_database, table, false, boundIds, QString(), QString(), QString(), QVariantList());
-
     contacts->reserve(contactIds.size());
-    QContactManager::Error error = (createTempError == QContactManager::NoError)
-            ? queryContacts(table, contacts, fetchHint)
-            : createTempError;
 
-    clearTemporaryContactIdsTable(&m_database, table);
+    QContactManager::Error error = QContactManager::NoError;
+    if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, table, boundIds)) {
+        error = QContactManager::UnspecifiedError;
+    } else {
+        error = queryContacts(table, contacts, fetchHint);
+        ContactsDatabase::clearTemporaryContactIdsTable(m_database, table);
+    }
 
     // the ordering of the queried contacts is identical to
     // the ordering of the input contact ids list.

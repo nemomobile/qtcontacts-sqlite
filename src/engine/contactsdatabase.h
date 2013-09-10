@@ -49,6 +49,11 @@ public:
     static bool commitTransaction(QSqlDatabase &database);
     static bool rollbackTransaction(QSqlDatabase &database);
 
+    static bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, const QVariantList &boundIds);
+    static bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, const QString &join, const QString &where, const QString &orderBy, const QVariantList boundValues);
+
+    static void clearTemporaryContactIdsTable(QSqlDatabase &db, const QString &table);
+
     static QString expandQuery(const QString &queryString, const QVariantList &bindings);
     static QString expandQuery(const QString &queryString, const QMap<QString, QVariant> &bindings);
     static QString expandQuery(const QSqlQuery &query);
