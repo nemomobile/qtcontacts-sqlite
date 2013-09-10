@@ -1466,7 +1466,6 @@ QContactManager::Error ContactReader::readContacts(
         error = QContactManager::UnspecifiedError;
     } else {
         error = queryContacts(table, contacts, fetchHint);
-        ContactsDatabase::clearTemporaryContactIdsTable(m_database, table);
     }
 
     return error;
@@ -1490,7 +1489,6 @@ QContactManager::Error ContactReader::readContacts(
         error = QContactManager::UnspecifiedError;
     } else {
         error = queryContacts(table, contacts, fetchHint);
-        ContactsDatabase::clearTemporaryContactIdsTable(m_database, table);
     }
 
     // the ordering of the queried contacts is identical to

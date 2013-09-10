@@ -757,9 +757,7 @@ bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool
     }
     tableQuery.finish();
 
-    // Delete all existing records.  This is just in case the
-    // previous clearTemporaryContactIdsTable function failed.
-    // XXX TODO: for performance reasons, should remove this query.
+    // Delete all existing records.
     QSqlQuery deleteRecordsQuery(db);
     if (!deleteRecordsQuery.prepare(deleteRecordsStatement.arg(table))) {
         qWarning() << "Failed to prepare delete records query";

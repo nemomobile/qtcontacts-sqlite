@@ -1194,8 +1194,6 @@ QContactManager::Error ContactWriter::remove(const QList<QContactIdType> &contac
             aggregatesOfRemoved.append(m_findAggregateForContactIds.value(0).toUInt());
         }
         m_findAggregateForContactIds.finish();
-
-        ContactsDatabase::clearTemporaryContactIdsTable(m_database, aggregationIdsTable);
     }
 
     QVariantList boundNonAggregatesToRemove;
@@ -1257,8 +1255,6 @@ QContactManager::Error ContactWriter::remove(const QList<QContactIdType> &contac
                 realRemoveIds.append(ContactId::apiId(dbId));
             }
             m_findConstituentsForAggregateIds.finish();
-
-            ContactsDatabase::clearTemporaryContactIdsTable(m_database, aggregationIdsTable);
         }
 
         // remove the aggregates + the aggregated
