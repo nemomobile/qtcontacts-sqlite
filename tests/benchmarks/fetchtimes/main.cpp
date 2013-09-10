@@ -225,6 +225,8 @@ int main(int argc, char  *argv[])
     QContactFetchRequest request;
     request.setManager(&manager);
 
+    qint64 elapsedTimeTotal = 0;
+
     QElapsedTimer asyncTotalTimer;
     asyncTotalTimer.start();
 
@@ -237,6 +239,7 @@ int main(int argc, char  *argv[])
 
         qint64 elapsed = timer.elapsed();
         qDebug() << i << ": Fetch completed in" << elapsed << "ms";
+        elapsedTimeTotal += elapsed;
     }
 
     // Skip relationships
@@ -252,6 +255,7 @@ int main(int argc, char  *argv[])
 
         qint64 elapsed = timer.elapsed();
         qDebug() << i << ": No-relationships fetch completed in" << elapsed << "ms";
+        elapsedTimeTotal += elapsed;
     }
 
     // Reduce data access
@@ -270,6 +274,7 @@ int main(int argc, char  *argv[])
 
         qint64 elapsed = timer.elapsed();
         qDebug() << i << ": Reduced data fetch completed in" << elapsed << "ms";
+        elapsedTimeTotal += elapsed;
     }
 
     // Reduce number of results
@@ -284,6 +289,7 @@ int main(int argc, char  *argv[])
 
         qint64 elapsed = timer.elapsed();
         qDebug() << i << ": Max count fetch completed in" << elapsed << "ms";
+        elapsedTimeTotal += elapsed;
     }
     qint64 asyncTotalElapsed = asyncTotalTimer.elapsed();
 
@@ -320,12 +326,14 @@ int main(int argc, char  *argv[])
         manager.saveContacts(&td);
         ste = syncTimer.elapsed();
         qDebug() << "    saving took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
+        elapsedTimeTotal += ste;
 
         QContactFetchHint fh;
         syncTimer.start();
         QList<QContact> readContacts = manager.contacts(QContactFilter(), QList<QContactSortOrder>(), fh);
         ste = syncTimer.elapsed();
         qDebug() << "    reading all (" << readContacts.size() << "), all details, took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
+        elapsedTimeTotal += ste;
 
 #ifdef USING_QTPIM
         fh.setDetailTypesHint(QList<QContactDetail::DetailType>() << QContactDisplayLabel::Type
@@ -340,6 +348,7 @@ int main(int argc, char  *argv[])
         readContacts = manager.contacts(QContactFilter(), QList<QContactSortOrder>(), fh);
         ste = syncTimer.elapsed();
         qDebug() << "    reading all, common details, took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
+        elapsedTimeTotal += ste;
 
         fh.setOptimizationHints(QContactFetchHint::NoRelationships);
 #ifdef USING_QTPIM
@@ -351,6 +360,7 @@ int main(int argc, char  *argv[])
         readContacts = manager.contacts(QContactFilter(), QList<QContactSortOrder>(), fh);
         ste = syncTimer.elapsed();
         qDebug() << "    reading all, no relationships, took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
+        elapsedTimeTotal += ste;
 
 #ifdef USING_QTPIM
         fh.setDetailTypesHint(QList<QContactDetail::DetailType>() << QContactDisplayLabel::Type
@@ -363,6 +373,7 @@ int main(int argc, char  *argv[])
         readContacts = manager.contacts(QContactFilter(), QList<QContactSortOrder>(), fh);
         ste = syncTimer.elapsed();
         qDebug() << "    reading all, display details + no rels, took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
+        elapsedTimeTotal += ste;
 
         QContactDetailFilter firstNameStartsA;
 #ifdef USING_QTPIM
@@ -381,6 +392,7 @@ int main(int argc, char  *argv[])
         readContacts = manager.contacts(firstNameStartsA, QList<QContactSortOrder>(), fh);
         ste = syncTimer.elapsed();
         qDebug() << "    reading filtered (" << readContacts.size() << "), no relationships, took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
+        elapsedTimeTotal += ste;
 
 #ifdef USING_QTPIM
         QList<QContactId> idsToRemove;
@@ -397,6 +409,7 @@ int main(int argc, char  *argv[])
         manager.removeContacts(idsToRemove);
         ste = syncTimer.elapsed();
         qDebug() << "    removing test data took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
+        elapsedTimeTotal += ste;
     }
 
     // these tests are slightly different to those above.  They operate on much smaller
@@ -434,12 +447,14 @@ int main(int argc, char  *argv[])
         manager.saveContacts(&td);
         ste = syncTimer.elapsed();
         qDebug() << "    saving took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
+        elapsedTimeTotal += ste;
 
         QContactFetchHint fh;
         syncTimer.start();
         QList<QContact> readContacts = manager.contacts(QContactFilter(), QList<QContactSortOrder>(), fh);
         ste = syncTimer.elapsed();
         qDebug() << "    reading all (" << readContacts.size() << "), all details, took" << ste << "milliseconds";
+        elapsedTimeTotal += ste;
 
 #ifdef USING_QTPIM
         fh.setDetailTypesHint(QList<QContactDetail::DetailType>() << QContactDisplayLabel::Type
@@ -454,6 +469,7 @@ int main(int argc, char  *argv[])
         readContacts = manager.contacts(QContactFilter(), QList<QContactSortOrder>(), fh);
         ste = syncTimer.elapsed();
         qDebug() << "    reading all, common details, took" << ste << "milliseconds";
+        elapsedTimeTotal += ste;
 
         fh.setOptimizationHints(QContactFetchHint::NoRelationships);
 #ifdef USING_QTPIM
@@ -465,6 +481,7 @@ int main(int argc, char  *argv[])
         readContacts = manager.contacts(QContactFilter(), QList<QContactSortOrder>(), fh);
         ste = syncTimer.elapsed();
         qDebug() << "    reading all, no relationships, took" << ste << "milliseconds";
+        elapsedTimeTotal += ste;
 
 #ifdef USING_QTPIM
         fh.setDetailTypesHint(QList<QContactDetail::DetailType>() << QContactDisplayLabel::Type
@@ -477,6 +494,7 @@ int main(int argc, char  *argv[])
         readContacts = manager.contacts(QContactFilter(), QList<QContactSortOrder>(), fh);
         ste = syncTimer.elapsed();
         qDebug() << "    reading all, display details + no rels, took" << ste << "milliseconds";
+        elapsedTimeTotal += ste;
 
         QContactDetailFilter firstNameStartsA;
 #ifdef USING_QTPIM
@@ -495,6 +513,7 @@ int main(int argc, char  *argv[])
         readContacts = manager.contacts(firstNameStartsA, QList<QContactSortOrder>(), fh);
         ste = syncTimer.elapsed();
         qDebug() << "    reading filtered (" << readContacts.size() << "), no relationships, took" << ste << "milliseconds";
+        elapsedTimeTotal += ste;
 
 #ifdef USING_QTPIM
         QList<QContactId> idsToRemove;
@@ -511,6 +530,7 @@ int main(int argc, char  *argv[])
         manager.removeContacts(idsToRemove);
         ste = syncTimer.elapsed();
         qDebug() << "    removing test data took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
+        elapsedTimeTotal += ste;
     }
 
 
@@ -538,6 +558,7 @@ int main(int argc, char  *argv[])
     int totalAggregatesInDatabase = manager.contactIds().count();
     qDebug() << "Average time for aggregation of" << contactsToAggregate.size() << "contacts (with" << totalAggregatesInDatabase << "existing in database):" << aggregationElapsed
              << "milliseconds (" << ((1.0 * aggregationElapsed) / (1.0 * contactsToAggregate.size())) << " msec per aggregated contact )";
+    elapsedTimeTotal += aggregationElapsed;
 
     // Now perform the test again, this time with more aggregates, to test nonlinearity.
     contactsToAggregate.clear();
@@ -561,6 +582,7 @@ int main(int argc, char  *argv[])
     totalAggregatesInDatabase = manager.contactIds().count();
     qDebug() << "Average time for aggregation of" << contactsToAggregate.size() << "contacts (with" << totalAggregatesInDatabase << "existing in database):" << aggregationElapsed
              << "milliseconds (" << ((1.0 * aggregationElapsed) / (1.0 * contactsToAggregate.size())) << " msec per aggregated contact )";
+    elapsedTimeTotal += aggregationElapsed;
 
 
     // The next test is about updating existing contacts, amongst a large set.
@@ -600,6 +622,7 @@ int main(int argc, char  *argv[])
     totalAggregatesInDatabase = manager.contactIds().count();
     qDebug() << "    update ( batch of" << contactsToUpdate.size() << ") presence+nick+avatar (with" << totalAggregatesInDatabase << "existing in database, all overlap):" << presenceElapsed
              << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
+    elapsedTimeTotal += presenceElapsed;
 
     // in the second presence update test, we update ALL of the contacts
     // This simulates having a large number of contacts from a single source (eg, a social network)
@@ -631,6 +654,7 @@ int main(int argc, char  *argv[])
     totalAggregatesInDatabase = manager.contactIds().count();
     qDebug() << "    update ( batch of" << contactsToUpdate.size() << ") presence+nick+avatar (with" << totalAggregatesInDatabase << "existing in database, all overlap):" << presenceElapsed
              << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
+    elapsedTimeTotal += presenceElapsed;
 
     // the third presence update test is identical to the previous, but with 2000 prefilled contacts in database.
     qDebug() << "    Adding more prefill data, please wait...";
@@ -685,6 +709,7 @@ int main(int argc, char  *argv[])
     totalAggregatesInDatabase = manager.contactIds().count();
     qDebug() << "    update ( batch of" << contactsToUpdate.size() << ") presence+nick+avatar (with" << totalAggregatesInDatabase << "existing in database, all overlap):" << presenceElapsed
              << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
+    elapsedTimeTotal += presenceElapsed;
 
     // clean up the "more prefill data"
     qDebug() << "    cleaning up extra prefill data, please wait...";
@@ -737,6 +762,7 @@ int main(int argc, char  *argv[])
     totalAggregatesInDatabase = manager.contactIds().count();
     qDebug() << "    update ( batch of" << contactsToUpdate.size() << ") presence+nick+avatar (with" << totalAggregatesInDatabase << "existing in database, no overlap):" << presenceElapsed
              << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
+    elapsedTimeTotal += presenceElapsed;
 
     // clean up the "more prefill data"
     qDebug() << "    cleaning up extra prefill data, please wait...";
@@ -799,6 +825,7 @@ int main(int argc, char  *argv[])
     totalAggregatesInDatabase = manager.contactIds().count();
     qDebug() << "    update ( batch of" << contactsToUpdate.size() << ") presence+nick+avatar (with" << totalAggregatesInDatabase << "existing in database, 500 overlap):" << presenceElapsed
              << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
+    elapsedTimeTotal += presenceElapsed;
 
     // the sixth presence update test is identical to the fifth test, except that we ONLY
     // update the presence status (not nickname or avatar).
@@ -819,6 +846,7 @@ int main(int argc, char  *argv[])
     totalAggregatesInDatabase = manager.contactIds().count();
     qDebug() << "    update ( batch of" << contactsToUpdate.size() << ") presence only (with" << totalAggregatesInDatabase << "existing in database, 500 overlap):" << presenceElapsed
              << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
+    elapsedTimeTotal += presenceElapsed;
 
     // the seventh presence update test is identical to the 6th test, except that
     // we also pass a "detail type mask" to the update.  This allows the backend
@@ -847,6 +875,7 @@ int main(int argc, char  *argv[])
     totalAggregatesInDatabase = manager.contactIds().count();
     qDebug() << "    update ( batch of" << contactsToUpdate.size() << ") masked presence only (with" << totalAggregatesInDatabase << "existing in database, 500 overlap):" << presenceElapsed
              << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
+    elapsedTimeTotal += presenceElapsed;
 
     // clean up the "more prefill data"
     qDebug() << "    cleaning up extra prefill data, please wait...";
@@ -863,5 +892,6 @@ int main(int argc, char  *argv[])
 #endif
     manager.removeContacts(morePrefillIds);
 
+    qDebug() << "\n\nCumulative elapsed time:" << elapsedTimeTotal << "milliseconds";
     return 0;
 }
