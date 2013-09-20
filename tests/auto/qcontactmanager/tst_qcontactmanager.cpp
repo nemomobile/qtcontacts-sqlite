@@ -4319,11 +4319,11 @@ void tst_QContactManager::constituentOfSelf()
     QVERIFY(m.error() == QContactManager::NoError);
 
     constituent = m.contact(retrievalId(constituent));
-    QVERIFY(detailsEquivalent(constituent.detail<QContactNickname>(), nn));
+    QVERIFY(detailsSuperset(constituent.detail<QContactNickname>(), nn));
 
     // Change should be reflected in the self contact
     QContact self = m.contact(m.selfContactId());
-    QVERIFY(detailsEquivalent(self.detail<QContactNickname>(), nn));
+    QVERIFY(detailsSuperset(self.detail<QContactNickname>(), nn));
 
     // Check that no new aggregate has been generated
     foreach (const QContact &aggregator, m.contacts(relationshipFilter))
@@ -4343,12 +4343,11 @@ void tst_QContactManager::constituentOfSelf()
     QVERIFY(m.error() == QContactManager::NoError);
 
     constituent = m.contact(retrievalId(constituent));
-    QVERIFY(detailsEquivalent(constituent.detail<QContactPresence>(), presence));
+    QVERIFY(detailsSuperset(constituent.detail<QContactPresence>(), presence));
     QCOMPARE(constituent.detail<QContactGlobalPresence>().presenceState(), presence.presenceState());
 
     // Update should be relected in the self contact
     self = m.contact(m.selfContactId());
-    QVERIFY(detailsEquivalent(self.detail<QContactPresence>(), presence));
     QCOMPARE(self.detail<QContactGlobalPresence>().presenceState(), presence.presenceState());
 
     flags = self.detail<QContactStatusFlags>();
@@ -4363,11 +4362,10 @@ void tst_QContactManager::constituentOfSelf()
     QVERIFY(m.error() == QContactManager::NoError);
 
     constituent = m.contact(retrievalId(constituent));
-    QVERIFY(detailsEquivalent(constituent.detail<QContactPresence>(), presence));
+    QVERIFY(detailsSuperset(constituent.detail<QContactPresence>(), presence));
     QCOMPARE(constituent.detail<QContactGlobalPresence>().presenceState(), presence.presenceState());
 
     self = m.contact(m.selfContactId());
-    QVERIFY(detailsEquivalent(self.detail<QContactPresence>(), presence));
     QCOMPARE(self.detail<QContactGlobalPresence>().presenceState(), presence.presenceState());
 
     // Check that no new aggregate has been generated
@@ -4386,7 +4384,7 @@ void tst_QContactManager::constituentOfSelf()
     QVERIFY(m.error() == QContactManager::NoError);
 
     self = m.contact(m.selfContactId());
-    QVERIFY(detailsEquivalent(self.detail<QContactPresence>(), presence));
+    QCOMPARE(self.detail<QContactGlobalPresence>().presenceState(), presence.presenceState());
 
     flags = self.detail<QContactStatusFlags>();
     QCOMPARE(flags.testFlag(QContactStatusFlags::IsOnline), false);

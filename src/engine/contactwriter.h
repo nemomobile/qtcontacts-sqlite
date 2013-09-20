@@ -128,10 +128,11 @@ private:
             QContact *contact,
             QSqlQuery &removeQuery,
             const DetailList &definitionMask,
+            bool syncable,
             QContactManager::Error *error);
 
     template <typename T> bool writeCommonDetails(
-                quint32 contactId, const QVariant &detailId, const T &detail, QContactManager::Error *error);
+                quint32 contactId, const QVariant &detailId, const T &detail, bool syncable, QContactManager::Error *error);
     template <typename T> bool removeCommonDetails(
                 quint32 contactId, QContactManager::Error *error);
 
