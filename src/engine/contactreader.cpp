@@ -84,6 +84,10 @@ using namespace Conversion;
 
 static const int ReportBatchSize = 50;
 
+static const QString aggregateTarget(QString::fromLatin1("aggregate"));
+static const QString localTarget(QString::fromLatin1("local"));
+static const QString wasLocalTarget(QString::fromLatin1("was_local"));
+
 enum FieldType {
     StringField = 0,
     StringListField,
@@ -498,7 +502,7 @@ static int contextType(const QString &type)
 #endif
 
 template <typename T> static void readDetail(
-        quint32 contactId, QContact *contact, QSqlQuery *query, quint32 &currentId)
+        quint32 contactId, QContact *contact, QSqlQuery *query, bool syncable, quint32 &currentId)
 {
     do {
         T detail;
@@ -508,6 +512,11 @@ template <typename T> static void readDetail(
         const QString contextValue = query->value(2).toString();
         const int accessConstraints = query->value(3).toInt();
         const QString provenance = query->value(4).toString();
+        const bool modifiable = query->value(5).toBool();
+        /* Unused:
+        const quint32 detailId = query->value(6).toUInt();
+        const quint32 detailContactId = query->value(7).toUInt();
+        */
 
         if (!detailUriValue.isEmpty()) {
             setValue(&detail,
@@ -540,10 +549,14 @@ template <typename T> static void readDetail(
         QContactManagerEngine::setDetailAccessConstraints(&detail, static_cast<QContactDetail::AccessConstraints>(accessConstraints));
         setValue(&detail, QContactDetail__FieldProvenance, provenance);
 
-        setValues(&detail, query, 7);
+        // Only report modifiable state for non-local, non-aggregate contacts
+        if (syncable)
+            setValue(&detail, QContactDetail__FieldModifiable, modifiable);
+
+        setValues(&detail, query, 8);
 
         contact->saveDetail(&detail);
-    } while (query->next() && (currentId = query->value(6).toUInt()) == contactId);
+    } while (query->next() && (currentId = query->value(7).toUInt()) == contactId);
 }
 
 static QContactRelationship makeRelationship(const QString &type, quint32 firstId, quint32 secondId)
@@ -565,9 +578,10 @@ static QContactRelationship makeRelationship(const QString &type, quint32 firstI
     return relationship;
 }
 
-static void readRelationshipTable(
-        quint32 contactId, QContact *contact, QSqlQuery *query, quint32 &currentId)
+static void readRelationshipTable(quint32 contactId, QContact *contact, QSqlQuery *query, bool syncable, quint32 &currentId)
 {
+    Q_UNUSED(syncable)
+
     QList<QContactRelationship> currContactRelationships;
 
     do {
@@ -581,7 +595,7 @@ static void readRelationshipTable(
     QContactManagerEngine::setContactRelationships(contact, currContactRelationships);
 }
 
-typedef void (*ReadDetail)(quint32 contactId, QContact *contact, QSqlQuery *query, quint32 &currentId);
+typedef void (*ReadDetail)(quint32 contactId, QContact *contact, QSqlQuery *query, bool syncable, quint32 &currentId);
 
 struct DetailInfo
 {
@@ -1544,6 +1558,7 @@ QContactManager::Error ContactReader::queryContacts(
             "\n  Details.contexts,"
             "\n  Details.accessConstraints,"
             "\n  Details.provenance,"
+            "\n  Details.modifiable,"
             "\n  %2.*"
             "\n FROM temp.%1"
             "\n  INNER JOIN %2 ON temp.%1.contactId = %2.contactId"
@@ -1596,7 +1611,7 @@ QContactManager::Error ContactReader::queryContacts(
                     qWarning() << "Failed to query table" << detail.table;
                     qWarning() << table.query.lastError();
                 } else if (table.query.next()) {
-                    table.currentId = table.query.value(6).toUInt();
+                    table.currentId = table.query.value(7).toUInt();
                     tables.append(table);
                 }
             }
@@ -1646,6 +1661,7 @@ QContactManager::Error ContactReader::queryContacts(
 
     do {
         int contactCount = contacts->count();
+        QList<bool> syncableContact;
 
         for (int i = 0; i < batchSize && query.next(); ++i) {
             quint32 dbId = query.value(0).toUInt();
@@ -1678,8 +1694,10 @@ QContactManager::Error ContactReader::queryContacts(
             if (!name.isEmpty())
                 contact.saveDetail(&name);
 
+            const QString syncTarget(query.value(10).toString());
+
             QContactSyncTarget starget;
-            setValue(&starget, QContactSyncTarget::FieldSyncTarget, query.value(10));
+            setValue(&starget, QContactSyncTarget::FieldSyncTarget, syncTarget);
             if (!starget.isEmpty())
                 contact.saveDetail(&starget);
 
@@ -1720,17 +1738,25 @@ QContactManager::Error ContactReader::queryContacts(
             contact.saveDetail(&flags);
 
             contacts->append(contact);
+
+            bool syncable = !syncTarget.isEmpty() &&
+                            (syncTarget != aggregateTarget) &&
+                            (syncTarget != localTarget) &&
+                            (syncTarget != wasLocalTarget);
+            syncableContact.append(syncable);
         }
 
         for (int j = 0; j < tables.count(); ++j) {
             Table &table = tables[j];
+
+            QList<bool>::iterator sit = syncableContact.begin();
             QList<QContact>::iterator it = contacts->begin() + contactCount;
-            for (QList<QContact>::iterator end = contacts->end(); it != end; ++it) {
+            for (QList<QContact>::iterator end = contacts->end(); it != end; ++it, ++sit) {
                 QContact &contact(*it);
                 quint32 contactId = ContactId::databaseId(contact.id());
 
                 if (table.query.isValid() && (table.currentId == contactId)) {
-                    table.read(contactId, &contact, &table.query, table.currentId);
+                    table.read(contactId, &contact, &table.query, *sit, table.currentId);
                 }
             }
         }

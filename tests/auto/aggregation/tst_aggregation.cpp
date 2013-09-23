@@ -952,10 +952,9 @@ void tst_Aggregation::updateAggregateOfLocalAndModifiableSync()
 
     const QContactName &localName(alice.detail<QContactName>());
 
+    // first syncTarget alice
+    QContact testAlice;
     {
-        // first syncTarget alice
-        QContact testAlice;
-
         QContactName name;
         name.setFirstName(localName.firstName());
         name.setMiddleName(localName.middleName());
@@ -988,10 +987,9 @@ void tst_Aggregation::updateAggregateOfLocalAndModifiableSync()
         QVERIFY(m_cm->saveContact(&testAlice));
     }
 
+    // second syncTarget alice
+    QContact trialAlice;
     {
-        // second syncTarget alice
-        QContact trialAlice;
-
         QContactName name;
         name.setFirstName(localName.firstName());
         name.setMiddleName(localName.middleName());
@@ -1072,6 +1070,32 @@ void tst_Aggregation::updateAggregateOfLocalAndModifiableSync()
     QCOMPARE(aggregateAlice.details<QContactOrganization>().size(), 1);
     QCOMPARE(detailProvenanceContact(aggregateAlice.detail<QContactOrganization>()), trialContact);
 
+    // Test the modifiability of the details
+
+    // Aggregate details are not modifiable
+    QCOMPARE(aggregateAlice.detail<QContactName>().value(QContactDetail__FieldModifiable).toBool(), false);
+    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().value(QContactDetail__FieldModifiable).toBool(), false);
+    QCOMPARE(aggregateAlice.details<QContactEmailAddress>().at(0).value(QContactDetail__FieldModifiable).toBool(), false);
+    QCOMPARE(aggregateAlice.details<QContactEmailAddress>().at(1).value(QContactDetail__FieldModifiable).toBool(), false);
+    QCOMPARE(aggregateAlice.detail<QContactHobby>().value(QContactDetail__FieldModifiable).toBool(), false);
+    QCOMPARE(aggregateAlice.detail<QContactNote>().value(QContactDetail__FieldModifiable).toBool(), false);
+    QCOMPARE(aggregateAlice.detail<QContactOrganization>().value(QContactDetail__FieldModifiable).toBool(), false);
+
+    // The test contact should have some modifiable fields
+    testAlice = m_cm->contact(retrievalId(testAlice));
+    QCOMPARE(testAlice.detail<QContactName>().value(QContactDetail__FieldModifiable).toBool(), false);
+    QCOMPARE(testAlice.detail<QContactRingtone>().value(QContactDetail__FieldModifiable).toBool(), false);
+    QCOMPARE(testAlice.detail<QContactEmailAddress>().value(QContactDetail__FieldModifiable).toBool(), true);
+    QCOMPARE(testAlice.detail<QContactHobby>().value(QContactDetail__FieldModifiable).toBool(), false);
+    QCOMPARE(testAlice.detail<QContactNote>().value(QContactDetail__FieldModifiable).toBool(), true);
+
+    // The trial contact should also have some modifiable fields
+    trialAlice = m_cm->contact(retrievalId(trialAlice));
+    QCOMPARE(trialAlice.detail<QContactName>().value(QContactDetail__FieldModifiable).toBool(), false);
+    QCOMPARE(trialAlice.detail<QContactTag>().value(QContactDetail__FieldModifiable).toBool(), false);
+    QCOMPARE(trialAlice.detail<QContactEmailAddress>().value(QContactDetail__FieldModifiable).toBool(), true);
+    QCOMPARE(trialAlice.detail<QContactOrganization>().value(QContactDetail__FieldModifiable).toBool(), true);
+
     // now ensure that updates / modifies / removals work as expected
     {
         // locally-originated detail - should be modified
@@ -1143,6 +1167,28 @@ void tst_Aggregation::updateAggregateOfLocalAndModifiableSync()
     }
 
     QCOMPARE(aggregateAlice.details<QContactOrganization>().size(), 0);
+
+    // Modifiability should be unaffected
+
+    // Aggregate details are not modifiable
+    QCOMPARE(aggregateAlice.detail<QContactName>().value(QContactDetail__FieldModifiable).toBool(), false);
+    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().value(QContactDetail__FieldModifiable).toBool(), false);
+    QCOMPARE(aggregateAlice.details<QContactEmailAddress>().at(0).value(QContactDetail__FieldModifiable).toBool(), false);
+    QCOMPARE(aggregateAlice.details<QContactEmailAddress>().at(1).value(QContactDetail__FieldModifiable).toBool(), false);
+    QCOMPARE(aggregateAlice.detail<QContactHobby>().value(QContactDetail__FieldModifiable).toBool(), false);
+
+    // The test contact should have some modifiable fields
+    testAlice = m_cm->contact(retrievalId(testAlice));
+    QCOMPARE(testAlice.detail<QContactName>().value(QContactDetail__FieldModifiable).toBool(), false);
+    QCOMPARE(testAlice.detail<QContactRingtone>().value(QContactDetail__FieldModifiable).toBool(), false);
+    QCOMPARE(testAlice.detail<QContactEmailAddress>().value(QContactDetail__FieldModifiable).toBool(), true);
+    QCOMPARE(testAlice.detail<QContactHobby>().value(QContactDetail__FieldModifiable).toBool(), false);
+
+    // The trial contact should also have some modifiable fields
+    trialAlice = m_cm->contact(retrievalId(trialAlice));
+    QCOMPARE(trialAlice.detail<QContactName>().value(QContactDetail__FieldModifiable).toBool(), false);
+    QCOMPARE(trialAlice.detail<QContactTag>().value(QContactDetail__FieldModifiable).toBool(), false);
+    QCOMPARE(trialAlice.detail<QContactEmailAddress>().value(QContactDetail__FieldModifiable).toBool(), true);
 }
 
 void tst_Aggregation::promotionToSingleLocal()
