@@ -84,9 +84,9 @@ using namespace Conversion;
 
 static const int ReportBatchSize = 50;
 
-static const QString aggregateTarget(QString::fromLatin1("aggregate"));
-static const QString localTarget(QString::fromLatin1("local"));
-static const QString wasLocalTarget(QString::fromLatin1("was_local"));
+static const QString aggregateSyncTarget(QString::fromLatin1("aggregate"));
+static const QString localSyncTarget(QString::fromLatin1("local"));
+static const QString wasLocalSyncTarget(QString::fromLatin1("was_local"));
 
 enum FieldType {
     StringField = 0,
@@ -1740,9 +1740,9 @@ QContactManager::Error ContactReader::queryContacts(
             contacts->append(contact);
 
             bool syncable = !syncTarget.isEmpty() &&
-                            (syncTarget != aggregateTarget) &&
-                            (syncTarget != localTarget) &&
-                            (syncTarget != wasLocalTarget);
+                            (syncTarget != aggregateSyncTarget) &&
+                            (syncTarget != localSyncTarget) &&
+                            (syncTarget != wasLocalSyncTarget);
             syncableContact.append(syncable);
         }
 

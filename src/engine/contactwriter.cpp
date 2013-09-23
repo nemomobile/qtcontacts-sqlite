@@ -61,9 +61,9 @@
 using namespace Conversion;
 #endif
 
-static const QString aggregateTarget(QString::fromLatin1("aggregate"));
-static const QString localTarget(QString::fromLatin1("local"));
-static const QString wasLocalTarget(QString::fromLatin1("was_local"));
+static const QString aggregateSyncTarget(QString::fromLatin1("aggregate"));
+static const QString localSyncTarget(QString::fromLatin1("local"));
+static const QString wasLocalSyncTarget(QString::fromLatin1("was_local"));
 
 static const QString aggregationIdsTable(QString::fromLatin1("aggregationIds"));
 
@@ -1771,7 +1771,7 @@ QContactManager::Error ContactWriter::save(
             // retrieve current contact's sync target
             QString currSyncTarget = (*contacts)[i].detail<QContactSyncTarget>().syncTarget();
             if (currSyncTarget.isEmpty()) {
-                currSyncTarget = QLatin1String("local");
+                currSyncTarget = localSyncTarget;
             }
 
             // determine whether it's valid
@@ -1956,7 +1956,9 @@ static QContactManager::Error enforceDetailConstraints(QContact *contact)
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
 static void adjustDetailUrisForLocal(QContactDetail &currDet)
 {
-    if (currDet.detailUri().startsWith(QLatin1String("aggregate:"))) {
+    static const QString prefix(aggregateSyncTarget + QChar::fromLatin1(':'));
+
+    if (currDet.detailUri().startsWith(prefix)) {
         currDet.setDetailUri(currDet.detailUri().mid(10));
     }
 
@@ -1964,7 +1966,7 @@ static void adjustDetailUrisForLocal(QContactDetail &currDet)
     QStringList linkedDUs = currDet.linkedDetailUris();
     for (int i = 0; i < linkedDUs.size(); ++i) {
         QString currLDU = linkedDUs.at(i);
-        if (currLDU.startsWith(QLatin1String("aggregate"))) {
+        if (currLDU.startsWith(prefix)) {
             currLDU = currLDU.mid(10);
             linkedDUs.replace(i, currLDU);
             needsLinkedDUs = true;
@@ -2176,7 +2178,7 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
             createdNewLocal = true;
 
             QContactSyncTarget lst;
-            lst.setSyncTarget(QLatin1String("local"));
+            lst.setSyncTarget(localSyncTarget);
             localContact.saveDetail(&lst);
 
             QContactName lcn = contact->detail<QContactName>();
@@ -2240,8 +2242,10 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
 
 static void adjustDetailUrisForAggregate(QContactDetail &currDet)
 {
+    static const QString prefix(aggregateSyncTarget + QChar::fromLatin1(':'));
+
     if (!currDet.detailUri().isEmpty()) {
-        currDet.setDetailUri(QLatin1String("aggregate:") + currDet.detailUri());
+        currDet.setDetailUri(prefix + currDet.detailUri());
     }
 
     bool needsLinkedDUs = false;
@@ -2249,7 +2253,7 @@ static void adjustDetailUrisForAggregate(QContactDetail &currDet)
     for (int i = 0; i < linkedDUs.size(); ++i) {
         QString currLDU = linkedDUs.at(i);
         if (!currLDU.isEmpty()) {
-            currLDU = QLatin1String("aggregate:") + currLDU;
+            currLDU = prefix + currLDU;
             linkedDUs.replace(i, currLDU);
             needsLinkedDUs = true;
         }
@@ -2367,7 +2371,7 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
 
             if (needsPromote) {
                 QString syncTarget(contact.detail<QContactSyncTarget>().value<QString>(QContactSyncTarget::FieldSyncTarget));
-                if (!syncTarget.isEmpty() && syncTarget != QLatin1String("local") &&
+                if (!syncTarget.isEmpty() && syncTarget != localSyncTarget &&
                     (original.value<bool>(QContactDetail__FieldModifiable) != true)) {
                     QContactManagerEngine::setDetailAccessConstraints(&det, QContactDetail::ReadOnly | QContactDetail::Irremovable);
                 }
@@ -2695,7 +2699,7 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
     }
     syncTarget = contact->detail<QContactSyncTarget>().syncTarget();
     if (syncTarget.isEmpty()) {
-        syncTarget = QLatin1String("local");
+        syncTarget = localSyncTarget;
     }
 
     static const QLatin1Char Percent('%');
@@ -2753,7 +2757,7 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
     if (!found) {
         // need to create an aggregating contact first.
         QContactSyncTarget cst;
-        cst.setSyncTarget(QLatin1String("aggregate"));
+        cst.setSyncTarget(aggregateSyncTarget);
         matchingAggregate.saveDetail(&cst);
     }
 
@@ -2855,7 +2859,7 @@ void ContactWriter::regenerateAggregates(const QList<quint32> &aggregateIds, con
         QContactManager::Error readError = m_reader->readContacts(QLatin1String("RegenerateAggregate"), &readList, readIds, hint);
         if (readError != QContactManager::NoError
                 || readList.size() <= 1
-                || readList.at(0).detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget) != QLatin1String("aggregate")) {
+                || readList.at(0).detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget) != aggregateSyncTarget) {
             qWarning() << "Failed to read constituent contacts for aggregate" << aggId << "during regenerate";
             continue;
         }
@@ -2882,7 +2886,7 @@ void ContactWriter::regenerateAggregates(const QList<quint32> &aggregateIds, con
         // Step two: search for the "local" contact and promote its details first
         for (int i = 1; i < readList.size(); ++i) { // start from 1 to skip aggregate
             QContact curr = readList.at(i);
-            if (curr.detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget) != QLatin1String("local"))
+            if (curr.detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget) != localSyncTarget)
                 continue;
             QList<QContactDetail> currDetails = curr.details();
             for (int j = 0; j < currDetails.size(); ++j) {
@@ -2900,7 +2904,7 @@ void ContactWriter::regenerateAggregates(const QList<quint32> &aggregateIds, con
         // Step Three: promote data from details of other related contacts
         for (int i = 1; i < readList.size(); ++i) { // start from 1 to skip aggregate
             QContact curr = readList.at(i);
-            if (curr.detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget) == QLatin1String("local")) {
+            if (curr.detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget) == localSyncTarget) {
                 continue; // already promoted the "local" contact's details.
             }
 
@@ -3062,12 +3066,12 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
     QContactSyncTarget starget = contact->detail<QContactSyncTarget>();
     const QString stv = starget.syncTarget();
     if (stv.isEmpty()) {
-        starget.setSyncTarget(localTarget);
+        starget.setSyncTarget(localSyncTarget);
         contact->saveDetail(&starget);
     }
 
     // If this contact is local, ensure it has a GUID for import/export stability
-    if (stv.isEmpty() || stv == localTarget) {
+    if (stv.isEmpty() || stv == localSyncTarget) {
         QContactGuid guid = contact->detail<QContactGuid>();
         if (guid.guid().isEmpty()) {
             guid.setGuid(QUuid::createUuid().toString());
@@ -3107,7 +3111,7 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
         if (!withinAggregateUpdate) {
             // and either update the aggregate contact (if it exists) or create a new one (unless it is an aggregate contact).
-            if (contact->detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget) != QLatin1String("aggregate")) {
+            if (contact->detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget) != aggregateSyncTarget) {
                 writeErr = updateOrCreateAggregate(contact, definitionMask, maxAggregateId, withinTransaction);
             }
         }
@@ -3154,7 +3158,7 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
     QString newSyncTarget = contact->detail<QContactSyncTarget>().value<QString>(QContactSyncTarget::FieldSyncTarget);
 
     if (newSyncTarget != oldSyncTarget &&
-        (oldSyncTarget != QLatin1String("local") && oldSyncTarget != QLatin1String("was_local"))) {
+        (oldSyncTarget != localSyncTarget && oldSyncTarget != wasLocalSyncTarget)) {
         // they are attempting to manually change the sync target value of a non-local contact
         qWarning() << "Cannot manually change sync target!";
         return QContactManager::InvalidDetailError;
@@ -3170,7 +3174,7 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
     updateTimestamp(contact, false);
 
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
-    if (!withinAggregateUpdate && oldSyncTarget == QLatin1String("aggregate")) {
+    if (!withinAggregateUpdate && oldSyncTarget == aggregateSyncTarget) {
         // Attempting to update the aggregate contact.
         // We calculate the delta (old contact / new contact)
         // and save the delta to the 'local' contact (might
@@ -3230,9 +3234,9 @@ QContactManager::Error ContactWriter::write(quint32 contactId, QContact *contact
     // Is this contact syncable with a syncTarget?
     const QString syncTarget(contact->detail<QContactSyncTarget>().syncTarget());
     bool syncable = !syncTarget.isEmpty() &&
-                    (syncTarget != aggregateTarget) &&
-                    (syncTarget != localTarget) &&
-                    (syncTarget != wasLocalTarget);
+                    (syncTarget != aggregateSyncTarget) &&
+                    (syncTarget != localSyncTarget) &&
+                    (syncTarget != wasLocalSyncTarget);
 
     QContactManager::Error error = QContactManager::NoError;
     if (writeDetails<QContactAddress>(contactId, contact, m_removeAddress, definitionMask, syncable, &error)
