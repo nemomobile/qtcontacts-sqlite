@@ -271,6 +271,10 @@ void tst_Aggregation::createSingleLocal()
     QContactPhoneNumber aggregateDetail(aggregateAlice.detail<QContactPhoneNumber>());
     QVERIFY(!detailProvenance(localDetail).isEmpty());
     QCOMPARE(detailProvenance(aggregateDetail), detailProvenance(localDetail));
+
+    // A local contact should have a GUID, which is not promoted to the aggregate
+    QVERIFY(!localAlice.detail<QContactGuid>().guid().isEmpty());
+    QVERIFY(aggregateAlice.detail<QContactGuid>().guid().isEmpty());
 }
 
 void tst_Aggregation::createMultipleLocal()
@@ -304,6 +308,12 @@ void tst_Aggregation::createMultipleLocal()
     alice.saveDetail(&aph);
     bph.setNumber("765432");
     bob.saveDetail(&bph);
+
+    // add an explicit GUID to Bob
+    const QString bobGuid("I am Bob");
+    QContactGuid bg;
+    bg.setGuid(bobGuid);
+    bob.saveDetail(&bg);
 
     QList<QContact> saveList;
     saveList << alice << bob;
@@ -386,6 +396,13 @@ void tst_Aggregation::createMultipleLocal()
     QVERIFY(!detailProvenance(localBobDetail).isEmpty());
     QCOMPARE(detailProvenance(aggregateBobDetail), detailProvenance(localBobDetail));
     QVERIFY(detailProvenance(localBobDetail) != detailProvenance(localAliceDetail));
+
+    // Verify that the local consituents have GUIDs, but the aggregates don't
+    QVERIFY(!localAlice.detail<QContactGuid>().guid().isEmpty());
+    QVERIFY(!localBob.detail<QContactGuid>().guid().isEmpty());
+    QCOMPARE(localBob.detail<QContactGuid>().guid(), bobGuid);
+    QVERIFY(aggregateAlice.detail<QContactGuid>().guid().isEmpty());
+    QVERIFY(aggregateBob.detail<QContactGuid>().guid().isEmpty());
 }
 
 void tst_Aggregation::createSingleLocalAndSingleSync()
