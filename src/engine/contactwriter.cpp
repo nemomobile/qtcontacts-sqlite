@@ -53,6 +53,7 @@
 #endif
 
 #include <QSqlError>
+#include <QUuid>
 
 #include <QtDebug>
 
@@ -3056,10 +3057,22 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
     Q_UNUSED(withinTransaction)
     Q_UNUSED(withinAggregateUpdate)
 #endif
-    QContactManager::Error writeErr = enforceDetailConstraints(contact);
-    if (writeErr != QContactManager::NoError) {
-        qWarning() << "Contact failed detail constraints";
-        return writeErr;
+
+    // If not specified, this contact is a "local device" contact
+    QContactSyncTarget starget = contact->detail<QContactSyncTarget>();
+    const QString stv = starget.syncTarget();
+    if (stv.isEmpty()) {
+        starget.setSyncTarget(localTarget);
+        contact->saveDetail(&starget);
+    }
+
+    // If this contact is local, ensure it has a GUID for import/export stability
+    if (stv.isEmpty() || stv == localTarget) {
+        QContactGuid guid = contact->detail<QContactGuid>();
+        if (guid.guid().isEmpty()) {
+            guid.setGuid(QUuid::createUuid().toString());
+            contact->saveDetail(&guid);
+        }
     }
 
     // update the global presence (display label may be derived from it)
@@ -3070,6 +3083,12 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
 
     // update the timestamp if necessary
     updateTimestamp(contact, true); // set creation timestamp
+
+    QContactManager::Error writeErr = enforceDetailConstraints(contact);
+    if (writeErr != QContactManager::NoError) {
+        qWarning() << "Contact failed detail constraints";
+        return writeErr;
+    }
 
     bindContactDetails(*contact, m_insertContact, DetailList(), false);
     if (!m_insertContact.exec()) {
@@ -3267,11 +3286,7 @@ void ContactWriter::bindContactDetails(const QContact &contact, QSqlQuery &query
     query.bindValue(8, name.value<QString>(QContactName::FieldCustomLabel).trimmed());
 #endif
 
-    const QContactSyncTarget starget = contact.detail<QContactSyncTarget>();
-    QString stv = starget.syncTarget();
-    if (stv.isEmpty())
-        stv = QLatin1String("local"); // by default, it is a "local device" contact.
-    query.bindValue(9, stv);
+    query.bindValue(9, contact.detail<QContactSyncTarget>().syncTarget());
 
     const QContactTimestamp timestamp = contact.detail<QContactTimestamp>();
     query.bindValue(10, timestamp.value<QDateTime>(QContactTimestamp::FieldCreationTimestamp).toUTC());
