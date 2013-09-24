@@ -224,6 +224,10 @@ void tst_Aggregation::createSingleLocal()
     aph.setNumber("1234567");
     alice.saveDetail(&aph);
 
+    QContactGender ag;
+    ag.setGender(QContactGender::GenderFemale);
+    alice.saveDetail(&ag);
+
     m_addAccumulatedIds.clear();
     QVERIFY(m_cm->saveContact(&alice));
     QTRY_VERIFY(addSpy.count() > addSpyCount);
@@ -275,6 +279,10 @@ void tst_Aggregation::createSingleLocal()
     // A local contact should have a GUID, which is not promoted to the aggregate
     QVERIFY(!localAlice.detail<QContactGuid>().guid().isEmpty());
     QVERIFY(aggregateAlice.detail<QContactGuid>().guid().isEmpty());
+
+    // Verify that gender is promoted
+    QCOMPARE(localAlice.detail<QContactGender>().gender(), QContactGender::GenderFemale);
+    QCOMPARE(aggregateAlice.detail<QContactGender>().gender(), QContactGender::GenderFemale);
 }
 
 void tst_Aggregation::createMultipleLocal()

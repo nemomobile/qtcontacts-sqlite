@@ -2329,7 +2329,9 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
             QContactGender cg(original);
             QContactGender ag(aggregate->detail<QContactGender>());
 #ifdef USING_QTPIM
-            if (!cg.gender() != QContactGender::GenderUnspecified && ag.gender() == QContactGender::GenderUnspecified) {
+            // In Qtpim, uninitialized gender() does not default to GenderUnspecified...
+            if (cg.gender() != QContactGender::GenderUnspecified &&
+                (ag.gender() != QContactGender::GenderMale && ag.gender() != QContactGender::GenderFemale)) {
 #else
             if (!cg.gender().isEmpty() && ag.gender().isEmpty()) {
 #endif
