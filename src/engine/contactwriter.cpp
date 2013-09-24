@@ -124,6 +124,8 @@ static const char *findMatchForContact =
         "\n WHERE Contacts.syncTarget = 'aggregate'"
         "\n AND Matches.contactId <= :maxAggregateId"
         "\n AND Matches.contactId NOT IN ("
+        "\n   SELECT contactId FROM Contacts WHERE gender = :excludeGender"
+        "\n   UNION"
         "\n   SELECT DISTINCT secondId FROM Relationships WHERE firstId = :id AND type = 'IsNot'"
         "\n   UNION"
         "\n   SELECT DISTINCT firstId FROM Relationships WHERE secondId = :id AND type = 'IsNot'"
@@ -2681,6 +2683,7 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
     QStringList emailAddresses;
     QStringList accountUris;
     QString syncTarget;
+    QString excludeGender;
 
     quint32 contactId = ContactId::databaseId(*contact);
     foreach (const QContactName &detail, contact->details<QContactName>()) {
@@ -2706,7 +2709,20 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
         syncTarget = localSyncTarget;
     }
 
-    static const QLatin1Char Percent('%');
+    const QContactGender gender(contact->detail<QContactGender>());
+#ifdef USING_QTPIM
+    const QString gv(gender.gender() == QContactGender::GenderFemale ? QString::fromLatin1("Female") :
+                     gender.gender() == QContactGender::GenderMale ? QString::fromLatin1("Male") : QString());
+#else
+    const QString gv(gender.value<QString>(QContactGender::FieldGender).trimmed());
+#endif
+    if (gv == QString::fromLatin1("Male")) {
+        excludeGender = QString::fromLatin1("Female");
+    } else if (gv == QString::fromLatin1("Female")) {
+        excludeGender = QString::fromLatin1("Male");
+    } else {
+        excludeGender = QString::fromLatin1("none");
+    }
 
     // Use a simple match algorithm, looking for exact matches on name fields,
     // or accumulating points for name matches (including partial matches of first name).
@@ -2720,6 +2736,7 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
     m_findMatchForContact.bindValue(":uri", accountUris.join(","));
     m_findMatchForContact.bindValue(":maxAggregateId", maxAggregateId);
     m_findMatchForContact.bindValue(":syncTarget", syncTarget);
+    m_findMatchForContact.bindValue(":excludeGender", excludeGender);
 
     QContact matchingAggregate;
     bool found = false;
