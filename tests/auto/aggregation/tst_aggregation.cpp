@@ -224,6 +224,10 @@ void tst_Aggregation::createSingleLocal()
     aph.setNumber("1234567");
     alice.saveDetail(&aph);
 
+    QContactGender ag;
+    ag.setGender(QContactGender::GenderFemale);
+    alice.saveDetail(&ag);
+
     m_addAccumulatedIds.clear();
     QVERIFY(m_cm->saveContact(&alice));
     QTRY_VERIFY(addSpy.count() > addSpyCount);
@@ -275,6 +279,10 @@ void tst_Aggregation::createSingleLocal()
     // A local contact should have a GUID, which is not promoted to the aggregate
     QVERIFY(!localAlice.detail<QContactGuid>().guid().isEmpty());
     QVERIFY(aggregateAlice.detail<QContactGuid>().guid().isEmpty());
+
+    // Verify that gender is promoted
+    QCOMPARE(localAlice.detail<QContactGender>().gender(), QContactGender::GenderFemale);
+    QCOMPARE(aggregateAlice.detail<QContactGender>().gender(), QContactGender::GenderFemale);
 }
 
 void tst_Aggregation::createMultipleLocal()
@@ -2368,12 +2376,15 @@ void tst_Aggregation::aggregationHeuristic_data()
         << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "999118222773" << "freddy@test.net" << "fgumboots@coolsocial";
 
     // fragment name, overlapping contactable
-    QTest::newRow("fragment fname, identical p/e/a") << true
+    QTest::newRow("initial fragment fname, identical p/e/a") << true
         << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
         << "Fred" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount";
-    QTest::newRow("fragment fname, identical p/e/a, order") << true
-        << "Fred" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
-        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount";
+    QTest::newRow("final fragment fname, identical p/e/a") << true
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "Rick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount";
+    QTest::newRow("internal fragment fname, identical p/e/a") << true
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "Deric" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount";
     QTest::newRow("fragment mname, identical p/e/a") << true
         << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
         << "Frederick" << "" << "Gumboots" << "Freddy" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount";
@@ -2485,90 +2496,92 @@ void tst_Aggregation::aggregationHeuristic()
     QFETCH(QString, bEmailAddress);
     QFETCH(QString, bOnlineAccount);
 
-    QContact a, b;
-    QContactSyncTarget async, bsync;
-    QContactName aname, bname;
-    QContactNickname anick, bnick;
-    QContactPhoneNumber aphn, bphn;
-    QContactEmailAddress aem, bem;
-    QContactOnlineAccount aoa, boa;
+    for (int i = 0; i < 2; ++i) {
+        QContact a, b;
+        QContactSyncTarget async, bsync;
+        QContactName aname, bname;
+        QContactNickname anick, bnick;
+        QContactPhoneNumber aphn, bphn;
+        QContactEmailAddress aem, bem;
+        QContactOnlineAccount aoa, boa;
 
-    // construct a
-    async.setSyncTarget("aggregation-heuristic-a");
-    a.saveDetail(&async);
+        // construct a
+        async.setSyncTarget("aggregation-heuristic-a");
+        a.saveDetail(&async);
 
-    aname.setFirstName(aFirstName);
-    aname.setMiddleName(aMiddleName);
-    aname.setLastName(aLastName);
-    if (!aFirstName.isEmpty() || !aMiddleName.isEmpty() || !aLastName.isEmpty()) {
-        a.saveDetail(&aname);
-    }
+        aname.setFirstName(aFirstName);
+        aname.setMiddleName(aMiddleName);
+        aname.setLastName(aLastName);
+        if (!aFirstName.isEmpty() || !aMiddleName.isEmpty() || !aLastName.isEmpty()) {
+            a.saveDetail(&aname);
+        }
 
-    if (!aNickname.isEmpty()) {
-        anick.setNickname(aNickname);
-        a.saveDetail(&anick);
-    }
+        if (!aNickname.isEmpty()) {
+            anick.setNickname(aNickname);
+            a.saveDetail(&anick);
+        }
 
-    if (!aPhoneNumber.isEmpty()) {
-        aphn.setNumber(aPhoneNumber);
-        a.saveDetail(&aphn);
-    }
+        if (!aPhoneNumber.isEmpty()) {
+            aphn.setNumber(aPhoneNumber);
+            a.saveDetail(&aphn);
+        }
 
-    if (!aEmailAddress.isEmpty()) {
-        aem.setEmailAddress(aEmailAddress);
-        a.saveDetail(&aem);
-    }
+        if (!aEmailAddress.isEmpty()) {
+            aem.setEmailAddress(aEmailAddress);
+            a.saveDetail(&aem);
+        }
 
-    if (!aOnlineAccount.isEmpty()) {
-        aoa.setAccountUri(aOnlineAccount);
-        a.saveDetail(&aoa);
-    }
+        if (!aOnlineAccount.isEmpty()) {
+            aoa.setAccountUri(aOnlineAccount);
+            a.saveDetail(&aoa);
+        }
 
-    // construct b
-    bsync.setSyncTarget("aggregation-heuristic-b");
-    b.saveDetail(&bsync);
+        // construct b
+        bsync.setSyncTarget("aggregation-heuristic-b");
+        b.saveDetail(&bsync);
 
-    bname.setFirstName(bFirstName);
-    bname.setMiddleName(bMiddleName);
-    bname.setLastName(bLastName);
-    if (!bFirstName.isEmpty() || !bMiddleName.isEmpty() || !bLastName.isEmpty()) {
-        b.saveDetail(&bname);
-    }
+        bname.setFirstName(bFirstName);
+        bname.setMiddleName(bMiddleName);
+        bname.setLastName(bLastName);
+        if (!bFirstName.isEmpty() || !bMiddleName.isEmpty() || !bLastName.isEmpty()) {
+            b.saveDetail(&bname);
+        }
 
-    if (!bNickname.isEmpty()) {
-        bnick.setNickname(bNickname);
-        b.saveDetail(&bnick);
-    }
+        if (!bNickname.isEmpty()) {
+            bnick.setNickname(bNickname);
+            b.saveDetail(&bnick);
+        }
 
-    if (!bPhoneNumber.isEmpty()) {
-        bphn.setNumber(bPhoneNumber);
-        b.saveDetail(&bphn);
-    }
+        if (!bPhoneNumber.isEmpty()) {
+            bphn.setNumber(bPhoneNumber);
+            b.saveDetail(&bphn);
+        }
 
-    if (!bEmailAddress.isEmpty()) {
-        bem.setEmailAddress(bEmailAddress);
-        b.saveDetail(&bem);
-    }
+        if (!bEmailAddress.isEmpty()) {
+            bem.setEmailAddress(bEmailAddress);
+            b.saveDetail(&bem);
+        }
 
-    if (!bOnlineAccount.isEmpty()) {
-        boa.setAccountUri(bOnlineAccount);
-        b.saveDetail(&boa);
-    }
+        if (!bOnlineAccount.isEmpty()) {
+            boa.setAccountUri(bOnlineAccount);
+            b.saveDetail(&boa);
+        }
 
-    // Now perform the saves and see if we get some aggregation as required.
-    int count = m_cm->contactIds().count();
-    QVERIFY(m_cm->saveContact(&a));
-    QCOMPARE(m_cm->contactIds().count(), (count+1));
-    QVERIFY(m_cm->saveContact(&b));
-    QCOMPARE(m_cm->contactIds().count(), shouldAggregate ? (count+1) : (count+2));
+        // Now perform the saves and see if we get some aggregation as required.
+        int count = m_cm->contactIds().count();
+        QVERIFY(m_cm->saveContact(i == 0 ? &a : &b));
+        QCOMPARE(m_cm->contactIds().count(), (count+1));
+        QVERIFY(m_cm->saveContact(i == 0 ? &b : &a));
+        QCOMPARE(m_cm->contactIds().count(), shouldAggregate ? (count+1) : (count+2));
 
 #ifdef USING_QTPIM
-    m_cm->removeContact(a.id());
-    m_cm->removeContact(b.id());
+        m_cm->removeContact(a.id());
+        m_cm->removeContact(b.id());
 #else
-    m_cm->removeContact(a.localId());
-    m_cm->removeContact(b.localId());
+        m_cm->removeContact(a.localId());
+        m_cm->removeContact(b.localId());
 #endif
+    }
 }
 
 void tst_Aggregation::regenerateAggregate()

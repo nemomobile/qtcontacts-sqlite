@@ -100,11 +100,13 @@ static const char *findMatchForContact =
         "\n SELECT Matches.contactId, sum(Matches.score) AS total FROM ("
         "\n   SELECT contactId, 20 as score FROM Contacts"
         "\n      WHERE lowerLastName != '' AND lowerLastName = :lastName"
-        "\n      AND lowerFirstName != '' AND :firstName != '' AND (lowerFirstName = :firstName OR lowerFirstName LIKE :firstPartial)"
+        "\n      AND lowerFirstName != '' AND :firstName != ''"
+        "\n      AND (lowerFirstName LIKE ('%' || :firstName || '%') OR :firstName LIKE ('%' || lowerFirstName || '%'))"
         "\n   UNION"
         "\n   SELECT contactId, 12 as score FROM Contacts"
         "\n      WHERE (lowerLastName = '' OR :lastName = '')"
-        "\n      AND lowerFirstName != '' AND (lowerFirstName = :firstName OR lowerFirstName LIKE :firstPartial)"
+        "\n      AND lowerFirstName != ''"
+        "\n      AND (lowerFirstName LIKE ('%' || :firstName || '%') OR :firstName LIKE ('%' || lowerFirstName || '%'))"
         "\n   UNION"
         "\n   SELECT contactId, 12 as score FROM Contacts"
         "\n      WHERE lowerLastName != '' AND lowerLastName = :lastName"
@@ -2327,7 +2329,9 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
             QContactGender cg(original);
             QContactGender ag(aggregate->detail<QContactGender>());
 #ifdef USING_QTPIM
-            if (!cg.gender() != QContactGender::GenderUnspecified && ag.gender() == QContactGender::GenderUnspecified) {
+            // In Qtpim, uninitialized gender() does not default to GenderUnspecified...
+            if (cg.gender() != QContactGender::GenderUnspecified &&
+                (ag.gender() != QContactGender::GenderMale && ag.gender() != QContactGender::GenderFemale)) {
 #else
             if (!cg.gender().isEmpty() && ag.gender().isEmpty()) {
 #endif
@@ -2709,7 +2713,6 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
 
     m_findMatchForContact.bindValue(":id", contactId);
     m_findMatchForContact.bindValue(":firstName", firstName);
-    m_findMatchForContact.bindValue(":firstPartial", firstName.mid(0, 4).prepend(Percent).append(Percent));
     m_findMatchForContact.bindValue(":lastName", lastName);
     m_findMatchForContact.bindValue(":nickname", nickname);
     m_findMatchForContact.bindValue(":number", phoneNumbers.join(","));
