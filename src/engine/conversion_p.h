@@ -76,6 +76,13 @@ QString subType(int value);
 
 }
 
+namespace Gender {
+
+int gender(const QString &name);
+QString gender(int value);
+
+}
+
 }
 
 #endif

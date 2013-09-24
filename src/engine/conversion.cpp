@@ -33,6 +33,7 @@
 #include "conversion_p.h"
 
 #include <QContactAnniversary>
+#include <QContactGender>
 #include <QContactOnlineAccount>
 #include <QContactPhoneNumber>
 #include <QContactUrl>
@@ -305,6 +306,46 @@ QString subType(int type)
     static const QMap<int, QString> subTypes(subTypeNames());
 
     return propertyName(type, subTypes);
+}
+
+}
+
+namespace Gender {
+
+static QMap<QString, int> genderValues()
+{
+    QMap<QString, int> rv;
+
+    rv.insert(QString::fromLatin1("Male"), QContactGender::GenderMale);
+    rv.insert(QString::fromLatin1("Female"), QContactGender::GenderFemale);
+    rv.insert(QString::fromLatin1(""), QContactGender::GenderUnspecified);
+
+    return rv;
+}
+
+static QMap<int, QString> genderNames()
+{
+    QMap<int, QString> rv;
+
+    rv.insert(QContactGender::GenderMale, QString::fromLatin1("Male"));
+    rv.insert(QContactGender::GenderFemale, QString::fromLatin1("Female"));
+    rv.insert(QContactGender::GenderUnspecified, QString::fromLatin1(""));
+
+    return rv;
+}
+
+int gender(const QString &name)
+{
+    static const QMap<QString, int> genders(genderValues());
+
+    return propertyValue(name, genders);
+}
+
+QString gender(int type)
+{
+    static const QMap<int, QString> genders(genderNames());
+
+    return propertyName(type, genders);
 }
 
 }

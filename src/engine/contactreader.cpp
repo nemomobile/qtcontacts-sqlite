@@ -761,6 +761,10 @@ static QString convertFilterValueToString(const QContactDetailFilter &filter, co
         if (filter.detailField() == QContactUrl::FieldSubType) {
             return Url::subType(filter.value().toInt());
         }
+    } else if (filter.detailType() == QContactGender::Type) {
+        if (filter.detailField() == QContactGender::FieldGender) {
+            return Gender::gender(filter.value().toInt());
+        }
     }
 
     return defaultValue;
