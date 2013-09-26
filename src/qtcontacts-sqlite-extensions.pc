@@ -3,5 +3,5 @@ includedir=${prefix}/include/qtcontacts-sqlite-extensions
 
 Name: qtcontacts-sqlite-extensions
 Description: QtContacts extensions implemented by qtcontacts-sqlite
-Version: 0.1.12
+Version: 0.1.16
 Cflags:  -I${includedir}
