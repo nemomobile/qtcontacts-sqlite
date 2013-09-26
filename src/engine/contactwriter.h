@@ -43,6 +43,9 @@
 #include <QContactAvatar>
 #include <QContactBirthday>
 #include <QContactEmailAddress>
+#ifdef USING_QTPIM
+#include <QContactExtendedDetail>
+#endif
 #include <QContactGlobalPresence>
 #include <QContactGuid>
 #include <QContactHobby>
@@ -154,6 +157,9 @@ private:
     QSqlQuery &bindDetail(quint32 contactId, const QContactTag &detail);
     QSqlQuery &bindDetail(quint32 contactId, const QContactUrl &detail);
     QSqlQuery &bindDetail(quint32 contactId, const QContactOriginMetadata &detail);
+#ifdef USING_QTPIM
+    QSqlQuery &bindDetail(quint32 contactId, const QContactExtendedDetail &detail);
+#endif
 
     const ContactsEngine &m_engine;
     QSqlDatabase m_database;
@@ -193,6 +199,7 @@ private:
     QSqlQuery m_insertTag;
     QSqlQuery m_insertUrl;
     QSqlQuery m_insertOriginMetadata;
+    QSqlQuery m_insertExtendedDetail;
     QSqlQuery m_insertDetail;
     QSqlQuery m_insertIdentity;
     QSqlQuery m_removeAddress;
@@ -213,6 +220,7 @@ private:
     QSqlQuery m_removeTag;
     QSqlQuery m_removeUrl;
     QSqlQuery m_removeOriginMetadata;
+    QSqlQuery m_removeExtendedDetail;
     QSqlQuery m_removeDetail;
     QSqlQuery m_removeIdentity;
     QSqlQuery m_findConstituentsForAggregateIds;
