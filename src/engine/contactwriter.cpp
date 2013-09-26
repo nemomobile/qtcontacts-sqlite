@@ -464,6 +464,16 @@ static const char *insertOriginMetadata =
         "\n  :accountId,"
         "\n  :accountEnabled)";
 
+static const char *insertExtendedDetail =
+        "\n INSERT INTO ExtendedDetails ("
+        "\n  contactId,"
+        "\n  name,"
+        "\n  data)"
+        "\n VALUES ("
+        "\n  :contactId,"
+        "\n  :name,"
+        "\n  :data)";
+
 static const char *insertDetail =
         "\n INSERT INTO Details ("
         "\n  contactId,"
@@ -570,6 +580,7 @@ ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &d
     , m_insertTag(prepare(insertTag, database))
     , m_insertUrl(prepare(insertUrl, database))
     , m_insertOriginMetadata(prepare(insertOriginMetadata, database))
+    , m_insertExtendedDetail(prepare(insertExtendedDetail, database))
     , m_insertDetail(prepare(insertDetail, database))
     , m_insertIdentity(prepare(insertIdentity, database))
     , m_removeAddress(prepare("DELETE FROM Addresses WHERE contactId = :contactId;", database))
@@ -590,6 +601,7 @@ ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &d
     , m_removeTag(prepare("DELETE FROM Tags WHERE contactId = :contactId;", database))
     , m_removeUrl(prepare("DELETE FROM Urls WHERE contactId = :contactId;", database))
     , m_removeOriginMetadata(prepare("DELETE FROM TpMetadata WHERE contactId = :contactId;", database))
+    , m_removeExtendedDetail(prepare("DELETE FROM ExtendedDetails WHERE contactId = :contactId;", database))
     , m_removeDetail(prepare("DELETE FROM Details WHERE contactId = :contactId AND detail = :detail;", database))
     , m_removeIdentity(prepare("DELETE FROM Identities WHERE identity = :identity;", database))
     , m_reader(reader)
@@ -1364,7 +1376,9 @@ QMap<QContactDetail::DetailType, const char *> getDetailTypeNames()
     INSERT(rv, QContactBirthday);
     INSERT(rv, QContactDisplayLabel);
     INSERT(rv, QContactEmailAddress);
+#ifdef USING_QTPIM
     INSERT(rv, QContactExtendedDetail);
+#endif
     INSERT(rv, QContactFamily);
     INSERT(rv, QContactFavorite);
     INSERT(rv, QContactGender);
@@ -1905,6 +1919,9 @@ static ContactWriter::DetailList allSupportedDetails()
     appendDetailType<QContactOrganization>(&details);
     appendDetailType<QContactRingtone>(&details);
     appendDetailType<QContactStatusFlags>(&details);
+#ifdef USING_QTPIM
+    appendDetailType<QContactExtendedDetail>(&details);
+#endif
 
     return details;
 }
@@ -3276,7 +3293,11 @@ QContactManager::Error ContactWriter::write(quint32 contactId, QContact *contact
             && writeDetails<QContactRingtone>(contactId, contact, m_removeRingtone, definitionMask, syncable, &error)
             && writeDetails<QContactTag>(contactId, contact, m_removeTag, definitionMask, syncable, &error)
             && writeDetails<QContactUrl>(contactId, contact, m_removeUrl, definitionMask, syncable, &error)
-            && writeDetails<QContactOriginMetadata>(contactId, contact, m_removeOriginMetadata, definitionMask, syncable, &error)) {
+            && writeDetails<QContactOriginMetadata>(contactId, contact, m_removeOriginMetadata, definitionMask, syncable, &error)
+#ifdef USING_QTPIM
+            && writeDetails<QContactExtendedDetail>(contactId, contact, m_removeExtendedDetail, definitionMask, syncable, &error)
+#endif
+            ) {
         return QContactManager::NoError;
     }
     return error;
@@ -3577,3 +3598,14 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactOriginMeta
     m_insertOriginMetadata.bindValue(3, detailValue(detail, QContactOriginMetadata::FieldEnabled));
     return m_insertOriginMetadata;
 }
+
+#ifdef USING_QTPIM
+QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactExtendedDetail &detail)
+{
+    m_insertExtendedDetail.bindValue(0, contactId);
+    m_insertExtendedDetail.bindValue(1, detailValue(detail, QContactExtendedDetail::FieldName));
+    m_insertExtendedDetail.bindValue(2, detailValue(detail, QContactExtendedDetail::FieldData));
+    return m_insertExtendedDetail;
+}
+#endif
+

@@ -170,6 +170,11 @@ private slots:
     void partialSave_data() {addManagers();}
 #endif
 
+#ifdef USING_QTPIM
+    void extendedDetail();
+    void extendedDetail_data() {addManagers();}
+#endif
+
     /* Tests that take no data */
 #ifdef MUTABLE_SCHEMA_SUPPORTED
     void contactValidation();
@@ -4008,6 +4013,85 @@ void tst_QContactManager::partialSave()
     QCOMPARE(errorMap.count(), isAllowingDetailsNotInSchema ? 1 : 2);
     QCOMPARE(errorMap[0], QContactManager::DoesNotExistError);
     QCOMPARE(errorMap[1], isAllowingDetailsNotInSchema ? QContactManager::NoError : QContactManager::InvalidDetailError);
+}
+#endif
+
+#ifdef USING_QTPIM
+void tst_QContactManager::extendedDetail()
+{
+    QFETCH(QString, uri);
+    QScopedPointer<QContactManager> cm(QContactManager::fromUri(uri));
+
+    // Verify that QContactExtendedDetail is supported
+    QContact a;
+
+    QContactName n;
+    n.setFirstName("A");
+    n.setMiddleName("Test");
+    n.setLastName("Person");
+    a.saveDetail(&n);
+
+    QContactExtendedDetail ed;
+    ed.setName(QString::fromLatin1("Testing"));
+    a.saveDetail(&ed);
+
+    QVERIFY(cm->saveContact(&a));
+    a = cm->contact(retrievalId(a));
+
+    QCOMPARE(a.details<QContactExtendedDetail>().count(), 1);
+    QCOMPARE(a.details<QContactExtendedDetail>().at(0).name(), QString::fromLatin1("Testing"));
+    QCOMPARE(a.details<QContactExtendedDetail>().at(0).data(), QVariant());
+
+    QByteArray d1(QString::fromLatin1("1-2-3").toUtf8());
+    ed = a.details<QContactExtendedDetail>().at(0);
+    ed.setData(d1);
+    a.saveDetail(&ed);
+
+    QVERIFY(cm->saveContact(&a));
+    a = cm->contact(retrievalId(a));
+
+    QCOMPARE(a.details<QContactExtendedDetail>().count(), 1);
+    QCOMPARE(a.details<QContactExtendedDetail>().at(0).name(), QString::fromLatin1("Testing"));
+    QCOMPARE(a.details<QContactExtendedDetail>().at(0).data().toByteArray(), d1);
+
+    QByteArray d2;
+    {
+        QDataStream ds(&d2, QIODevice::WriteOnly);
+        for (int i = 0; i < 10; ++i) {
+            int x = qrand();
+            int y = qrand();
+            const double q = x / (y ? y : 1);
+            ds << q;
+        }
+    }
+    QCOMPARE(static_cast<size_t>(d2.size()), 10 * sizeof(double));
+
+    ed = QContactExtendedDetail();
+    ed.setName(QString::fromLatin1("Second"));
+    ed.setData(d2);
+    a.saveDetail(&ed);
+
+    QVERIFY(cm->saveContact(&a));
+    a = cm->contact(retrievalId(a));
+
+    QCOMPARE(a.details<QContactExtendedDetail>().count(), 2);
+    if (a.details<QContactExtendedDetail>().at(0).name() == QString::fromLatin1("Testing")) {
+        QCOMPARE(a.details<QContactExtendedDetail>().at(0).data().toByteArray(), d1);
+        QCOMPARE(a.details<QContactExtendedDetail>().at(1).name(), QString::fromLatin1("Second"));
+        QCOMPARE(a.details<QContactExtendedDetail>().at(1).data().toByteArray(), d2);
+    } else {
+        QCOMPARE(a.details<QContactExtendedDetail>().at(0).name(), QString::fromLatin1("Second"));
+        QCOMPARE(a.details<QContactExtendedDetail>().at(0).data().toByteArray(), d2);
+        QCOMPARE(a.details<QContactExtendedDetail>().at(1).name(), QString::fromLatin1("Testing"));
+        QCOMPARE(a.details<QContactExtendedDetail>().at(1).data().toByteArray(), d1);
+    }
+
+    QContactDetailFilter filter;
+    filter.setDetailType(QContactExtendedDetail::Type, QContactExtendedDetail::FieldName);
+    filter.setValue(QString::fromLatin1("Second"));
+
+    QList<QContact> contacts(cm->contacts(filter));
+    QCOMPARE(contacts.count(), 1);
 }
 #endif
 

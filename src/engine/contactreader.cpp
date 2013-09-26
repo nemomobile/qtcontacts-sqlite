@@ -476,6 +476,20 @@ static void setValues(QContactOriginMetadata *detail, QSqlQuery *query, const in
 }
 
 #ifdef USING_QTPIM
+static const FieldInfo extendedDetailFields[] =
+{
+    { QContactExtendedDetail::FieldName, "name", StringField },
+    { QContactExtendedDetail::FieldData, "data", OtherField }
+};
+
+static void setValues(QContactExtendedDetail *detail, QSqlQuery *query, const int offset)
+{
+    setValue(detail, QContactExtendedDetail::FieldName, query->value(offset + 0));
+    setValue(detail, QContactExtendedDetail::FieldData, query->value(offset + 1));
+}
+#endif
+
+#ifdef USING_QTPIM
 static QMap<QString, int> contextTypes()
 {
     QMap<QString, int> rv;
@@ -652,24 +666,27 @@ static const DetailInfo detailInfo[] =
     DEFINE_DETAIL_PRIMARY_TABLE(QContactGender,       genderFields),
     DEFINE_DETAIL_PRIMARY_TABLE(QContactFavorite,     favoriteFields),
     DEFINE_DETAIL_PRIMARY_TABLE(QContactStatusFlags,  statusFlagsFields),
-    DEFINE_DETAIL(QContactAddress       , Addresses      , addressFields      , false),
-    DEFINE_DETAIL(QContactAnniversary   , Anniversaries  , anniversaryFields  , false),
-    DEFINE_DETAIL(QContactAvatar        , Avatars        , avatarFields       , false),
-    DEFINE_DETAIL(QContactBirthday      , Birthdays      , birthdayFields     , true),
-    DEFINE_DETAIL(QContactEmailAddress  , EmailAddresses , emailAddressFields , false),
-    DEFINE_DETAIL(QContactGuid          , Guids          , guidFields         , true),
-    DEFINE_DETAIL(QContactHobby         , Hobbies        , hobbyFields        , false),
-    DEFINE_DETAIL(QContactNickname      , Nicknames      , nicknameFields     , false),
-    DEFINE_DETAIL(QContactNote          , Notes          , noteFields         , false),
-    DEFINE_DETAIL(QContactOnlineAccount , OnlineAccounts , onlineAccountFields, false),
-    DEFINE_DETAIL(QContactOrganization  , Organizations  , organizationFields , false),
-    DEFINE_DETAIL(QContactPhoneNumber   , PhoneNumbers   , phoneNumberFields  , false),
-    DEFINE_DETAIL(QContactPresence      , Presences      , presenceFields     , false),
-    DEFINE_DETAIL(QContactRingtone      , Ringtones      , ringtoneFields     , false),
-    DEFINE_DETAIL(QContactTag           , Tags           , tagFields          , false),
-    DEFINE_DETAIL(QContactUrl           , Urls           , urlFields          , false),
-    DEFINE_DETAIL(QContactOriginMetadata, TpMetadata     , tpMetadataFields   , true),
-    DEFINE_DETAIL(QContactGlobalPresence, GlobalPresences, presenceFields     , true)
+    DEFINE_DETAIL(QContactAddress       , Addresses      , addressFields       , false),
+    DEFINE_DETAIL(QContactAnniversary   , Anniversaries  , anniversaryFields   , false),
+    DEFINE_DETAIL(QContactAvatar        , Avatars        , avatarFields        , false),
+    DEFINE_DETAIL(QContactBirthday      , Birthdays      , birthdayFields      , true),
+    DEFINE_DETAIL(QContactEmailAddress  , EmailAddresses , emailAddressFields  , false),
+    DEFINE_DETAIL(QContactGuid          , Guids          , guidFields          , true),
+    DEFINE_DETAIL(QContactHobby         , Hobbies        , hobbyFields         , false),
+    DEFINE_DETAIL(QContactNickname      , Nicknames      , nicknameFields      , false),
+    DEFINE_DETAIL(QContactNote          , Notes          , noteFields          , false),
+    DEFINE_DETAIL(QContactOnlineAccount , OnlineAccounts , onlineAccountFields , false),
+    DEFINE_DETAIL(QContactOrganization  , Organizations  , organizationFields  , false),
+    DEFINE_DETAIL(QContactPhoneNumber   , PhoneNumbers   , phoneNumberFields   , false),
+    DEFINE_DETAIL(QContactPresence      , Presences      , presenceFields      , false),
+    DEFINE_DETAIL(QContactRingtone      , Ringtones      , ringtoneFields      , false),
+    DEFINE_DETAIL(QContactTag           , Tags           , tagFields           , false),
+    DEFINE_DETAIL(QContactUrl           , Urls           , urlFields           , false),
+    DEFINE_DETAIL(QContactOriginMetadata, TpMetadata     , tpMetadataFields    , true),
+    DEFINE_DETAIL(QContactGlobalPresence, GlobalPresences, presenceFields      , true),
+#ifdef USING_QTPIM
+    DEFINE_DETAIL(QContactExtendedDetail, ExtendedDetails, extendedDetailFields, false),
+#endif
 };
 
 #undef DEFINE_DETAIL_PRIMARY_TABLE

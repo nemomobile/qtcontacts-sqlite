@@ -218,6 +218,13 @@ static const char *createTpMetadataTable =
         "\n accountId TEXT,"
         "\n accountEnabled BOOL);";
 
+static const char *createExtendedDetailsTable =
+        "\n CREATE TABLE ExtendedDetails ("
+        "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
+        "\n contactId INTEGER KEY,"
+        "\n name TEXT,"
+        "\n data BLOB);";
+
 static const char *createDetailsTable =
         "\n CREATE TABLE Details ("
         "\n contactId INTEGER KEY,"
@@ -272,6 +279,8 @@ static const char *createUrlsDetailsContactIdIndex =
         "\n CREATE INDEX createUrlsDetailsContactIdIndex ON Urls(contactId);";
 static const char *createTpMetadataDetailsContactIdIndex =
         "\n CREATE INDEX createTpMetadataDetailsContactIdIndex ON TpMetadata(contactId);";
+static const char *createExtendedDetailsContactIdIndex =
+        "\n CREATE INDEX createExtendedDetailsContactIdIndex ON ExtendedDetails(contactId);";
 
 static const char *createIdentitiesTable =
         "\n CREATE Table Identities ("
@@ -308,6 +317,7 @@ static const char *createRemoveTrigger =
         "\n  DELETE FROM Tags WHERE contactId = old.contactId;"
         "\n  DELETE FROM Urls WHERE contactId = old.contactId;"
         "\n  DELETE FROM TpMetadata WHERE contactId = old.contactId;"
+        "\n  DELETE FROM ExtendedDetails WHERE contactId = old.contactId;"
         "\n  DELETE FROM Details WHERE contactId = old.contactId;"
         "\n  DELETE FROM Identities WHERE contactId = old.contactId;"
         "\n  DELETE FROM Relationships WHERE firstId = old.contactId OR secondId = old.contactId;"
@@ -472,6 +482,7 @@ static const char *createTables[] =
     createTagsTable,
     createUrlsTable,
     createTpMetadataTable,
+    createExtendedDetailsTable,
     createDetailsTable,
     createDetailsJoinIndex,
     createDetailsRemoveIndex,
@@ -512,6 +523,12 @@ static const char *createTables[] =
     createNicknamesIndex,
     createTpMetadataTelepathyIdIndex,
     createTpMetadataAccountIdIndex
+};
+
+struct ExtraTable {
+    const char *name;
+    const char *sql;
+    bool (*postInstall)(QSqlDatabase &);
 };
 
 struct ExtraColumn {
@@ -566,6 +583,13 @@ static bool setContactsHasPhoneNumber(QSqlDatabase &database)
     return setContactsHasDetail(database, QString::fromLatin1("hasPhoneNumber"), QString::fromLatin1("PhoneNumbers"));
 }
 
+static const ExtraTable extendedDetailsTable = { "ExtendedDetails", createExtendedDetailsTable, 0 };
+
+static const ExtraTable *extraTables[] =
+{
+    &extendedDetailsTable
+};
+
 static const ExtraColumn contactsHasPhoneNumber = { "Contacts", "hasPhoneNumber", "BOOL", &setContactsHasPhoneNumber };
 
 static bool setContactsHasEmailAddress(QSqlDatabase &database)
@@ -611,6 +635,28 @@ static const ExtraColumn *extraColumns[] =
     &detailsProvenance,
     &detailsModifiable
 };
+
+static bool addTable(const ExtraTable *tableDef, QSqlDatabase &database)
+{
+    QString statement(tableDef->sql);
+    return execute(database, statement);
+}
+
+static QStringList findExistingTables(QSqlDatabase &database)
+{
+    static const QString sql(QString::fromLatin1("SELECT name FROM sqlite_master WHERE type = 'table'"));
+
+    QStringList rv;
+
+    QSqlQuery query(database);
+    if (!query.exec(sql)) {
+        qWarning() << "Unable to query tables";
+    } else while (query.next()) {
+        rv.append(query.value(0).toString());
+    }
+
+    return rv;
+}
 
 static bool addColumn(const ExtraColumn *columnDef, QSqlDatabase &database)
 {
@@ -661,17 +707,17 @@ static bool upgradeDatabase(QSqlDatabase &database)
         return false;
 
     bool error = false;
-    for (int i = 0; i < lengthOf(extraColumns); ++i) {
-        const ExtraColumn *column = extraColumns[i];
+    for (int i = 0; i < lengthOf(extraTables); ++i) {
+        const ExtraTable *table = extraTables[i];
 
-        QStringList existingColumns = findExistingColumns(column->table, database);
-        if (!existingColumns.contains(column->name)) {
-            if (!addColumn(column, database)) {
-                qWarning() << "Unable to add column:" << column->name << "to table:" << column->table;
+        QStringList existingTables = findExistingTables(database);
+        if (!existingTables.contains(table->name)) {
+            if (!addTable(table, database)) {
+                qWarning() << "Unable to add table:" << table->name;
                 error = true;
-            } else if (column->postInstall) {
-                if (!(*column->postInstall)(database)) {
-                    qWarning() << "Unable to run post install function for column:" << column->name << "in table:" << column->table;
+            } else if (table->postInstall) {
+                if (!(*table->postInstall)(database)) {
+                    qWarning() << "Unable to run post install function for table:" << table->name;
                     error = true;
                 }
             }
@@ -679,7 +725,32 @@ static bool upgradeDatabase(QSqlDatabase &database)
             if (error) {
                 break;
             } else {
-                qDebug() << "Added column:" << column->name << "to table:" << column->table;
+                qDebug() << "Added table:" << table->name;
+            }
+        }
+    }
+
+    if (!error) {
+        for (int i = 0; i < lengthOf(extraColumns); ++i) {
+            const ExtraColumn *column = extraColumns[i];
+
+            QStringList existingColumns = findExistingColumns(column->table, database);
+            if (!existingColumns.contains(column->name)) {
+                if (!addColumn(column, database)) {
+                    qWarning() << "Unable to add column:" << column->name << "to table:" << column->table;
+                    error = true;
+                } else if (column->postInstall) {
+                    if (!(*column->postInstall)(database)) {
+                        qWarning() << "Unable to run post install function for column:" << column->name << "in table:" << column->table;
+                        error = true;
+                    }
+                }
+
+                if (error) {
+                    break;
+                } else {
+                    qDebug() << "Added column:" << column->name << "to table:" << column->table;
+                }
             }
         }
     }
@@ -692,12 +763,23 @@ static bool upgradeDatabase(QSqlDatabase &database)
     }
 }
 
-static bool prepareDatabase(QSqlDatabase &database)
+static bool configureDatabase(QSqlDatabase &database)
 {
     if (!execute(database, QLatin1String(setupEncoding))
-            || !execute(database, QLatin1String(setupTempStore))
-            || !execute(database, QLatin1String(setupJournal))
-            || !execute(database, QLatin1String(setupSynchronous))) {
+        || !execute(database, QLatin1String(setupTempStore))
+        || !execute(database, QLatin1String(setupJournal))
+        || !execute(database, QLatin1String(setupSynchronous))) {
+        qWarning() << "Failed to configure contacts database";
+        qWarning() << database.lastError();
+        return false;
+    }
+
+    return true;
+}
+
+static bool prepareDatabase(QSqlDatabase &database)
+{
+    if (!configureDatabase(database)) {
         return false;
     }
 
@@ -874,23 +956,29 @@ QSqlDatabase ContactsDatabase::open(const QString &databaseName)
         qWarning() << "Failed to open contacts database";
         qWarning() << database.lastError();
         return database;
-    } else {
-        qWarning() << "Opened contacts database:" << databaseFile;
     }
 
     if (!exists && !prepareDatabase(database)) {
-        database.close();
+        qWarning() << "Failed to prepare contacts database - removing";
+        qWarning() << database.lastError();
 
+        database.close();
         QFile::remove(databaseFile);
 
         return database;
     } else {
-        upgradeDatabase(database);
+        if (!upgradeDatabase(database)) {
+            qWarning() << "Failed to upgrade contacts database";
+            qWarning() << database.lastError();
+            return database;
+        }
 
-        database.exec(QLatin1String(setupTempStore));
-        database.exec(QLatin1String(setupJournal));
+        if (!configureDatabase(database)) {
+            return database;
+        }
     }
 
+    qWarning() << "Opened contacts database:" << databaseFile;
     return database;
 }
 
