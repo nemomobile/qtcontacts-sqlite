@@ -30,6 +30,7 @@
  */
 
 #include "contactnotifier.h"
+#include "trace_p.h"
 
 #include <QDBusConnection>
 #include <QDBusMessage>
@@ -138,7 +139,7 @@ bool connect(const char *name, const char *signature, QObject *receiver, const c
     static QDBusConnection connection(QDBusConnection::sessionBus());
 
     if (!connection.isConnected()) {
-        qWarning() << "Session Bus is not connected";
+        QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Session Bus is not connected"));
         return false;
     }
 
@@ -149,7 +150,7 @@ bool connect(const char *name, const char *signature, QObject *receiver, const c
                             QLatin1String(signature),
                             receiver,
                             slot)) {
-        qWarning() << "Unable to connect DBUS signal:" << name;
+        QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Unable to connect DBUS signal: %1").arg(name));
         return false;
     }
 
