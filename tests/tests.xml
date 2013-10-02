@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testdefinition version="1.0">
+   <suite name="qtcontacts-sqlite-qt5-tests" domain="mw">
+       <description>QtContacts SQLite backend automatic tests</description>
+       <set name="unit-tests" feature="qtcontacts-sqlite-qt5">
+           <description>Backend correctness automatic tests</description>
+           <case manual="false" name="aggregation">
+               <step>/opt/tests/qtcontacts-sqlite-qt5/tst_aggregation</step>
+           </case>
+           <case manual="false" name="contactmanager">
+               <step>/opt/tests/qtcontacts-sqlite-qt5/tst_qcontactmanager</step>
+           </case>
+       </set>
+   </suite>
+</testdefinition>
