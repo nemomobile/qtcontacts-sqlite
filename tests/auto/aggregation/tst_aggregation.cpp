@@ -1214,6 +1214,45 @@ void tst_Aggregation::updateAggregateOfLocalAndModifiableSync()
     QCOMPARE(trialAlice.detail<QContactName>().value(QContactDetail__FieldModifiable).toBool(), false);
     QCOMPARE(trialAlice.detail<QContactTag>().value(QContactDetail__FieldModifiable).toBool(), false);
     QCOMPARE(trialAlice.detail<QContactEmailAddress>().value(QContactDetail__FieldModifiable).toBool(), true);
+
+    // Modified details should remain modifiable after modification
+    {
+        foreach (QContactEmailAddress emailAddress, aggregateAlice.details<QContactEmailAddress>()) {
+            if (emailAddress.emailAddress() == QString::fromLatin1("aliceP2@test.com")) {
+                emailAddress.setEmailAddress("aliceP3@test.com");
+                QVERIFY(aggregateAlice.saveDetail(&emailAddress));
+            } else {
+                emailAddress.setEmailAddress("alice3@example.org");
+                QVERIFY(aggregateAlice.saveDetail(&emailAddress));
+            }
+        }
+    }
+
+    QVERIFY(m_cm->saveContact(&aggregateAlice));
+    aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
+
+    aaeas = aggregateAlice.details<QContactEmailAddress>();
+    QCOMPARE(aaeas.size(), 2);
+    if (aaeas.at(0).emailAddress() == QString::fromLatin1("aliceP3@test.com")) {
+        QCOMPARE(detailProvenanceContact(aaeas.at(0)), testContact);
+        QCOMPARE(detailProvenanceContact(aaeas.at(1)), trialContact);
+        QCOMPARE(aaeas.at(1).emailAddress(), QString::fromLatin1("alice3@example.org"));
+    } else {
+        QCOMPARE(detailProvenanceContact(aaeas.at(0)), trialContact);
+        QCOMPARE(aaeas.at(0).emailAddress(), QString::fromLatin1("alice3@example.org"));
+        QCOMPARE(detailProvenanceContact(aaeas.at(1)), testContact);
+        QCOMPARE(aaeas.at(1).emailAddress(), QString::fromLatin1("aliceP3@test.com"));
+    }
+
+    testAlice = m_cm->contact(retrievalId(testAlice));
+    QCOMPARE(testAlice.details<QContactEmailAddress>().count(), 1);
+    QCOMPARE(testAlice.details<QContactEmailAddress>().at(0).emailAddress(), QString::fromLatin1("aliceP3@test.com"));
+    QCOMPARE(testAlice.detail<QContactEmailAddress>().value(QContactDetail__FieldModifiable).toBool(), true);
+
+    trialAlice = m_cm->contact(retrievalId(trialAlice));
+    QCOMPARE(trialAlice.details<QContactEmailAddress>().count(), 1);
+    QCOMPARE(trialAlice.details<QContactEmailAddress>().at(0).emailAddress(), QString::fromLatin1("alice3@example.org"));
+    QCOMPARE(trialAlice.detail<QContactEmailAddress>().value(QContactDetail__FieldModifiable).toBool(), true);
 }
 
 void tst_Aggregation::promotionToSingleLocal()
