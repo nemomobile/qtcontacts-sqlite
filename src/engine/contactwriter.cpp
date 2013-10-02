@@ -3080,25 +3080,15 @@ static bool updateTimestamp(QContact *contact, bool setCreationTimestamp)
 {
     QContactTimestamp timestamp = contact->detail<QContactTimestamp>();
     QDateTime createdTime = timestamp.created().toUTC();
-    QDateTime modifiedTime = timestamp.lastModified().toUTC();
-    bool needsSave = false;
+    QDateTime modifiedTime = QDateTime::currentDateTimeUtc();
 
-    if (!modifiedTime.isValid()) {
-        modifiedTime = QDateTime::currentDateTimeUtc();
-        timestamp.setLastModified(modifiedTime);
-        needsSave = true;
-    }
-
+    // always clobber last modified timestamp.
+    timestamp.setLastModified(modifiedTime);
     if (setCreationTimestamp && !createdTime.isValid()) {
         timestamp.setCreated(modifiedTime);
-        needsSave = true;
     }
 
-    if (needsSave) {
-        return contact->saveDetail(&timestamp);
-    }
-
-    return true;
+    return contact->saveDetail(&timestamp);
 }
 
 QContactManager::Error ContactWriter::create(QContact *contact, const DetailList &definitionMask, int maxAggregateId, bool withinTransaction, bool withinAggregateUpdate)
