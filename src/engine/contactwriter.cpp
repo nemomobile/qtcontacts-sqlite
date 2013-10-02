@@ -1747,7 +1747,11 @@ template <typename T> bool ContactWriter::writeDetails(
         QVariant detailId = query.lastInsertId();
         query.finish();
 
-        QString provenance(detail.value(QContactDetail__FieldProvenance).toString());
+        QString provenance;
+        if (!syncable) {
+            // Syncable details should have their provenance values updated on every write
+            provenance = detail.value(QContactDetail__FieldProvenance).toString();
+        }
         if (provenance.isEmpty()) {
             provenance = QString::fromLatin1("%1:%2").arg(contactId).arg(detailId.toUInt());
             detail.setValue(QContactDetail__FieldProvenance, provenance);
