@@ -142,6 +142,6 @@ int Semaphore::value() const
 
 void Semaphore::error(const char *msg, int error)
 {
-    QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("%1 %2: %3 (%4)").arg(msg).arg(m_identifier).arg(::strerror(error)).arg(error));
+    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("%1 %2: %3 (%4)").arg(msg).arg(m_identifier).arg(::strerror(error)).arg(error));
 }
 

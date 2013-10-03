@@ -41,11 +41,17 @@ static bool qtcontacts_sqlite_debug_trace_enabled()
     return traceEnabled;
 }
 
-#define QTCONTACTS_SQLITE_DEBUG_TRACE(msg)                         \
+#define QTCONTACTS_SQLITE_DEBUG(msg)                               \
     do {                                                           \
         if (Q_UNLIKELY(qtcontacts_sqlite_debug_trace_enabled())) { \
             qWarning() << msg;                                     \
         }                                                          \
     } while (0)
 
+#define QTCONTACTS_SQLITE_WARNING(msg)    \
+    do {                                  \
+        qWarning() << msg;                \
+    } while (0)
+
 #endif
+

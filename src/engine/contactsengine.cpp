@@ -611,7 +611,7 @@ public:
             for (;;) {
                 bool pendingJob = false;
                 if (m_currentJob && m_currentJob->request() == request) {
-                    QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Wait for current job: %1 ms").arg(timeout));
+                    QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Wait for current job: %1 ms").arg(timeout));
                     // wait for the current job to updateState.
                     if (!m_finishedWait.wait(&m_mutex, timeout))
                         return false;
@@ -791,7 +791,7 @@ void JobThread::run()
             QElapsedTimer timer;
             timer.start();
             m_currentJob->execute(*m_engine, database, &reader, writer);
-            QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Job executed in %1 ms : %2 : error = %3")
+            QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Job executed in %1 ms : %2 : error = %3")
                     .arg(timer.elapsed()).arg(m_currentJob->description()).arg(m_currentJob->error()));
             locker.relock();
             m_finishedJobs.append(m_currentJob);
@@ -843,7 +843,7 @@ QContactManager::Error ContactsEngine::open()
         ContactNotifier::connect("relationshipsRemoved", "au", this, SLOT(_q_relationshipsRemoved(QVector<quint32>)));
         return QContactManager::NoError;
     } else {
-        QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Unable to open database"));
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to open engine database"));
         return QContactManager::UnspecifiedError;
     }
 }
@@ -1301,7 +1301,7 @@ void ContactsEngine::regenerateDisplayLabel(QContact &contact) const
     QContactManager::Error displayLabelError = QContactManager::NoError;
     QString label = synthesizedDisplayLabel(contact, &displayLabelError);
     if (displayLabelError != QContactManager::NoError) {
-        QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Unable to regenerate displayLabel for contact: %1").arg(ContactId::toString(contact)));
+        QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Unable to regenerate displayLabel for contact: %1").arg(ContactId::toString(contact)));
         return;
     }
 
