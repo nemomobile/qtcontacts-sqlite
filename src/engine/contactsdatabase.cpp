@@ -505,6 +505,7 @@ static const char *createTables[] =
     createTagsDetailsContactIdIndex,
     createUrlsDetailsContactIdIndex,
     createTpMetadataDetailsContactIdIndex,
+    createExtendedDetailsContactIdIndex,
     createIdentitiesTable,
     createRelationshipsTable,
     createRemoveTrigger,
