@@ -139,7 +139,7 @@ bool connect(const char *name, const char *signature, QObject *receiver, const c
     static QDBusConnection connection(QDBusConnection::sessionBus());
 
     if (!connection.isConnected()) {
-        QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Session Bus is not connected"));
+        QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Session Bus is not connected"));
         return false;
     }
 
@@ -150,7 +150,7 @@ bool connect(const char *name, const char *signature, QObject *receiver, const c
                             QLatin1String(signature),
                             receiver,
                             slot)) {
-        QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Unable to connect DBUS signal: %1").arg(name));
+        QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Unable to connect DBUS signal: %1").arg(name));
         return false;
     }
 

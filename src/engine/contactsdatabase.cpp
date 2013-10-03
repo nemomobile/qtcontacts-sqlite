@@ -543,7 +543,7 @@ static bool execute(QSqlDatabase &database, const QString &statement)
 {
     QSqlQuery query(database);
     if (!query.exec(statement)) {
-        QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Query failed: %1\n%2")
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Query failed: %1\n%2")
                 .arg(query.lastError().text())
                 .arg(statement));
         return false;
@@ -651,7 +651,7 @@ static QStringList findExistingTables(QSqlDatabase &database)
 
     QSqlQuery query(database);
     if (!query.exec(sql)) {
-        QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Unable to query tables"));
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to query tables"));
     } else while (query.next()) {
         rv.append(query.value(0).toString());
     }
@@ -675,7 +675,7 @@ static QStringList findExistingColumns(const char *table, QSqlDatabase &database
 
     QSqlQuery query(database);
     if (!query.exec(statement)) {
-        QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Unable to query columns for: %1").arg(table));
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to query columns for: %1").arg(table));
     } else if (query.next()) {
         QString tableDef = query.value(0).toString();
 
@@ -714,11 +714,11 @@ static bool upgradeDatabase(QSqlDatabase &database)
         QStringList existingTables = findExistingTables(database);
         if (!existingTables.contains(table->name)) {
             if (!addTable(table, database)) {
-                QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Unable to add table: %1").arg(table->name));
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to add table: %1").arg(table->name));
                 error = true;
             } else if (table->postInstall) {
                 if (!(*table->postInstall)(database)) {
-                    QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Unable to run post install function for table: %1").arg(table->name));
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to run post install function for table: %1").arg(table->name));
                     error = true;
                 }
             }
@@ -726,7 +726,7 @@ static bool upgradeDatabase(QSqlDatabase &database)
             if (error) {
                 break;
             } else {
-                QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Added table: %1").arg(table->name));
+                QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Added table: %1").arg(table->name));
             }
         }
     }
@@ -738,11 +738,11 @@ static bool upgradeDatabase(QSqlDatabase &database)
             QStringList existingColumns = findExistingColumns(column->table, database);
             if (!existingColumns.contains(column->name)) {
                 if (!addColumn(column, database)) {
-                    QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Unable to add column: %1 to table: %2").arg(column->name).arg(column->table));
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to add column: %1 to table: %2").arg(column->name).arg(column->table));
                     error = true;
                 } else if (column->postInstall) {
                     if (!(*column->postInstall)(database)) {
-                        QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Unable to run post install function for column: %1 in table: %2").arg(column->name).arg(column->table));
+                        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to run post install function for column: %1 in table: %2").arg(column->name).arg(column->table));
                         error = true;
                     }
                 }
@@ -750,7 +750,7 @@ static bool upgradeDatabase(QSqlDatabase &database)
                 if (error) {
                     break;
                 } else {
-                    QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Added column: %1 to table: %2").arg(column->name).arg(column->table));
+                    QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Added column: %1 to table: %2").arg(column->name).arg(column->table));
                 }
             }
         }
@@ -770,7 +770,7 @@ static bool configureDatabase(QSqlDatabase &database)
         || !execute(database, QLatin1String(setupTempStore))
         || !execute(database, QLatin1String(setupJournal))
         || !execute(database, QLatin1String(setupSynchronous))) {
-        QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Failed to configure contacts database: %1")
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to configure contacts database: %1")
                 .arg(database.lastError().text()));
         return false;
     }
@@ -792,7 +792,7 @@ static bool prepareDatabase(QSqlDatabase &database)
         QSqlQuery query(database);
 
         if (!query.exec(QLatin1String(createTables[i]))) {
-            QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Table creation failed: %1\n%2")
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Table creation failed: %1\n%2")
                     .arg(query.lastError().text())
                     .arg(createTables[i]));
             error = true;
@@ -827,13 +827,13 @@ bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool
     // Create the temporary table (if we haven't already).
     QSqlQuery tableQuery(db);
     if (!tableQuery.prepare(createStatement.arg(table))) {
-        QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Failed to prepare temporary table query: %1\n%2")
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary table query: %1\n%2")
                 .arg(tableQuery.lastError().text())
                 .arg(createStatement));
         return false;
     }
     if (!tableQuery.exec()) {
-        QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Failed to create temporary table: %1\n%2")
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create temporary table: %1\n%2")
                 .arg(tableQuery.lastError().text())
                 .arg(createStatement));
         return false;
@@ -843,13 +843,13 @@ bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool
     // Delete all existing records.
     QSqlQuery deleteRecordsQuery(db);
     if (!deleteRecordsQuery.prepare(deleteRecordsStatement.arg(table))) {
-        QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Failed to prepare delete records query: %1\n%2")
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare delete records query: %1\n%2")
                 .arg(deleteRecordsQuery.lastError().text())
                 .arg(deleteRecordsStatement));
         return false;
     }
     if (!deleteRecordsQuery.exec()) {
-        QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Failed to delete temporary records: %1\n%2")
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to delete temporary records: %1\n%2")
                 .arg(deleteRecordsQuery.lastError().text())
                 .arg(deleteRecordsStatement));
         return false;
@@ -863,7 +863,7 @@ bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool
         // specified by filter
         const QString insertStatement = insertFilterStatement.arg(table).arg(join).arg(where).arg(orderBy);
         if (!insertQuery.prepare(insertStatement)) {
-            QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Failed to prepare temporary contact ids: %1\n%2")
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary contact ids: %1\n%2")
                     .arg(insertQuery.lastError().text())
                     .arg(insertStatement));
             return false;
@@ -872,7 +872,7 @@ bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool
             insertQuery.bindValue(i, boundValues.at(i));
         }
         if (!insertQuery.exec()) {
-            QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Failed to insert temporary contact ids: %1\n%2")
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to insert temporary contact ids: %1\n%2")
                     .arg(insertQuery.lastError().text())
                     .arg(insertStatement));
             return false;
@@ -887,14 +887,14 @@ bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool
         // order of input ids.
         const QString insertStatement = insertIdsStatement.arg(table);
         if (!insertQuery.prepare(insertStatement)) {
-            QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Failed to prepare temporary contact ids: %1\n%2")
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary contact ids: %1\n%2")
                     .arg(insertQuery.lastError().text())
                     .arg(insertStatement));
             return false;
         }
         insertQuery.bindValue(0, boundIds);
         if (!insertQuery.execBatch()) {
-            QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Failed to insert temporary contact ids: %1\n%2")
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to insert temporary contact ids: %1\n%2")
                     .arg(insertQuery.lastError().text())
                     .arg(insertStatement));
             return false;
@@ -914,12 +914,12 @@ void clearTemporaryContactIdsTable(QSqlDatabase &db, const QString &table)
         QSqlQuery deleteRecordsQuery(db);
         const QString deleteRecordsStatement = QString::fromLatin1("DELETE FROM temp.%1").arg(table);
         if (!deleteRecordsQuery.prepare(deleteRecordsStatement)) {
-            QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("FATAL ERROR: Failed to prepare delete records query - the next query may return spurious results: %1\n%2")
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare delete records query - the next query may return spurious results: %1\n%2")
                     .arg(deleteRecordsQuery.lastError().text())
                     .arg(deleteRecordsStatement));
         }
         if (!deleteRecordsQuery.exec()) {
-            QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("FATAL ERROR: Failed to delete temporary records - the next query may return spurious results: %1\n%2")
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to delete temporary records - the next query may return spurious results: %1\n%2")
                     .arg(deleteRecordsQuery.lastError().text())
                     .arg(deleteRecordsStatement));
         }
@@ -943,7 +943,7 @@ QSqlDatabase ContactsDatabase::open(const QString &databaseName)
     }
 
     if (!databaseDir.exists() && !databaseDir.mkpath(QString::fromLatin1("."))) {
-        QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Unable to create contacts database directory: %1").arg(databaseDir.path()));
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to create contacts database directory: %1").arg(databaseDir.path()));
         return QSqlDatabase();
     }
 
@@ -954,13 +954,13 @@ QSqlDatabase ContactsDatabase::open(const QString &databaseName)
     database.setDatabaseName(databaseFile);
 
     if (!database.open()) {
-        QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Failed to open contacts database: %1")
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to open contacts database: %1")
                 .arg(database.lastError().text()));
         return database;
     }
 
     if (!exists && !prepareDatabase(database)) {
-        QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Failed to prepare contacts database - removing: %1")
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare contacts database - removing: %1")
                 .arg(database.lastError().text()));
 
         database.close();
@@ -969,7 +969,7 @@ QSqlDatabase ContactsDatabase::open(const QString &databaseName)
         return database;
     } else {
         if (!upgradeDatabase(database)) {
-            QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Failed to upgrade contacts database: %1")
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to upgrade contacts database: %1")
                     .arg(database.lastError().text()));
             return database;
         }
@@ -979,7 +979,7 @@ QSqlDatabase ContactsDatabase::open(const QString &databaseName)
         }
     }
 
-    QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Opened contacts database: %1").arg(databaseFile));
+    QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Opened contacts database: %1").arg(databaseFile));
     return database;
 }
 
@@ -1003,7 +1003,7 @@ QSqlQuery ContactsDatabase::prepare(const char *statement, const QSqlDatabase &d
     QSqlQuery query(database);
     query.setForwardOnly(true);
     if (!query.prepare(statement)) {
-        QTCONTACTS_SQLITE_DEBUG_TRACE(QString::fromLatin1("Failed to prepare query: %1\n%2")
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query: %1\n%2")
                 .arg(query.lastError().text())
                 .arg(statement));
         return QSqlQuery();
