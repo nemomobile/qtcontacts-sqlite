@@ -1985,25 +1985,9 @@ static QContactManager::Error enforceDetailConstraints(QContact *contact)
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
 static void adjustDetailUrisForLocal(QContactDetail &currDet)
 {
-    static const QString prefix(aggregateSyncTarget + QChar::fromLatin1(':'));
-
-    if (currDet.detailUri().startsWith(prefix)) {
-        currDet.setDetailUri(currDet.detailUri().mid(10));
-    }
-
-    bool needsLinkedDUs = false;
-    QStringList linkedDUs = currDet.linkedDetailUris();
-    for (int i = 0; i < linkedDUs.size(); ++i) {
-        QString currLDU = linkedDUs.at(i);
-        if (currLDU.startsWith(prefix)) {
-            currLDU = currLDU.mid(10);
-            linkedDUs.replace(i, currLDU);
-            needsLinkedDUs = true;
-        }
-    }
-    if (needsLinkedDUs) {
-        currDet.setLinkedDetailUris(linkedDUs);
-    }
+    // A local detail should not reproduce the detail URI information from another contact's details
+    currDet.setDetailUri(QString());
+    currDet.setLinkedDetailUris(QStringList());
 }
 
 /*
@@ -2270,9 +2254,10 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
     return writeError;
 }
 
-static void adjustDetailUrisForAggregate(QContactDetail &currDet)
+static void adjustDetailUrisForAggregate(QContactDetail &currDet, quint32 aggId)
 {
-    static const QString prefix(aggregateSyncTarget + QChar::fromLatin1(':'));
+    static const QString prefixFormat(aggregateSyncTarget + QString::fromLatin1("-%1:"));
+    const QString prefix(prefixFormat.arg(aggId));
 
     if (!currDet.detailUri().isEmpty()) {
         currDet.setDetailUri(prefix + currDet.detailUri());
@@ -2304,6 +2289,8 @@ static void adjustDetailUrisForAggregate(QContactDetail &currDet)
 static void promoteDetailsToAggregate(const QContact &contact, QContact *aggregate, const ContactWriter::DetailList &definitionMask)
 {
     static const ContactWriter::DetailList unpromotedDetailTypes(getUnpromotedDetailTypes());
+
+    const quint32 aggId = ContactId::databaseId(*aggregate);
 
     foreach (const QContactDetail &original, contact.details()) {
         if (unpromotedDetailTypes.contains(detailType(original))) {
@@ -2388,7 +2375,7 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
             // We also modify any detail uris by prepending "aggregate:" to the start,
             // to ensure uniqueness.
             QContactDetail det(original);
-            adjustDetailUrisForAggregate(det);
+            adjustDetailUrisForAggregate(det, aggId);
 
             // This is a pretty crude heuristic.  The detail equality
             // algorithm only attempts to match values, not key/value pairs.
@@ -2942,7 +2929,7 @@ void ContactWriter::regenerateAggregates(const QList<quint32> &aggregateIds, con
                 if (!detailListContains(unpromotedDetailTypes, currDet) &&
                     (definitionMask.isEmpty() || detailListContains(definitionMask, currDet))) {
                     // promote this detail to the aggregate.
-                    adjustDetailUrisForAggregate(currDet);
+                    adjustDetailUrisForAggregate(currDet, aggId);
                     aggregateContact.saveDetail(&currDet);
                 }
             }
@@ -3242,7 +3229,7 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
 
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     if (writeError == QContactManager::NoError) {
-        if (oldSyncTarget != QLatin1String("aggregate")) {
+        if (oldSyncTarget != aggregateSyncTarget) {
             QList<quint32> aggregatesOfUpdated;
             m_findAggregateForContact.bindValue(":localId", contactId);
             if (!m_findAggregateForContact.exec()) {
