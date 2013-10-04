@@ -1467,6 +1467,7 @@ static ContactWriter::DetailList getUnpromotedDetailTypes()
     rv << detailType<QContactDisplayLabel>();
     rv << detailType<QContactGlobalPresence>();
     rv << detailType<QContactStatusFlags>();
+    rv << detailType<QContactOriginMetadata>();
     return rv;
 }
 
