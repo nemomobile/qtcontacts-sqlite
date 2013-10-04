@@ -33,6 +33,10 @@
 
 #include "../../util.h"
 
+#define TRIM_MSECS(t) t.addMSecs(0 - t.msec())
+#define TRIM_DT_MSECS(dt) dt.addMSecs(0 - dt.time().msec())
+#define DT_BETWEEN(dt, lower, upper) QVERIFY(TRIM_DT_MSECS(dt) >= TRIM_DT_MSECS(lower) && TRIM_DT_MSECS(dt) <= TRIM_DT_MSECS(upper))
+
 static const QString aggregatesRelationship(relationshipString(QContactRelationship::Aggregates));
 
 namespace {
@@ -1617,7 +1621,7 @@ void tst_Aggregation::uniquenessConstraints()
     // even though it exists in the main table.
     QDateTime testDt = QDateTime::currentDateTime();
     QTime testDtTime = testDt.time();
-    testDt.setTime(testDtTime.addMSecs(testDtTime.msec()*-1)); // get rid of millis as sqlite doesn't support them.
+    testDt.setTime(TRIM_MSECS(testDtTime));
     bool hasCreatedTs = false;
     if (aggregateAlice.details<QContactTimestamp>().size() == 0) {
         QContactTimestamp firstTs;
@@ -1637,12 +1641,16 @@ void tst_Aggregation::uniquenessConstraints()
     ats = aggregateAlice.detail<QContactTimestamp>();
     ats.setLastModified(testDt);
     QVERIFY(aggregateAlice.saveDetail(&ats));
+
+    QDateTime beforeWrite(QDateTime::currentDateTimeUtc());
     QVERIFY(m_cm->saveContact(&aggregateAlice));
-    QCOMPARE(m_cm->contact(retrievalId(aggregateAlice)).detail<QContactTimestamp>().lastModified(), testDt);
-    if (hasCreatedTs) {
-        QCOMPARE(m_cm->contact(retrievalId(aggregateAlice)).detail<QContactTimestamp>().created(), testDt);
-    }
     aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
+
+    QVERIFY(aggregateAlice.details<QContactTimestamp>().size() == 1);
+    DT_BETWEEN(aggregateAlice.detail<QContactTimestamp>().lastModified(), beforeWrite, QDateTime::currentDateTimeUtc());
+    if (hasCreatedTs) {
+        QCOMPARE(aggregateAlice.detail<QContactTimestamp>().created(), testDt);
+    }
 
     // test uniqueness constraint of guid detail.  Guid is a bit special, as it's not in the main table.
     QVERIFY(aggregateAlice.details<QContactGuid>().size() == 0);
@@ -3172,8 +3180,6 @@ void tst_Aggregation::customSemantics()
     m_cm->removeContact(removalId(alice));
 }
 
-#define TRIM_DT_MSECS(dt) dt.addMSecs(0 - dt.time().msec())
-#define DT_BETWEEN(dt, lower, upper) QVERIFY(TRIM_DT_MSECS(dt) >= TRIM_DT_MSECS(lower) && TRIM_DT_MSECS(dt) <= TRIM_DT_MSECS(upper))
 void tst_Aggregation::changeLogFiltering()
 {
     // The qtcontacts-sqlite engine automatically adds creation timestamp
