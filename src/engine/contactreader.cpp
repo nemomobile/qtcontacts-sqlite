@@ -225,8 +225,8 @@ static void setValues(QContactAvatar *detail, QSqlQuery *query, const int offset
 {
     typedef QContactAvatar T;
 
-    setValue(detail, T::FieldImageUrl, query->value(offset + 0));
-    setValue(detail, T::FieldVideoUrl, query->value(offset + 1));
+    setValue(detail, T::FieldImageUrl, QUrl(query->value(offset + 0).toString()));
+    setValue(detail, T::FieldVideoUrl, QUrl(query->value(offset + 1).toString()));
     setValue(detail, QContactAvatar__FieldAvatarMetadata, query->value(offset + 2));
 }
 
@@ -454,7 +454,7 @@ static void setValues(QContactUrl *detail, QSqlQuery *query, const int offset)
 {
     typedef QContactUrl T;
 
-    setValue(detail, T::FieldUrl    , query->value(offset + 0));
+    setValue(detail, T::FieldUrl    , QUrl(query->value(offset + 0).toString()));
 #ifdef USING_QTPIM
     setValue(detail, T::FieldSubType, QVariant::fromValue<int>(Url::subType(query->value(offset + 1).toString())));
 #else
