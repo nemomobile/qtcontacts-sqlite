@@ -160,7 +160,7 @@ static const char *existingContactIds =
         "\n SELECT DISTINCT contactId FROM Contacts;";
 
 static const char *modifiableDetails =
-        "\n SELECT detailId, detail FROM Details WHERE contactId = :contactId AND modifiable = 1";
+        "\n SELECT provenance, detail FROM Details WHERE contactId = :contactId AND modifiable = 1";
 
 static const char *selfContactId =
         "\n SELECT DISTINCT contactId FROM Identities WHERE identity = :identity;";
@@ -1715,6 +1715,7 @@ template <typename T> bool ContactWriter::writeDetails(
         QContact *contact,
         QSqlQuery &removeQuery,
         const DetailList &definitionMask,
+        const QString &syncTarget,
         bool syncable,
         QContactManager::Error *error)
 {
@@ -1754,7 +1755,7 @@ template <typename T> bool ContactWriter::writeDetails(
             provenance = detail.value(QContactDetail__FieldProvenance).toString();
         }
         if (provenance.isEmpty()) {
-            provenance = QString::fromLatin1("%1:%2").arg(contactId).arg(detailId.toUInt());
+            provenance = QString::fromLatin1("%1:%2:%3").arg(contactId).arg(detailId.toUInt()).arg(syncTarget);
             detail.setValue(QContactDetail__FieldProvenance, provenance);
             contact->saveDetail(&detail);
         }
@@ -2577,10 +2578,9 @@ QContactManager::Error ContactWriter::calculateDelta(QContact *contact, const Co
                         .arg(m_modifiableDetails.lastError().text()));
             } else {
                 while (m_modifiableDetails.next()) {
-                    const quint32 detailId = m_modifiableDetails.value(0).toUInt();
+                    const QString provenance = m_modifiableDetails.value(0).toString();
                     const QString detail = m_modifiableDetails.value(1).toString();
 
-                    const QString provenance = QString::fromLatin1("%1:%2").arg(contactId).arg(detailId);
                     StringPair identity = qMakePair(provenance, detail);
 
                     QHash<StringPair, QContactDetail>::iterator eit = existingDetails.find(identity);
@@ -3263,26 +3263,26 @@ QContactManager::Error ContactWriter::write(quint32 contactId, QContact *contact
                     (syncTarget != wasLocalSyncTarget);
 
     QContactManager::Error error = QContactManager::NoError;
-    if (writeDetails<QContactAddress>(contactId, contact, m_removeAddress, definitionMask, syncable, &error)
-            && writeDetails<QContactAnniversary>(contactId, contact, m_removeAnniversary, definitionMask, syncable, &error)
-            && writeDetails<QContactAvatar>(contactId, contact, m_removeAvatar, definitionMask, syncable, &error)
-            && writeDetails<QContactBirthday>(contactId, contact, m_removeBirthday, definitionMask, syncable, &error)
-            && writeDetails<QContactEmailAddress>(contactId, contact, m_removeEmailAddress, definitionMask, syncable, &error)
-            && writeDetails<QContactGlobalPresence>(contactId, contact, m_removeGlobalPresence, definitionMask, syncable, &error)
-            && writeDetails<QContactGuid>(contactId, contact, m_removeGuid, definitionMask, syncable, &error)
-            && writeDetails<QContactHobby>(contactId, contact, m_removeHobby, definitionMask, syncable, &error)
-            && writeDetails<QContactNickname>(contactId, contact, m_removeNickname, definitionMask, syncable, &error)
-            && writeDetails<QContactNote>(contactId, contact, m_removeNote, definitionMask, syncable, &error)
-            && writeDetails<QContactOnlineAccount>(contactId, contact, m_removeOnlineAccount, definitionMask, syncable, &error)
-            && writeDetails<QContactOrganization>(contactId, contact, m_removeOrganization, definitionMask, syncable, &error)
-            && writeDetails<QContactPhoneNumber>(contactId, contact, m_removePhoneNumber, definitionMask, syncable, &error)
-            && writeDetails<QContactPresence>(contactId, contact, m_removePresence, definitionMask, syncable, &error)
-            && writeDetails<QContactRingtone>(contactId, contact, m_removeRingtone, definitionMask, syncable, &error)
-            && writeDetails<QContactTag>(contactId, contact, m_removeTag, definitionMask, syncable, &error)
-            && writeDetails<QContactUrl>(contactId, contact, m_removeUrl, definitionMask, syncable, &error)
-            && writeDetails<QContactOriginMetadata>(contactId, contact, m_removeOriginMetadata, definitionMask, syncable, &error)
+    if (writeDetails<QContactAddress>(contactId, contact, m_removeAddress, definitionMask, syncTarget, syncable, &error)
+            && writeDetails<QContactAnniversary>(contactId, contact, m_removeAnniversary, definitionMask, syncTarget, syncable, &error)
+            && writeDetails<QContactAvatar>(contactId, contact, m_removeAvatar, definitionMask, syncTarget, syncable, &error)
+            && writeDetails<QContactBirthday>(contactId, contact, m_removeBirthday, definitionMask, syncTarget, syncable, &error)
+            && writeDetails<QContactEmailAddress>(contactId, contact, m_removeEmailAddress, definitionMask, syncTarget, syncable, &error)
+            && writeDetails<QContactGlobalPresence>(contactId, contact, m_removeGlobalPresence, definitionMask, syncTarget, syncable, &error)
+            && writeDetails<QContactGuid>(contactId, contact, m_removeGuid, definitionMask, syncTarget, syncable, &error)
+            && writeDetails<QContactHobby>(contactId, contact, m_removeHobby, definitionMask, syncTarget, syncable, &error)
+            && writeDetails<QContactNickname>(contactId, contact, m_removeNickname, definitionMask, syncTarget, syncable, &error)
+            && writeDetails<QContactNote>(contactId, contact, m_removeNote, definitionMask, syncTarget, syncable, &error)
+            && writeDetails<QContactOnlineAccount>(contactId, contact, m_removeOnlineAccount, definitionMask, syncTarget, syncable, &error)
+            && writeDetails<QContactOrganization>(contactId, contact, m_removeOrganization, definitionMask, syncTarget, syncable, &error)
+            && writeDetails<QContactPhoneNumber>(contactId, contact, m_removePhoneNumber, definitionMask, syncTarget, syncable, &error)
+            && writeDetails<QContactPresence>(contactId, contact, m_removePresence, definitionMask, syncTarget, syncable, &error)
+            && writeDetails<QContactRingtone>(contactId, contact, m_removeRingtone, definitionMask, syncTarget, syncable, &error)
+            && writeDetails<QContactTag>(contactId, contact, m_removeTag, definitionMask, syncTarget, syncable, &error)
+            && writeDetails<QContactUrl>(contactId, contact, m_removeUrl, definitionMask, syncTarget, syncable, &error)
+            && writeDetails<QContactOriginMetadata>(contactId, contact, m_removeOriginMetadata, definitionMask, syncTarget, syncable, &error)
 #ifdef USING_QTPIM
-            && writeDetails<QContactExtendedDetail>(contactId, contact, m_removeExtendedDetail, definitionMask, syncable, &error)
+            && writeDetails<QContactExtendedDetail>(contactId, contact, m_removeExtendedDetail, definitionMask, syncTarget, syncable, &error)
 #endif
             ) {
         return QContactManager::NoError;
