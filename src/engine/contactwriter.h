@@ -133,6 +133,7 @@ private:
             const DetailList &definitionMask,
             const QString &syncTarget,
             bool syncable,
+            bool wasLocal,
             QContactManager::Error *error);
 
     template <typename T> bool writeCommonDetails(
@@ -140,6 +141,7 @@ private:
             const QVariant &detailId,
             const T &detail,
             bool syncable,
+            bool wasLocal,
             QContactManager::Error *error);
 
     template <typename T> bool removeCommonDetails(quint32 contactId, QContactManager::Error *error);
