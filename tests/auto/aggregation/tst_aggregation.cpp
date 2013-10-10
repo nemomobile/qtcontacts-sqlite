@@ -1103,6 +1103,7 @@ void tst_Aggregation::updateAggregateOfLocalAndModifiableSync()
 
     // Aggregate details are not modifiable
     QCOMPARE(aggregateAlice.detail<QContactName>().value(QContactDetail__FieldModifiable).toBool(), false);
+    QCOMPARE(aggregateAlice.detail<QContactNickname>().value(QContactDetail__FieldModifiable).toBool(), false);
     QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().value(QContactDetail__FieldModifiable).toBool(), false);
     QCOMPARE(aggregateAlice.details<QContactEmailAddress>().at(0).value(QContactDetail__FieldModifiable).toBool(), false);
     QCOMPARE(aggregateAlice.details<QContactEmailAddress>().at(1).value(QContactDetail__FieldModifiable).toBool(), false);
@@ -1129,6 +1130,7 @@ void tst_Aggregation::updateAggregateOfLocalAndModifiableSync()
 
     // Aggregate details which are promoted from modifiable details are not readonly
     QVERIFY((aggregateAlice.detail<QContactName>().accessConstraints() & QContactDetail::ReadOnly) == 0);
+    QVERIFY((aggregateAlice.detail<QContactNickname>().accessConstraints() & QContactDetail::ReadOnly) == 0);
     QVERIFY((aggregateAlice.detail<QContactPhoneNumber>().accessConstraints() & QContactDetail::ReadOnly) == 0);
     QVERIFY((aggregateAlice.details<QContactEmailAddress>().at(0).accessConstraints() & QContactDetail::ReadOnly) == 0);
     QVERIFY((aggregateAlice.details<QContactEmailAddress>().at(1).accessConstraints() & QContactDetail::ReadOnly) == 0);
@@ -2382,8 +2384,11 @@ void tst_Aggregation::wasLocal()
     QCOMPARE(aggregateAlice.detail<QContactNickname>().nickname(), QLatin1String("Cooper"));
     QCOMPARE(localAlice.detail<QContactNickname>().nickname(), QString());
 
-    // Changes are not promoted down to the was_local constituent
-    QContactPhoneNumber pn;
+    // Changes are promoted down to the was_local constituent
+    QContactPhoneNumber pn = aggregateAlice.details<QContactPhoneNumber>().at(0);
+    if (pn.number() != QLatin1String("2345678")) {
+        pn = aggregateAlice.details<QContactPhoneNumber>().at(1);
+    }
     pn.setNumber("7654321");
 #ifdef USING_QTPIM
     pn.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypeMobile);
@@ -2398,18 +2403,39 @@ void tst_Aggregation::wasLocal()
     aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
     localBob = m_cm->contact(retrievalId(localBob));
 
-    QCOMPARE(localAlice.details<QContactPhoneNumber>().count(), 2);
-    foreach (const QContactPhoneNumber &phoneNumber, localAlice.details<QContactPhoneNumber>()) {
+    QCOMPARE(localAlice.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(localAlice.details<QContactPhoneNumber>().at(0).number(), QLatin1String("1234567"));
+    QCOMPARE(localBob.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(localBob.details<QContactPhoneNumber>().at(0).number(), QLatin1String("7654321"));
+    QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().count(), 2);
+    foreach (const QContactPhoneNumber &phoneNumber, aggregateAlice.details<QContactPhoneNumber>()) {
         QVERIFY(phoneNumber.number() == QLatin1String("1234567") ||
                 phoneNumber.number() == QLatin1String("7654321"));
     }
+
+    // New details are not promoted down to the was_local constituent
+    pn = QContactPhoneNumber();
+    pn.setNumber("1234321");
+    aggregateAlice.saveDetail(&pn);
+
+    QVERIFY(m_cm->saveContact(&aggregateAlice));
+
+    localAlice = m_cm->contact(retrievalId(localAlice));
+    aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
+    localBob = m_cm->contact(retrievalId(localBob));
+
+    QCOMPARE(localAlice.details<QContactPhoneNumber>().count(), 2);
+    foreach (const QContactPhoneNumber &phoneNumber, localAlice.details<QContactPhoneNumber>()) {
+        QVERIFY(phoneNumber.number() == QLatin1String("1234567") ||
+                phoneNumber.number() == QLatin1String("1234321"));
+    }
     QCOMPARE(localBob.details<QContactPhoneNumber>().count(), 1);
-    QCOMPARE(localBob.details<QContactPhoneNumber>().at(0).number(), QLatin1String("2345678"));
+    QCOMPARE(localBob.details<QContactPhoneNumber>().at(0).number(), QLatin1String("7654321"));
     QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().count(), 3);
     foreach (const QContactPhoneNumber &phoneNumber, aggregateAlice.details<QContactPhoneNumber>()) {
         QVERIFY(phoneNumber.number() == QLatin1String("1234567") ||
-                phoneNumber.number() == QLatin1String("2345678") ||
-                phoneNumber.number() == QLatin1String("7654321"));
+                phoneNumber.number() == QLatin1String("7654321") ||
+                phoneNumber.number() == QLatin1String("1234321"));
     }
 }
 
