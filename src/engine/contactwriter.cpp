@@ -1750,15 +1750,15 @@ template <typename T> bool ContactWriter::writeDetails(
         query.finish();
 
         QString provenance;
-        if (!syncable) {
-            // Syncable details should have their provenance values updated on every write
+        if (syncTarget == aggregateSyncTarget) {
+            // Preserve the existing provenance information
             provenance = detail.value(QContactDetail__FieldProvenance).toString();
-        }
-        if (provenance.isEmpty()) {
+        } else {
+            // This detail is not aggregated from another
             provenance = QString::fromLatin1("%1:%2:%3").arg(contactId).arg(detailId.toUInt()).arg(syncTarget);
-            detail.setValue(QContactDetail__FieldProvenance, provenance);
-            contact->saveDetail(&detail);
         }
+        detail.setValue(QContactDetail__FieldProvenance, provenance);
+        contact->saveDetail(&detail);
 
         if (!writeCommonDetails(contactId, detailId, detail, syncable, error)) {
             return false;
