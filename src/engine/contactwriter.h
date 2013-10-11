@@ -107,7 +107,7 @@ private:
     bool commitTransaction();
     void rollbackTransaction();
 
-    QContactManager::Error create(QContact *contact, const DetailList &definitionMask, int maxAggregateId, bool withinTransaction, bool withinAggregateUpdate);
+    QContactManager::Error create(QContact *contact, const DetailList &definitionMask, bool withinTransaction, bool withinAggregateUpdate);
     QContactManager::Error update(QContact *contact, const DetailList &definitionMask, bool *aggregateUpdated, bool withinTransaction, bool withinAggregateUpdate);
     QContactManager::Error write(quint32 contactId, QContact *contact, const DetailList &definitionMask);
 
@@ -117,7 +117,7 @@ private:
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     QContactManager::Error calculateDelta(QContact *contact, const ContactWriter::DetailList &definitionMask,
                                           QList<QContactDetail> *addDelta, QList<QContactDetail> *removeDelta, QList<QContact> *writeList);
-    QContactManager::Error updateOrCreateAggregate(QContact *contact, const DetailList &definitionMask, int maxAggregateId, bool withinTransaction);
+    QContactManager::Error updateOrCreateAggregate(QContact *contact, const DetailList &definitionMask, bool withinTransaction);
     QContactManager::Error updateLocalAndAggregate(QContact *contact, const DetailList &definitionMask, bool withinTransaction);
     void regenerateAggregates(const QList<quint32> &aggregateIds, const DetailList &definitionMask, bool withinTransaction);
     QContactManager::Error removeChildlessAggregates(QList<QContactIdType> *realRemoveIds);
@@ -174,8 +174,6 @@ private:
     QSqlQuery m_findConstituentsForAggregate;
     QSqlQuery m_findLocalForAggregate;
     QSqlQuery m_findAggregateForContact;
-    QSqlQuery m_findMaximumContactId;
-    QSqlQuery m_findMatchForContact;
     QSqlQuery m_childlessAggregateIds;
     QSqlQuery m_orphanContactIds;
     QSqlQuery m_checkContactExists;
