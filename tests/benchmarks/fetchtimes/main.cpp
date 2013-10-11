@@ -54,44 +54,75 @@ USE_CONTACTS_NAMESPACE
 static QStringList generateNonOverlappingFirstNamesList()
 {
     QStringList retn;
-    retn << "Zach" << "Zane" << "Yann" << "Yedrez" << "Ximmy" << "Xascha"
-         << "William" << "Wally" << "Vernon" << "Veston" << "Urqhart" << "Uelela"
-         << "Timothy" << "Tigga" << "Stan" << "Steve" << "Richard" << "Rafael"
-         << "Quirky" << "Quilton";
+    retn << "Zach" << "Zane" << "Zinedine" << "Zockey"
+         << "Yann" << "Yedrez" << "Yarrow" << "Yelter"
+         << "Ximmy" << "Xascha" << "Xanthar" << "Xachy"
+         << "William" << "Wally" << "Weston" << "Wulther"
+         << "Vernon" << "Veston" << "Victoria" << "Vuitton"
+         << "Urqhart" << "Uelela" << "Ulrich" << "Umpty"
+         << "Timothy" << "Tigga" << "Tabitha" << "Texter"
+         << "Stan" << "Steve" << "Sophie" << "Siphonie"
+         << "Richard" << "Rafael" << "Rachael" << "Rascal"
+         << "Quirky" << "Quilton" << "Quentin" << "Quarreller";
     return retn;
 }
 
 static QStringList generateNonOverlappingLastNamesList()
 {
     QStringList retn;
-    retn << "Quilter" << "Rigger" << "Sailor" << "Tailor" << "Underhill"
-         << "Vintner" << "Wicker" << "Xylophone" << "Yeoman" << "Zimmerman";
+    retn << "Quilter" << "Qualifa" << "Quarrier" << "Quickson"
+         << "Rigger" << "Render" << "Ranger" << "Reader"
+         << "Sailor" << "Smith" << "Salter" << "Shelfer"
+         << "Tailor" << "Tasker" << "Toppler" << "Tipster"
+         << "Underhill" << "Umpire" << "Upperhill" << "Uppsland"
+         << "Vintner" << "Vester" << "Victor" << "Vacationer"
+         << "Wicker" << "Whaler" << "Whistler" << "Wolf"
+         << "Xylophone" << "Xabu" << "Xanadu" << "Xatti"
+         << "Yeoman" << "Yesman" << "Yelper" << "Yachtsman"
+         << "Zimmerman" << "Zomething" << "Zeltic" << "Zephyr";
     return retn;
 }
 
 static QStringList generateFirstNamesList()
 {
     QStringList retn;
-    retn << "Alexandria" << "Andrew" << "Bob" << "Bronte" << "Clarence" << "Chandler"
-         << "Dominic" << "Diedre" << "Eric" << "Esther" << "Felicity" << "Fred"
-         << "Gary" << "Gertrude" << "Hillary" << "Henry" << "Jake" << "Jane"
-         << "Larry" << "Lilliane" << "Mary" << "Mark" << "Nathene" << "Nicholas"
-         << "Othello" << "Oscar" << "Penny" << "Peter";
+    retn << "Alexandria" << "Andrew" << "Adrien" << "Amos"
+         << "Bob" << "Bronte" << "Barry" << "Braxton"
+         << "Clarence" << "Chandler" << "Chris" << "Chantelle"
+         << "Dominic" << "Diedre" << "David" << "Derrick"
+         << "Eric" << "Esther" << "Eddie" << "Eean"
+         << "Felicity" << "Fred" << "Fletcher" << "Farraday"
+         << "Gary" << "Gertrude" << "Gerry" << "Germaine"
+         << "Hillary" << "Henry" << "Hans" << "Haddock"
+         << "Jacob" << "Jane" << "Jackson" << "Jennifer"
+         << "Larry" << "Lilliane" << "Lambert" << "Lilly"
+         << "Mary" << "Mark" << "Mirriam" << "Matthew"
+         << "Nathene" << "Nicholas" << "Ned" << "Norris"
+         << "Othello" << "Oscar" << "Olaf" << "Odinsdottur"
+         << "Penny" << "Peter" << "Patrick" << "Pilborough";
     return retn;
 }
 
 static QStringList generateMiddleNamesList()
 {
     QStringList retn;
-    retn << "Aubrey" << "Cody" << "Taylor";
+    retn << "Aubrey" << "Cody" << "Taylor" << "Leslie";
     return retn;
 }
 
 static QStringList generateLastNamesList()
 {
     QStringList retn;
-    retn << "Arkady" << "Baker" << "Cutter" << "Driller" << "Eeler"
-         << "Farmer" << "Grower" << "Helper" << "Inker" << "Joker";
+    retn << "Arkady" << "Addleman" << "Axeman" << "Applegrower" << "Anderson"
+         << "Baker" << "Bremmer" << "Bedlam" << "Barrymore" << "Battery"
+         << "Cutter" << "Cooper" << "Cutler" << "Catcher" << "Capemaker"
+         << "Driller" << "Dyer" << "Diver" << "Daytona" << "Duster"
+         << "Eeler" << "Eckhart" << "Eggsman" << "Empty" << "Ellersly"
+         << "Farmer" << "Farrier" << "Foster" << "Farseer" << "Fairtime"
+         << "Grower" << "Gaston" << "Gerriman" << "Gipsland" << "Guilder"
+         << "Helper" << "Hogfarmer" << "Harriet" << "Hope" << "Huxley"
+         << "Inker" << "Innman" << "Ipland" << "Instiller" << "Innis"
+         << "Joker" << "Jackson" << "Jolt" << "Jockey" << "Jerriman";
     return retn;
 }
 
@@ -100,7 +131,16 @@ static QStringList generatePhoneNumbersList()
     QStringList retn;
     retn << "111222" << "111333" << "111444" << "111555" << "111666"
          << "111777" << "111888" << "111999" << "222333" << "222444"
-         << "222555" << "222666" << "222777" << "222888" << "222999";
+         << "222555" << "222666" << "222777" << "222888" << "222999"
+         << "333444" << "333555" << "333666" << "333777" << "333888"
+         << "333999" << "444555" << "444666" << "444777" << "444888"
+         << "444999" << "555666" << "555777" << "555888" << "555999"
+         << "666111" << "666222" << "666333" << "666444" << "666555"
+         << "777111" << "777222" << "777333" << "777444" << "777555"
+         << "777666" << "888111" << "888222" << "888333" << "888444"
+         << "888555" << "888666" << "888777" << "999111" << "999222"
+         << "999333" << "999444" << "999555" << "999666" << "999777"
+         << "999888" << "999999";
     return retn;
 }
 
@@ -109,7 +149,11 @@ static QStringList generateEmailProvidersList()
     QStringList retn;
     retn << "@test.com" << "@testing.com" << "@testers.com"
          << "@test.org" << "@testing.org" << "@testers.org"
-         << "@test.net" << "@testing.net" << "@testers.net";
+         << "@test.net" << "@testing.net" << "@testers.net"
+         << "@test.fi" << "@testing.fi" << "@testers.fi"
+         << "@test.com.au" << "@testing.com.au" << "@testers.com.au"
+         << "@test.co.uk" << "@testing.co.uk" << "@testers.co.uk"
+         << "@test.co.jp" << "@test.co.jp" << "@testers.co.jp";
     return retn;
 }
 
@@ -117,7 +161,9 @@ static QStringList generateAvatarsList()
 {
     QStringList retn;
     retn << "-smiling.jpg" << "-laughing.jpg" << "-surprised.jpg"
-         << "-smiling.png" << "-laughing.png" << "-surprised.png";
+         << "-smiling.png" << "-laughing.png" << "-surprised.png"
+         << "-curious.jpg" << "-joking.jpg" << "-grinning.jpg"
+         << "-curious.png" << "-joking.png" << "-grinning.png";
     return retn;
 }
 

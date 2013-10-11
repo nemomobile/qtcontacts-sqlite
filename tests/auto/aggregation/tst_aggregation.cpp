@@ -3180,7 +3180,7 @@ void tst_Aggregation::batchSemantics()
     int newContactsCount = allContacts.size() - allContactsCount;
     QCOMPARE(newContactsCount, 6); // 3 local, 3 aggregate
 
-    // Now we test the semantic of "no two contacts from the same sync target should get aggregated"
+    // Now we test the semantic of "two contacts from the same sync target should get aggregated if they match"
     QContact d, e;
     QContactName dname, ename;
     QContactSyncTarget dst, est;
@@ -3202,7 +3202,7 @@ void tst_Aggregation::batchSemantics()
 
     allContacts = m_cm->contacts(allSyncTargets);
     newContactsCount = allContacts.size() - allContactsCount;
-    QCOMPARE(newContactsCount, 10); // 5 local, 5 aggregate - d and e should not have been aggregated into one.
+    QCOMPARE(newContactsCount, 9); // 5 local, 4 aggregate - d and e should have been aggregated into one.
 }
 
 void tst_Aggregation::customSemantics()

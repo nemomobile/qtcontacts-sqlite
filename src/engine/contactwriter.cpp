@@ -94,49 +94,74 @@ static const char *findAggregateForContactIds =
         "\n JOIN temp.aggregationIds ON Relationships.secondId = temp.aggregationIds.contactId"
         "\n WHERE Relationships.type = 'Aggregates'";
 
-static const char *findMaximumContactId =
-        "\n SELECT max(contactId) FROM Contacts";
+/*
+    Aggregation heuristic.
 
-static const char *findMatchForContact =
-        "\n SELECT Matches.contactId, sum(Matches.score) AS total FROM ("
-        "\n   SELECT contactId, 20 as score FROM Contacts"
-        "\n      WHERE lowerLastName != '' AND lowerLastName = :lastName"
-        "\n      AND lowerFirstName != '' AND :firstName != ''"
-        "\n      AND (lowerFirstName LIKE ('%' || :firstName || '%') OR :firstName LIKE ('%' || lowerFirstName || '%'))"
+    Search existing aggregate contacts, for matchability.
+    The aggregate with the highest match score (over the threshold)
+    represents the same "actual person".
+    The newly saved contact then becomes a constituent of that
+    aggregate.
+
+    Note that individual contacts from the same syncTarget can
+    represent the same actual person (eg, Telepathy might provide
+    buddies from different Jabber servers/rosters and thus if
+    you have the same buddy on multiple services, they need to
+    be aggregated together.
+
+    Stages:
+    1) select all possible aggregate ids
+    2) join those ids on the tables of interest to get the data we match against
+    3) perform the heuristic matching, ordered by "best score"
+    4) select highest score; if over threshold, select that as aggregate.
+*/
+static const char *possibleAggregatesWhere = /* SELECT contactId FROM Contacts ... */
+        "\n WHERE syncTarget = 'aggregate'"
+        "\n AND (lowerLastName = '' OR ? = '' OR lowerLastName = ?)"
+        "\n AND contactId NOT IN ("
+        "\n   SELECT contactId FROM Contacts WHERE gender = ?"
         "\n   UNION"
-        "\n   SELECT contactId, 12 as score FROM Contacts"
-        "\n      WHERE (lowerLastName = '' OR :lastName = '')"
-        "\n      AND lowerFirstName != ''"
-        "\n      AND (lowerFirstName LIKE ('%' || :firstName || '%') OR :firstName LIKE ('%' || lowerFirstName || '%'))"
+        "\n   SELECT secondId FROM Relationships WHERE firstId = ? AND type = 'IsNot'"
         "\n   UNION"
-        "\n   SELECT contactId, 12 as score FROM Contacts"
-        "\n      WHERE lowerLastName != '' AND lowerLastName = :lastName"
-        "\n      AND (lowerFirstName = '' OR :firstName = '')"
-        "\n   UNION"
-        "\n   SELECT contactId, 3 as score FROM EmailAddresses WHERE lowerEmailAddress IN ( :email )"
-        "\n   UNION"
-        "\n   SELECT contactId, 3 as score FROM PhoneNumbers WHERE normalizedNumber IN ( :number )"
-        "\n   UNION"
-        "\n   SELECT contactId, 3 as score FROM OnlineAccounts WHERE lowerAccountUri IN ( :uri )"
-        "\n   UNION"
-        "\n   SELECT contactId, 1 as score FROM Nicknames WHERE lowerNickname != '' AND lowerNickname = :nickname"
-        "\n ) AS Matches"
-        "\n JOIN Contacts ON Contacts.contactId = Matches.contactId"
-        "\n WHERE Contacts.syncTarget = 'aggregate'"
-        "\n AND Matches.contactId <= :maxAggregateId"
-        "\n AND Matches.contactId NOT IN ("
-        "\n   SELECT contactId FROM Contacts WHERE gender = :excludeGender"
-        "\n   UNION"
-        "\n   SELECT DISTINCT secondId FROM Relationships WHERE firstId = :id AND type = 'IsNot'"
-        "\n   UNION"
-        "\n   SELECT DISTINCT firstId FROM Relationships WHERE secondId = :id AND type = 'IsNot'"
-        "\n   UNION"
-        "\n   SELECT DISTINCT firstId FROM Relationships WHERE type = 'Aggregates' AND secondId IN ("
-        "\n     SELECT contactId FROM Contacts WHERE syncTarget = :syncTarget"
-        "\n   )"
-        "\n )"
-        "\n GROUP BY Matches.contactId"
-        "\n ORDER BY total DESC"
+        "\n   SELECT firstId FROM Relationships WHERE secondId = ? AND type = 'IsNot'"
+        "\n )";
+static const char *heuristicallyMatchData =
+        "\n SELECT Matches.contactId, sum(Matches.score) AS total FROM (                                                  "
+        "\n     SELECT Contacts.contactId, 20 AS score FROM Contacts INNER JOIN temp.PossibleAggregates                   "
+        "\n     ON Contacts.contactId = temp.PossibleAggregates.contactId                                                 "
+        "\n         WHERE lowerLastName != '' AND lowerLastName = :lastName                                               "
+        "\n         AND lowerFirstName != '' AND :firstName != ''                                                         "
+        "\n         AND (lowerFirstname LIKE ('%' || :firstName || '%') OR :firstname LIKE ('%' || lowerFirstname || '%'))"
+        "\n     UNION                                                                                                     "
+        "\n     SELECT Contacts.contactId, 12 AS score FROM Contacts INNER JOIN temp.PossibleAggregates                   "
+        "\n     On Contacts.contactId = temp.PossibleAggregates.contactId                                                 "
+        "\n         WHERE (LowerLastName = '' OR :lastName = '')                                                          "
+        "\n         AND lowerFirstName != ''                                                                              "
+        "\n         AND lowerFirstName LIKE ('%' || :firstName || '%') OR :firstName LIKE ('%' || lowerFirstName || '%')  "
+        "\n     UNION                                                                                                     "
+        "\n     SELECT Contacts.contactId, 12 AS score FROM Contacts INNER JOIN temp.PossibleAggregates                   "
+        "\n     On Contacts.contactId = temp.PossibleAggregates.contactId                                                 "
+        "\n         WHERE lowerLastName != '' AND lowerLastName = :lastName                                               "
+        "\n         AND (lowerFirstName = '' OR :firstName = '')                                                          "
+        "\n     UNION                                                                                                     "
+        "\n     SELECT EmailAddresses.contactId, 3 AS score FROM EmailAddresses INNER JOIN temp.PossibleAggregates        "
+        "\n     ON EmailAddresses.contactId = temp.PossibleAggregates.contactId                                           "
+        "\n         WHERE lowerEmailAddress IN ( :email )                                                                 "
+        "\n     UNION                                                                                                     "
+        "\n     SELECT PhoneNumbers.contactId, 3 AS score FROM PhoneNumbers INNER JOIN temp.PossibleAggregates            "
+        "\n     ON PhoneNumbers.contactId = temp.PossibleAggregates.contactId                                             "
+        "\n         WHERE normalizedNumber IN ( :number )                                                                 "
+        "\n     UNION                                                                                                     "
+        "\n     SELECT OnlineAccounts.contactId, 3 AS score FROM OnlineAccounts INNER JOIN temp.PossibleAggregates        "
+        "\n     ON OnlineAccounts.contactId = temp.PossibleAggregates.contactId                                           "
+        "\n         WHERE lowerAccountUri IN ( :uri )                                                                     "
+        "\n     UNION                                                                                                     "
+        "\n     SELECT Nicknames.contactId, 1 AS score FROM Nicknames INNER JOIN temp.PossibleAggregates                  "
+        "\n     ON Nicknames.contactId = temp.PossibleAggregates.contactId                                                "
+        "\n         WHERE lowerNickName != '' AND lowerNickName = :nickname                                               "
+        "\n ) AS Matches                                                                                                  "
+        "\n GROUP BY Matches.contactId                                                                                    "
+        "\n ORDER BY total DESC                                                                                           "
         "\n LIMIT 1";
 
 static const char *selectAggregateContactIds =
@@ -549,8 +574,6 @@ ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &d
     , m_findConstituentsForAggregate(prepare(findConstituentsForAggregate, database))
     , m_findLocalForAggregate(prepare(findLocalForAggregate, database))
     , m_findAggregateForContact(prepare(findAggregateForContact, database))
-    , m_findMaximumContactId(prepare(findMaximumContactId, database))
-    , m_findMatchForContact(prepare(findMatchForContact, database))
     , m_childlessAggregateIds(prepare(childlessAggregateIds, database))
     , m_orphanContactIds(prepare(orphanContactIds, database))
     , m_checkContactExists(prepare(checkContactExists, database))
@@ -1818,15 +1841,6 @@ QContactManager::Error ContactWriter::save(
         return QContactManager::UnspecifiedError;
     }
 
-    // Find the maximum possible aggregate contact id.
-    // This assumes that no two contacts from the same synctarget should be aggregated together.
-    if (!m_findMaximumContactId.exec() || !m_findMaximumContactId.next()) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to find max possible aggregate during batch save: %1").arg(m_findMaximumContactId.lastError().text()));
-        return QContactManager::UnspecifiedError;
-    }
-    int maxAggregateId = m_findMaximumContactId.value(0).toInt();
-    m_findMaximumContactId.finish();
-
     QContactManager::Error worstError = QContactManager::NoError;
     QContactManager::Error err = QContactManager::NoError;
     for (int i = 0; i < contacts->count(); ++i) {
@@ -1834,7 +1848,7 @@ QContactManager::Error ContactWriter::save(
         const QContactIdType contactId = ContactId::apiId(contact);
         bool aggregateUpdated = false;
         if (ContactId::databaseId(contactId) == 0) {
-            err = create(&contact, definitionMask, maxAggregateId, true, withinAggregateUpdate);
+            err = create(&contact, definitionMask, true, withinAggregateUpdate);
             if (err == QContactManager::NoError) {
                 m_addedIds.insert(ContactId::apiId(contact));
             } else {
@@ -2683,7 +2697,7 @@ QContactManager::Error ContactWriter::calculateDelta(QContact *contact, const Co
    aggregate contacts are searched for a match, and the matching
    one updated if it exists; or a new aggregate is created.
 */
-QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact, const DetailList &definitionMask, int maxAggregateId, bool withinTransaction)
+QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact, const DetailList &definitionMask, bool withinTransaction)
 {
     // 1) search for match
     // 2) if exists, update the existing aggregate (by default, non-clobber:
@@ -2744,30 +2758,41 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
 
     // Use a simple match algorithm, looking for exact matches on name fields,
     // or accumulating points for name matches (including partial matches of first name).
-
-    m_findMatchForContact.bindValue(":id", contactId);
-    m_findMatchForContact.bindValue(":firstName", firstName);
-    m_findMatchForContact.bindValue(":lastName", lastName);
-    m_findMatchForContact.bindValue(":nickname", nickname);
-    m_findMatchForContact.bindValue(":number", phoneNumbers.join(","));
-    m_findMatchForContact.bindValue(":email", emailAddresses.join(","));
-    m_findMatchForContact.bindValue(":uri", accountUris.join(","));
-    m_findMatchForContact.bindValue(":maxAggregateId", maxAggregateId);
-    m_findMatchForContact.bindValue(":syncTarget", syncTarget);
-    m_findMatchForContact.bindValue(":excludeGender", excludeGender);
-
     QContact matchingAggregate;
     bool found = false;
 
-    if (!m_findMatchForContact.exec()) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error finding match for updated local contact:\n%1")
-                .arg(m_findMatchForContact.lastError().text()));
+    // step one: build the temporary table which contains all "possible" aggregate contact ids.
+    QString orderBy = QLatin1String("contactId ASC ");
+    QString where = QLatin1String(possibleAggregatesWhere);
+    QVariantList bindings(QVariantList() << lastName << lastName << excludeGender << contactId << contactId);
+    if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, "PossibleAggregates",
+                                                          QString(), where, orderBy, bindings)) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error creating PossibleAggregates temporary table"));
         return QContactManager::UnspecifiedError;
     }
-    if (m_findMatchForContact.next()) {
-        QContactIdType aggregateId = ContactId::apiId(m_findMatchForContact.value(0).toUInt());
-        quint32 score = m_findMatchForContact.value(1).toUInt();
-        m_findMatchForContact.finish();
+
+    // step two: query matching data.
+    QSqlQuery findMatchForContact(m_database);
+    if (!findMatchForContact.prepare(QLatin1String(heuristicallyMatchData))) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error preparing heuristic match query:\n%1")
+                .arg(findMatchForContact.lastError().text()));
+        return QContactManager::UnspecifiedError;
+    }
+    findMatchForContact.bindValue(":firstName", firstName);
+    findMatchForContact.bindValue(":lastName", lastName);
+    findMatchForContact.bindValue(":nickname", nickname);
+    findMatchForContact.bindValue(":number", phoneNumbers.join(","));
+    findMatchForContact.bindValue(":email", emailAddresses.join(","));
+    findMatchForContact.bindValue(":uri", accountUris.join(","));
+    if (!findMatchForContact.exec()) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error finding match for updated local contact:\n%1")
+                .arg(findMatchForContact.lastError().text()));
+        return QContactManager::UnspecifiedError;
+    }
+    if (findMatchForContact.next()) {
+        QContactIdType aggregateId = ContactId::apiId(findMatchForContact.value(0).toUInt());
+        quint32 score = findMatchForContact.value(1).toUInt();
+        findMatchForContact.finish();
 
         static const quint32 MinimumMatchScore = 15;
         if (score >= MinimumMatchScore) {
@@ -2788,7 +2813,7 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
             found = true;
         }
     }
-    m_findMatchForContact.finish();
+    findMatchForContact.finish();
 
     // whether it's an existing or new contact, we promote details.
     // XXX TODO: promote relationships!
@@ -3017,17 +3042,10 @@ QContactManager::Error ContactWriter::aggregateOrphanedContacts(bool withinTrans
             return QContactManager::UnspecifiedError;
         }
 
-        if (!m_findMaximumContactId.exec() || !m_findMaximumContactId.next()) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to find max possible aggregate for orphan: %1").arg(m_findMaximumContactId.lastError().text()));
-            return QContactManager::UnspecifiedError;
-        }
-        int maxAggregateId = m_findMaximumContactId.value(0).toInt();
-        m_findMaximumContactId.finish();
-
         QList<QContact>::iterator it = readList.begin(), end = readList.end();
         for ( ; it != end; ++it) {
             QContact &orphan(*it);
-            QContactManager::Error error = updateOrCreateAggregate(&orphan, DetailList(), maxAggregateId, withinTransaction);
+            QContactManager::Error error = updateOrCreateAggregate(&orphan, DetailList(), withinTransaction);
             if (error != QContactManager::NoError) {
                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create aggregate for orphaned contact: %1").arg(ContactId::toString(orphan)));
                 return error;
@@ -3084,7 +3102,7 @@ static bool updateTimestamp(QContact *contact, bool setCreationTimestamp)
     return contact->saveDetail(&timestamp);
 }
 
-QContactManager::Error ContactWriter::create(QContact *contact, const DetailList &definitionMask, int maxAggregateId, bool withinTransaction, bool withinAggregateUpdate)
+QContactManager::Error ContactWriter::create(QContact *contact, const DetailList &definitionMask, bool withinTransaction, bool withinAggregateUpdate)
 {
 #ifndef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     Q_UNUSED(withinTransaction)
@@ -3141,7 +3159,7 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
         if (!withinAggregateUpdate) {
             // and either update the aggregate contact (if it exists) or create a new one (unless it is an aggregate contact).
             if (contact->detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget) != aggregateSyncTarget) {
-                writeErr = updateOrCreateAggregate(contact, definitionMask, maxAggregateId, withinTransaction);
+                writeErr = updateOrCreateAggregate(contact, definitionMask, withinTransaction);
             }
         }
 #endif
