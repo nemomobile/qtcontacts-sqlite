@@ -50,7 +50,8 @@ public:
     static bool rollbackTransaction(QSqlDatabase &database);
 
     static bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, const QVariantList &boundIds);
-    static bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, const QString &join, const QString &where, const QString &orderBy, const QVariantList boundValues);
+    static bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, const QString &join, const QString &where, const QString &orderBy, const QVariantList &boundValues);
+    static bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, const QString &join, const QString &where, const QString &orderBy, const QMap<QString, QVariant> &boundValues);
 
     static void clearTemporaryContactIdsTable(QSqlDatabase &db, const QString &table);
 
