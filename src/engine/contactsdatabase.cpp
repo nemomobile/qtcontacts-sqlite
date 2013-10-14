@@ -808,7 +808,8 @@ static bool prepareDatabase(QSqlDatabase &database)
     }
 }
 
-static void debugFilterExpansion(const QString &description, const QString &query, const QVariantList &bindings)
+template<typename ValueContainer>
+static void debugFilterExpansion(const QString &description, const QString &query, const ValueContainer &bindings)
 {
     static const bool debugFilters = !qgetenv("QTCONTACTS_SQLITE_DEBUG_FILTERS").isEmpty();
 
@@ -817,8 +818,24 @@ static void debugFilterExpansion(const QString &description, const QString &quer
     }
 }
 
+static void bindValues(QSqlQuery &query, const QVariantList &values)
+{
+    for (int i = 0; i < values.count(); ++i) {
+        query.bindValue(i, values.at(i));
+    }
+}
+
+static void bindValues(QSqlQuery &query, const QMap<QString, QVariant> &values)
+{
+    QMap<QString, QVariant>::const_iterator it = values.constBegin(), end = values.constEnd();
+    for ( ; it != end; ++it) {
+        query.bindValue(it.key(), it.value());
+    }
+}
+
+template<typename ValueContainer>
 bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool filter, const QVariantList &boundIds, 
-                                    const QString &join, const QString &where, const QString &orderBy, const QVariantList boundValues)
+                                    const QString &join, const QString &where, const QString &orderBy, const ValueContainer &boundValues)
 {
     static const QString createStatement(QString::fromLatin1("CREATE TABLE IF NOT EXISTS temp.%1 (contactId INTEGER)"));
     static const QString deleteRecordsStatement(QString::fromLatin1("DELETE FROM temp.%1"));
@@ -869,9 +886,7 @@ bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool
                     .arg(insertStatement));
             return false;
         }
-        for (int i = 0; i < boundValues.count(); ++i) {
-            insertQuery.bindValue(i, boundValues.at(i));
-        }
+        bindValues(insertQuery, boundValues);
         if (!insertQuery.exec()) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to insert temporary contact ids: %1\n%2")
                     .arg(insertQuery.lastError().text())
@@ -1078,7 +1093,12 @@ bool ContactsDatabase::createTemporaryContactIdsTable(QSqlDatabase &db, const QS
     return ::createTemporaryContactIdsTable(db, table, false, boundIds, QString(), QString(), QString(), QVariantList());
 }
 
-bool ContactsDatabase::createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, const QString &join, const QString &where, const QString &orderBy, const QVariantList boundValues)
+bool ContactsDatabase::createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, const QString &join, const QString &where, const QString &orderBy, const QVariantList &boundValues)
+{
+    return ::createTemporaryContactIdsTable(db, table, true, QVariantList(), join, where, orderBy, boundValues);
+}
+
+bool ContactsDatabase::createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, const QString &join, const QString &where, const QString &orderBy, const QMap<QString, QVariant> &boundValues)
 {
     return ::createTemporaryContactIdsTable(db, table, true, QVariantList(), join, where, orderBy, boundValues);
 }
