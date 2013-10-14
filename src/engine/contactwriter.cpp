@@ -1956,7 +1956,6 @@ static ContactWriter::DetailList allSingularDetails()
     appendDetailType<QContactDisplayLabel>(&details);
     appendDetailType<QContactName>(&details);
     appendDetailType<QContactSyncTarget>(&details);
-    appendDetailType<QContactGuid>(&details);
     appendDetailType<QContactFavorite>(&details);
     appendDetailType<QContactGender>(&details);
     appendDetailType<QContactTimestamp>(&details);
