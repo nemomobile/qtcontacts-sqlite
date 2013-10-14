@@ -1532,6 +1532,9 @@ void tst_Aggregation::uniquenessConstraints()
     QContactEmailAddress aem;
     aem.setEmailAddress("uniqueness@test.com");
     QVERIFY(localAlice.saveDetail(&aem));
+    QContactGuid ag;
+    ag.setGuid("first-unique-guid");
+    QVERIFY(localAlice.saveDetail(&ag));
     QVERIFY(m_cm->saveContact(&localAlice));
 
     QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
@@ -1683,25 +1686,20 @@ void tst_Aggregation::uniquenessConstraints()
         QCOMPARE(aggregateAlice.detail<QContactTimestamp>().created(), testDt);
     }
 
-    // test uniqueness constraint of guid detail.  Guid is a bit special, as it's not in the main table.
-    QVERIFY(aggregateAlice.details<QContactGuid>().size() == 0);
-    QContactGuid ag;
-    ag.setGuid("first-unique-guid");
-    QVERIFY(aggregateAlice.saveDetail(&ag));
-    QVERIFY(m_cm->saveContact(&aggregateAlice)); // this succeeds, because GUID is NOT stored in main table.
+    // GUID is no longer a singular detail
+    QVERIFY(localAlice.details<QContactGuid>().size() == 1);
     QContactGuid ag2;
     ag2.setGuid("second-unique-guid");
-    QVERIFY(aggregateAlice.saveDetail(&ag2));
-    QCOMPARE(aggregateAlice.details<QContactGuid>().size(), 2);
-    QVERIFY(!m_cm->saveContact(&aggregateAlice)); // this fails, because now aggregateAlice has two.
-    QVERIFY(aggregateAlice.removeDetail(&ag2));
-    QCOMPARE(aggregateAlice.details<QContactGuid>().size(), 1);
-    ag2 = aggregateAlice.detail<QContactGuid>();
-    ag2.setGuid("second-unique-guid");
-    QVERIFY(aggregateAlice.saveDetail(&ag2));
-    QVERIFY(m_cm->saveContact(&aggregateAlice)); // this now updates the original guid.
-    QCOMPARE(aggregateAlice.detail<QContactGuid>().guid(), QLatin1String("second-unique-guid"));
+    QVERIFY(localAlice.saveDetail(&ag2));
+    QCOMPARE(localAlice.details<QContactGuid>().size(), 2);
+    QVERIFY(m_cm->saveContact(&localAlice));
+
+    localAlice = m_cm->contact(retrievalId(localAlice));
+    QCOMPARE(localAlice.details<QContactGuid>().size(), 2);
+
+    // GUIDs are not promoted
     aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
+    QCOMPARE(aggregateAlice.details<QContactGuid>().size(), 0);
 }
 
 void tst_Aggregation::removeSingleLocal()
