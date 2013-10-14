@@ -177,6 +177,16 @@ static const char *orphanContactIds =
         "\n SELECT contactId FROM Contacts WHERE syncTarget != 'aggregate' AND contactId NOT IN ("
         "\n SELECT DISTINCT secondId FROM Relationships WHERE type = 'Aggregates')";
 
+static const char *countLocalConstituents =
+        "\n SELECT COUNT(*) FROM Relationships"
+        "\n JOIN Contacts ON Contacts.contactId = Relationships.secondId"
+        "\n WHERE Relationships.firstId = :aggregateId"
+        "\n AND Relationships.type = 'Aggregates'"
+        "\n AND Contacts.syncTarget = 'local';";
+
+static const char *updateSyncTarget =
+        "\n UPDATE Contacts SET syncTarget = :syncTarget WHERE contactId = :contactId;";
+
 static const char *checkContactExists =
         "\n SELECT COUNT(contactId), syncTarget FROM Contacts WHERE contactId = :contactId;";
 
@@ -575,6 +585,8 @@ ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &d
     , m_findAggregateForContact(prepare(findAggregateForContact, database))
     , m_childlessAggregateIds(prepare(childlessAggregateIds, database))
     , m_orphanContactIds(prepare(orphanContactIds, database))
+    , m_countLocalConstituents(prepare(countLocalConstituents, database))
+    , m_updateSyncTarget(prepare(updateSyncTarget, database))
     , m_checkContactExists(prepare(checkContactExists, database))
     , m_existingContactIds(prepare(existingContactIds, database))
     , m_modifiableDetails(prepare(modifiableDetails, database))
@@ -2696,7 +2708,7 @@ QContactManager::Error ContactWriter::calculateDelta(QContact *contact, const Co
    aggregate contacts are searched for a match, and the matching
    one updated if it exists; or a new aggregate is created.
 */
-QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact, const DetailList &definitionMask, bool withinTransaction)
+QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact, const DetailList &definitionMask, bool withinTransaction, quint32 *aggregateContactId)
 {
     // 1) search for match
     // 2) if exists, update the existing aggregate (by default, non-clobber:
@@ -2853,7 +2865,11 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
         err = QContactManager::UnspecifiedError;
     }
 
-    if (err != QContactManager::NoError) {
+    if (err == QContactManager::NoError) {
+        if (aggregateContactId) {
+            *aggregateContactId = ContactId::databaseId(matchingAggregate);
+        }
+    } else {
         // if the aggregation relationship fails, the entire save has failed.
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to save aggregation relationship!"));
 
@@ -3161,7 +3177,35 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
         if (!withinAggregateUpdate) {
             // and either update the aggregate contact (if it exists) or create a new one (unless it is an aggregate contact).
             if (contact->detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget) != aggregateSyncTarget) {
-                writeErr = updateOrCreateAggregate(contact, definitionMask, withinTransaction);
+                quint32 aggregateId = 0;
+                writeErr = updateOrCreateAggregate(contact, definitionMask, withinTransaction, &aggregateId);
+                if ((writeErr == QContactManager::NoError) && (aggregateId < contactId)) {
+                    // The aggregate pre-dates the new contact - it probably had a local constituent already
+                    quint32 localCount = 0;
+
+                    m_countLocalConstituents.bindValue(":aggregateId", aggregateId);
+                    if (!m_countLocalConstituents.exec()) {
+                        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to fetch self contact id during remove:\n%1")
+                                .arg(m_countLocalConstituents.lastError().text()));
+                        return QContactManager::UnspecifiedError;
+                    }
+                    if (m_countLocalConstituents.next()) {
+                        localCount = m_countLocalConstituents.value(0).toUInt();
+                    }
+                    m_countLocalConstituents.finish();
+
+                    if (localCount > 1) {
+                        // The matched aggregate now has multiple 'local' constituents; change this one to 'was_local'
+                        m_updateSyncTarget.bindValue(":contactId", contactId);
+                        m_updateSyncTarget.bindValue(":syncTarget", wasLocalSyncTarget);
+                        if (!m_updateSyncTarget.exec()) {
+                            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to update contact syncTarget:\n%1")
+                                    .arg(m_updateSyncTarget.lastError().text()));
+                            return QContactManager::UnspecifiedError;
+                        }
+                        m_updateSyncTarget.finish();
+                    }
+                }
             }
         }
 #endif
