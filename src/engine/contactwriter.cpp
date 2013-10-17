@@ -289,7 +289,8 @@ static const char *insertAddress =
         "\n  region,"
         "\n  locality,"
         "\n  postCode,"
-        "\n  country)"
+        "\n  country,"
+        "\n  subTypes)"
         "\n VALUES ("
         "\n  :contactId,"
         "\n  :street,"
@@ -297,7 +298,8 @@ static const char *insertAddress =
         "\n  :region,"
         "\n  :locality,"
         "\n  :postCode,"
-        "\n  :country)";
+        "\n  :country,"
+        "\n  :subTypes)";
 
 static const char *insertAnniversary =
         "\n INSERT INTO Anniversaries ("
@@ -1840,8 +1842,13 @@ QContactManager::Error ContactWriter::save(
             if (batchSyncTarget.isEmpty()) {
                 batchSyncTarget = currSyncTarget;
             } else if (batchSyncTarget != currSyncTarget) {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error: contacts from multiple sync targets specified in single batch save!"));
-                return QContactManager::UnspecifiedError;
+                if ((batchSyncTarget == localSyncTarget && currSyncTarget == wasLocalSyncTarget) ||
+                    (batchSyncTarget == wasLocalSyncTarget && currSyncTarget == localSyncTarget)) {
+                    // "was_local" and "local" are effectively equivalent
+                } else {
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error: contacts from multiple sync targets specified in single batch save!"));
+                    return QContactManager::UnspecifiedError;
+                }
             }
         }
     }
@@ -3461,6 +3468,11 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactAddress &d
     m_insertAddress.bindValue(4, detail.value<QString>(T::FieldLocality).trimmed());
     m_insertAddress.bindValue(5, detail.value<QString>(T::FieldPostcode).trimmed());
     m_insertAddress.bindValue(6, detail.value<QString>(T::FieldCountry).trimmed());
+#ifdef USING_QTPIM
+    m_insertAddress.bindValue(7, Address::subTypeList(detail.subTypes()).join(QLatin1String(";")));
+#else
+    m_insertAddress.bindValue(7, detailValue(detail, T::FieldSubTypes));
+#endif
     return m_insertAddress;
 }
 

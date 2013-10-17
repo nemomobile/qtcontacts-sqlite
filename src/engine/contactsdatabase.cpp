@@ -83,7 +83,8 @@ static const char *createAddressesTable =
         "\n region TEXT,"
         "\n locality TEXT,"
         "\n postCode TEXT,"
-        "\n country TEXT);";
+        "\n country TEXT,"
+        "\n subTypes TEXT);";
 
 static const char *createAnniversariesTable =
         "\n CREATE TABLE Anniversaries ("
@@ -91,7 +92,7 @@ static const char *createAnniversariesTable =
         "\n contactId INTEGER KEY,"
         "\n originalDateTime DATETIME,"
         "\n calendarId TEXT,"
-        "\n subType INTEGER);";
+        "\n subType TEXT);";
 
 static const char *createAvatarsTable =
         "\n CREATE TABLE Avatars ("
@@ -628,6 +629,8 @@ static const ExtraColumn detailsProvenance = { "Details", "provenance", "TEXT", 
 
 static const ExtraColumn detailsModifiable = { "Details", "modifiable", "BOOL", 0 };
 
+static const ExtraColumn addressesSubTypes = { "Addresses", "subTypes", "TEXT", 0 };
+
 static const ExtraColumn *extraColumns[] =
 {
     &contactsHasPhoneNumber,
@@ -635,7 +638,8 @@ static const ExtraColumn *extraColumns[] =
     &contactsHasOnlineAccount,
     &contactsIsOnline,
     &detailsProvenance,
-    &detailsModifiable
+    &detailsModifiable,
+    &addressesSubTypes
 };
 
 static bool addTable(const ExtraTable *tableDef, QSqlDatabase &database)

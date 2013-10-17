@@ -178,6 +178,7 @@ static const FieldInfo addressFields[] =
     { QContactAddress::FieldLocality, "locality", StringField },
     { QContactAddress::FieldPostcode, "postCode", StringField },
     { QContactAddress::FieldCountry, "country", StringField },
+    { QContactAddress::FieldSubTypes, "subTypes", StringListField },
     { QContactDetail::FieldContext, "context", StringField }
 
 };
@@ -192,6 +193,13 @@ static void setValues(QContactAddress *detail, QSqlQuery *query, const int offse
     setValue(detail, T::FieldLocality     , query->value(offset + 3));
     setValue(detail, T::FieldPostcode     , query->value(offset + 4));
     setValue(detail, T::FieldCountry      , query->value(offset + 5));
+#ifdef USING_QTPIM
+    QStringList subTypeNames(query->value(offset + 6).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
+    setValue(detail, T::FieldSubTypes     , QVariant::fromValue<QList<int> >(Address::subTypeList(subTypeNames)));
+#else
+    setValue(detail, T::FieldSubTypes     , query->value(offset + 6).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
+#endif
+
 }
 
 static const FieldInfo anniversaryFields[] =
