@@ -719,6 +719,8 @@ void ContactWriter::rollbackTransaction()
 QContactManager::Error ContactWriter::setIdentity(
         ContactsDatabase::Identity identity, QContactIdType contactId)
 {
+    QMutexLocker locker(ContactsDatabase::accessMutex());
+
     QSqlQuery *query = 0;
 
     quint32 dbId = ContactId::databaseId(contactId);
@@ -813,6 +815,8 @@ static QContactManager::Error bindRelationships(
 QContactManager::Error ContactWriter::save(
         const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap, bool withinTransaction)
 {
+    QMutexLocker locker(ContactsDatabase::accessMutex());
+
     if (relationships.isEmpty())
         return QContactManager::NoError;
 
@@ -1005,6 +1009,8 @@ QContactManager::Error ContactWriter::saveRelationships(
 QContactManager::Error ContactWriter::remove(
         const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap, bool withinTransaction)
 {
+    QMutexLocker locker(ContactsDatabase::accessMutex());
+
     if (relationships.isEmpty())
         return QContactManager::NoError;
 
@@ -1140,6 +1146,8 @@ QContactManager::Error ContactWriter::removeRelationships(
 
 QContactManager::Error ContactWriter::remove(const QList<QContactIdType> &contactIds, QMap<int, QContactManager::Error> *errorMap, bool withinTransaction)
 {
+    QMutexLocker locker(ContactsDatabase::accessMutex());
+
     if (contactIds.isEmpty())
         return QContactManager::NoError;
 
@@ -1824,6 +1832,8 @@ QContactManager::Error ContactWriter::save(
             bool withinTransaction,
             bool withinAggregateUpdate)
 {
+    QMutexLocker locker(ContactsDatabase::accessMutex());
+
     if (contacts->isEmpty())
         return QContactManager::NoError;
 
