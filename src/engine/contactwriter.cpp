@@ -1840,8 +1840,13 @@ QContactManager::Error ContactWriter::save(
             if (batchSyncTarget.isEmpty()) {
                 batchSyncTarget = currSyncTarget;
             } else if (batchSyncTarget != currSyncTarget) {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error: contacts from multiple sync targets specified in single batch save!"));
-                return QContactManager::UnspecifiedError;
+                if ((batchSyncTarget == localSyncTarget && currSyncTarget == wasLocalSyncTarget) ||
+                    (batchSyncTarget == wasLocalSyncTarget && currSyncTarget == localSyncTarget)) {
+                    // "was_local" and "local" are effectively equivalent
+                } else {
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error: contacts from multiple sync targets specified in single batch save!"));
+                    return QContactManager::UnspecifiedError;
+                }
             }
         }
     }
