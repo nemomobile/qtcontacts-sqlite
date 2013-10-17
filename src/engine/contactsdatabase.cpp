@@ -91,7 +91,7 @@ static const char *createAnniversariesTable =
         "\n contactId INTEGER KEY,"
         "\n originalDateTime DATETIME,"
         "\n calendarId TEXT,"
-        "\n subType INTEGER);";
+        "\n subType TEXT);";
 
 static const char *createAvatarsTable =
         "\n CREATE TABLE Avatars ("
