@@ -62,6 +62,13 @@ QStringList subTypeList(const QList<int> &values);
 
 }
 
+namespace Address {
+
+QList<int> subTypeList(const QStringList &names);
+QStringList subTypeList(const QList<int> &values);
+
+}
+
 namespace Anniversary {
 
 int subType(const QString &name);

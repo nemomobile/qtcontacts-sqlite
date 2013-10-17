@@ -32,6 +32,7 @@
 #ifdef USING_QTPIM
 #include "conversion_p.h"
 
+#include <QContactAddress>
 #include <QContactAnniversary>
 #include <QContactGender>
 #include <QContactOnlineAccount>
@@ -206,6 +207,48 @@ static QMap<int, QString> subTypeNames()
     rv.insert(QContactPhoneNumber::SubTypeMessagingCapable, QString::fromLatin1("MessagingCapable"));
     rv.insert(QContactPhoneNumber::SubTypeAssistant, QString::fromLatin1("Assistant"));
     rv.insert(QContactPhoneNumber::SubTypeDtmfMenu, QString::fromLatin1("DtmfMenu"));
+
+    return rv;
+}
+
+QList<int> subTypeList(const QStringList &names)
+{
+    static const QMap<QString, int> subTypes(subTypeValues());
+
+    return propertyValueList(names, subTypes);
+}
+
+QStringList subTypeList(const QList<int> &values)
+{
+    static const QMap<int, QString> typeNames(subTypeNames());
+
+    return propertyNameList(values, typeNames);
+}
+
+}
+
+namespace Address {
+
+static QMap<QString, int> subTypeValues()
+{
+    QMap<QString, int> rv;
+
+    rv.insert(QString::fromLatin1("Parcel"), QContactAddress::SubTypeParcel);
+    rv.insert(QString::fromLatin1("Postal"), QContactAddress::SubTypePostal);
+    rv.insert(QString::fromLatin1("Domestic"), QContactAddress::SubTypeDomestic);
+    rv.insert(QString::fromLatin1("International"), QContactAddress::SubTypeInternational);
+
+    return rv;
+}
+
+static QMap<int, QString> subTypeNames()
+{
+    QMap<int, QString> rv;
+
+    rv.insert(QContactAddress::SubTypeParcel, QString::fromLatin1("Parcel"));
+    rv.insert(QContactAddress::SubTypePostal, QString::fromLatin1("Postal"));
+    rv.insert(QContactAddress::SubTypeDomestic, QString::fromLatin1("Domestic"));
+    rv.insert(QContactAddress::SubTypeInternational, QString::fromLatin1("International"));
 
     return rv;
 }
