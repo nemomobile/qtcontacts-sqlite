@@ -1503,6 +1503,8 @@ QContactManager::Error ContactReader::readContacts(
         const QList<QContactSortOrder> &order,
         const QContactFetchHint &fetchHint)
 {
+    QMutexLocker locker(ContactsDatabase::accessMutex());
+
     QString join;
     const QString orderBy = buildOrderBy(order, &join);
     bool whereFailed = false;
@@ -1531,6 +1533,8 @@ QContactManager::Error ContactReader::readContacts(
         const QList<QContactIdType> &contactIds,
         const QContactFetchHint &fetchHint)
 {
+    QMutexLocker locker(ContactsDatabase::accessMutex());
+
     QVariantList boundIds;
     for (int i = 0; i < contactIds.size(); ++i) {
         boundIds.append(ContactId::databaseId(contactIds.at(i)));
@@ -1809,6 +1813,8 @@ QContactManager::Error ContactReader::readContactIds(
         const QContactFilter &filter,
         const QList<QContactSortOrder> &order)
 {
+    QMutexLocker locker(ContactsDatabase::accessMutex());
+
     QString join;
     const QString orderBy = buildOrderBy(order, &join);
     bool failed = false;
@@ -1862,6 +1868,8 @@ QContactManager::Error ContactReader::readContactIds(
 QContactManager::Error ContactReader::getIdentity(
         ContactsDatabase::Identity identity, QContactIdType *contactId)
 {
+    QMutexLocker locker(ContactsDatabase::accessMutex());
+
     if (identity == ContactsDatabase::SelfContactId) {
         // we don't allow setting the self contact id, it's always static
         *contactId = selfId;
@@ -1891,6 +1899,8 @@ QContactManager::Error ContactReader::readRelationships(
         const QContactId &first,
         const QContactId &second)
 {
+    QMutexLocker locker(ContactsDatabase::accessMutex());
+
     QStringList whereStatements;
     QVariantList bindings;
     if (!type.isEmpty()) {

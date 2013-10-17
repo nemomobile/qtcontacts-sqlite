@@ -40,6 +40,8 @@
 
 #include <QtDebug>
 
+Q_GLOBAL_STATIC_WITH_ARGS(QMutex, databaseMutex, (QMutex::Recursive));
+
 static const char *setupEncoding =
         "\n PRAGMA encoding = \"UTF-16\";";
 
@@ -841,6 +843,8 @@ template<typename ValueContainer>
 bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool filter, const QVariantList &boundIds, 
                                     const QString &join, const QString &where, const QString &orderBy, const ValueContainer &boundValues)
 {
+    QMutexLocker locker(ContactsDatabase::accessMutex());
+
     static const QString createStatement(QString::fromLatin1("CREATE TABLE IF NOT EXISTS temp.%1 (contactId INTEGER)"));
     static const QString deleteRecordsStatement(QString::fromLatin1("DELETE FROM temp.%1"));
     static const QString insertFilterStatement(QString::fromLatin1("INSERT INTO temp.%1 (contactId) SELECT Contacts.contactId FROM Contacts %2 %3 ORDER BY %4"));
@@ -927,6 +931,8 @@ bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool
 
 void clearTemporaryContactIdsTable(QSqlDatabase &db, const QString &table)
 {
+    QMutexLocker locker(ContactsDatabase::accessMutex());
+
     QSqlQuery dropTableQuery(db);
     const QString dropTableStatement = QString::fromLatin1("DROP TABLE temp.%1").arg(table);
     if (!dropTableQuery.prepare(dropTableStatement) || !dropTableQuery.exec()) {
@@ -946,8 +952,11 @@ void clearTemporaryContactIdsTable(QSqlDatabase &db, const QString &table)
     }
 }
 
+
 QSqlDatabase ContactsDatabase::open(const QString &databaseName)
 {
+    QMutexLocker locker(accessMutex());
+
     // horrible hack: Qt4 didn't have GenericDataLocation so we hardcode DATA_DIR location.
     QString privilegedDataDir(QString("%1/%2/")
             .arg(QString::fromLatin1(QTCONTACTS_SQLITE_CENTRAL_DATA_DIR))
@@ -1110,6 +1119,11 @@ bool ContactsDatabase::createTemporaryContactIdsTable(QSqlDatabase &db, const QS
 void ContactsDatabase::clearTemporaryContactIdsTable(QSqlDatabase &db, const QString &table)
 {
     ::clearTemporaryContactIdsTable(db, table);
+}
+
+QMutex *ContactsDatabase::accessMutex()
+{
+    return databaseMutex();
 }
 
 #include "qcontactoriginmetadata_impl.h"

@@ -32,6 +32,7 @@
 #ifndef QTCONTACTSSQLITE_CONTACTSDATABASE
 #define QTCONTACTSSQLITE_CONTACTSDATABASE
 
+#include <QMutex>
 #include <QSqlDatabase>
 #include <QVariantList>
 
@@ -58,6 +59,8 @@ public:
     static QString expandQuery(const QString &queryString, const QVariantList &bindings);
     static QString expandQuery(const QString &queryString, const QMap<QString, QVariant> &bindings);
     static QString expandQuery(const QSqlQuery &query);
+
+    static QMutex *accessMutex();
 };
 
 #endif
