@@ -73,6 +73,8 @@ static const int QContactName__FieldCustomLabel = (QContactName::FieldSuffix+1);
 static const int QContactOnlineAccount__FieldAccountPath = (QContactOnlineAccount::FieldSubTypes+1);
 static const int QContactOnlineAccount__FieldAccountIconPath = (QContactOnlineAccount::FieldSubTypes+2);
 static const int QContactOnlineAccount__FieldEnabled = (QContactOnlineAccount::FieldSubTypes+3);
+static const int QContactOnlineAccount__FieldAccountDisplayName = (QContactOnlineAccount::FieldSubTypes+4);
+static const int QContactOnlineAccount__FieldServiceProviderDisplayName = (QContactOnlineAccount::FieldSubTypes+5);
 
 // In QContactPhoneNumber, we support a field for normalized form of the number
 static const int QContactPhoneNumber__FieldNormalizedNumber = (QContactPhoneNumber::FieldSubTypes+1);
@@ -97,6 +99,8 @@ Q_DECLARE_LATIN1_CONSTANT(QContactDetail__ContextLarge, "Large") = { "Large" };
 Q_DECLARE_LATIN1_CONSTANT(QContactOnlineAccount__FieldAccountPath, "AccountPath") = { "AccountPath" };
 Q_DECLARE_LATIN1_CONSTANT(QContactOnlineAccount__FieldAccountIconPath, "AccountIconPath") = { "AccountIconPath" };
 Q_DECLARE_LATIN1_CONSTANT(QContactOnlineAccount__FieldEnabled, "Enabled") = { "Enabled" };
+Q_DECLARE_LATIN1_CONSTANT(QContactOnlineAccount__FieldAccountDisplayName, "AccountDisplayName") = { "AccountDisplayName" };
+Q_DECLARE_LATIN1_CONSTANT(QContactOnlineAccount__FieldServiceProviderDisplayName, "ServiceProviderDisplayName") = { "ServiceProviderDisplayName" };
 
 Q_DECLARE_LATIN1_CONSTANT(QContactPhoneNumber__FieldNormalizedNumber, "NormalizedNumber") = { "NormalizedNumber" };
 

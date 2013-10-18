@@ -404,7 +404,9 @@ static const char *insertOnlineAccount =
         "\n  subTypes,"
         "\n  accountPath,"
         "\n  accountIconPath,"
-        "\n  enabled)"
+        "\n  enabled,"
+        "\n  accountDisplayName,"
+        "\n  serviceProviderDisplayName)"
         "\n VALUES ("
         "\n  :contactId,"
         "\n  :accountUri,"
@@ -415,7 +417,9 @@ static const char *insertOnlineAccount =
         "\n  :subTypes,"
         "\n  :accountPath,"
         "\n  :accountIconPath,"
-        "\n  :enabled)";
+        "\n  :enabled,"
+        "\n  :accountDisplayName,"
+        "\n  :serviceProviderDisplayName)";
 
 static const char *insertOrganization =
         "\n INSERT INTO Organizations ("
@@ -3588,7 +3592,7 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactOnlineAcco
     m_insertOnlineAccount.bindValue(3, detailValue(detail, T::FieldProtocol));
 #endif
     m_insertOnlineAccount.bindValue(4, detailValue(detail, T::FieldServiceProvider));
-    m_insertOnlineAccount.bindValue(5, detailValue(detail, T::FieldCapabilities));
+    m_insertOnlineAccount.bindValue(5, detailValue(detail, T::FieldCapabilities).value<QStringList>().join(QLatin1String(";")));
 #ifdef USING_QTPIM
     m_insertOnlineAccount.bindValue(6, OnlineAccount::subTypeList(detail.subTypes()).join(QLatin1String(";")));
 #else
@@ -3597,6 +3601,8 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactOnlineAcco
     m_insertOnlineAccount.bindValue(7, detailValue(detail, QContactOnlineAccount__FieldAccountPath));
     m_insertOnlineAccount.bindValue(8, detailValue(detail, QContactOnlineAccount__FieldAccountIconPath));
     m_insertOnlineAccount.bindValue(9, detailValue(detail, QContactOnlineAccount__FieldEnabled));
+    m_insertOnlineAccount.bindValue(10, detailValue(detail, QContactOnlineAccount__FieldAccountDisplayName));
+    m_insertOnlineAccount.bindValue(11, detailValue(detail, QContactOnlineAccount__FieldServiceProviderDisplayName));
     return m_insertOnlineAccount;
 }
 

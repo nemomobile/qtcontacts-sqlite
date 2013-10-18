@@ -164,7 +164,9 @@ static const char *createOnlineAccountsTable =
         "\n subTypes TEXT,"
         "\n accountPath TEXT,"
         "\n accountIconPath TEXT,"
-        "\n enabled BOOL);";
+        "\n enabled BOOL,"
+        "\n accountDisplayName TEXT,"
+        "\n serviceProviderDisplayName TEXT);";
 
 static const char *createOrganizationsTable =
         "\n CREATE TABLE Organizations ("
@@ -633,6 +635,10 @@ static const ExtraColumn detailsModifiable = { "Details", "modifiable", "BOOL", 
 
 static const ExtraColumn addressesSubTypes = { "Addresses", "subTypes", "TEXT", 0 };
 
+static const ExtraColumn onlineAccountsAccountDisplayName = { "OnlineAccounts", "accountDisplayName", "TEXT", 0 };
+
+static const ExtraColumn onlineAccountsServiceProviderDisplayName = { "OnlineAccounts", "serviceProviderDisplayName", "TEXT", 0 };
+
 static const ExtraColumn *extraColumns[] =
 {
     &contactsHasPhoneNumber,
@@ -641,7 +647,9 @@ static const ExtraColumn *extraColumns[] =
     &contactsIsOnline,
     &detailsProvenance,
     &detailsModifiable,
-    &addressesSubTypes
+    &addressesSubTypes,
+    &onlineAccountsAccountDisplayName,
+    &onlineAccountsServiceProviderDisplayName
 };
 
 static bool addTable(const ExtraTable *tableDef, QSqlDatabase &database)
