@@ -1320,7 +1320,7 @@ bool ContactsEngine::setContactDisplayLabel(QContact *contact, const QString &la
 QString ContactsEngine::normalizedPhoneNumber(const QString &input)
 {
     // TODO: Use a configuration variable to specify max characters:
-    static const int maxCharacters = 7;
+    static const int maxCharacters = QtContactsSqliteExtensions::DefaultMaximumPhoneNumberCharacters;
 
     return QtContactsSqliteExtensions::minimizePhoneNumber(input, maxCharacters);
 }

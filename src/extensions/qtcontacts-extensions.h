@@ -136,8 +136,10 @@ enum NormalizePhoneNumberFlag {
 };
 Q_DECLARE_FLAGS(NormalizePhoneNumberFlags, NormalizePhoneNumberFlag)
 
+enum { DefaultMaximumPhoneNumberCharacters = 8 };
+
 QString normalizePhoneNumber(const QString &input, NormalizePhoneNumberFlags flags);
-QString minimizePhoneNumber(const QString &input, int maxCharacters = 7);
+QString minimizePhoneNumber(const QString &input, int maxCharacters = DefaultMaximumPhoneNumberCharacters);
 
 }
 
