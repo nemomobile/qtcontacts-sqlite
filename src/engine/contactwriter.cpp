@@ -3588,7 +3588,7 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactOnlineAcco
     m_insertOnlineAccount.bindValue(3, detailValue(detail, T::FieldProtocol));
 #endif
     m_insertOnlineAccount.bindValue(4, detailValue(detail, T::FieldServiceProvider));
-    m_insertOnlineAccount.bindValue(5, detailValue(detail, T::FieldCapabilities));
+    m_insertOnlineAccount.bindValue(5, detailValue(detail, T::FieldCapabilities).value<QStringList>().join(QLatin1String(";")));
 #ifdef USING_QTPIM
     m_insertOnlineAccount.bindValue(6, OnlineAccount::subTypeList(detail.subTypes()).join(QLatin1String(";")));
 #else

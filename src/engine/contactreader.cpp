@@ -320,7 +320,7 @@ static const FieldInfo onlineAccountFields[] =
     { QContactOnlineAccount::FieldAccountUri, "accountUri", StringField },
     { QContactOnlineAccount::FieldProtocol, "protocol", StringField },
     { QContactOnlineAccount::FieldServiceProvider, "serviceProvider", StringField },
-    { QContactOnlineAccount::FieldCapabilities, "capabilities", StringField },
+    { QContactOnlineAccount::FieldCapabilities, "capabilities", StringListField },
     { QContactOnlineAccount::FieldSubTypes, "subTypes", StringListField },
     { QContactOnlineAccount__FieldAccountPath, "accountPath", StringField },
     { QContactOnlineAccount__FieldAccountIconPath, "accountIconPath", StringField },
