@@ -175,6 +175,9 @@ private slots:
     void extendedDetail_data() {addManagers();}
 #endif
 
+    void onlineAccountFields();
+    void onlineAccountFields_data() {addManagers();}
+
     /* Tests that take no data */
 #ifdef MUTABLE_SCHEMA_SUPPORTED
     void contactValidation();
@@ -4094,6 +4097,62 @@ void tst_QContactManager::extendedDetail()
     QCOMPARE(contacts.count(), 1);
 }
 #endif
+
+void tst_QContactManager::onlineAccountFields()
+{
+    QFETCH(QString, uri);
+    QScopedPointer<QContactManager> cm(QContactManager::fromUri(uri));
+
+    // Verify that the extended fields of QContactOnlineAccount are correctly implemented
+    QContact a;
+
+    QContactName n;
+    n.setFirstName("A");
+    n.setMiddleName("Test");
+    n.setLastName("Person");
+    a.saveDetail(&n);
+
+    const QString accountUri(QString::fromLatin1("test@example.org"));
+    const QString serviceProvider(QString::fromLatin1("example-im"));
+    const QContactOnlineAccount::Protocol protocol(QContactOnlineAccount::ProtocolJabber);
+    const QStringList capabilities(QStringList() << QString::fromLatin1("text") << QString::fromLatin1("voice"));
+    const QList<int> subTypes(QList<int>() << QContactOnlineAccount::SubTypeSip << QContactOnlineAccount::SubTypeImpp);
+    const QString accountPath(QString::fromLatin1("/example/jabber/0"));
+    const QString accountIconPath(QString::fromLatin1("icons/example.png"));
+    const bool enabled(true);
+    const QString accountDisplayName(QString::fromLatin1("My Account"));
+    const QString serviceProviderDisplayName(QString::fromLatin1("Example"));
+
+    QContactOnlineAccount oa;
+    oa.setAccountUri(accountUri);
+    oa.setServiceProvider(serviceProvider);
+    oa.setProtocol(protocol);
+    oa.setCapabilities(capabilities);
+    oa.setSubTypes(subTypes);
+    oa.setValue(QContactOnlineAccount__FieldAccountPath, accountPath);
+    oa.setValue(QContactOnlineAccount__FieldAccountIconPath, accountIconPath);
+    oa.setValue(QContactOnlineAccount__FieldEnabled, enabled);
+    oa.setValue(QContactOnlineAccount__FieldAccountDisplayName, accountDisplayName);
+    oa.setValue(QContactOnlineAccount__FieldServiceProviderDisplayName, serviceProviderDisplayName);
+    a.saveDetail(&oa);
+
+    QVERIFY(cm->saveContact(&a));
+    a = cm->contact(retrievalId(a));
+
+    QCOMPARE(a.details<QContactOnlineAccount>().count(), 1);
+
+    oa = a.detail<QContactOnlineAccount>();
+    QCOMPARE(oa.accountUri(), accountUri);
+    QCOMPARE(oa.serviceProvider(), serviceProvider);
+    QCOMPARE(oa.protocol(), protocol);
+    QCOMPARE(oa.capabilities(), capabilities);
+    QCOMPARE(oa.subTypes(), subTypes);
+    QCOMPARE(oa.value(QContactOnlineAccount__FieldAccountPath).value<QString>(), accountPath);
+    QCOMPARE(oa.value(QContactOnlineAccount__FieldAccountIconPath).value<QString>(), accountIconPath);
+    QCOMPARE(oa.value(QContactOnlineAccount__FieldEnabled).value<bool>(), enabled);
+    QCOMPARE(oa.value(QContactOnlineAccount__FieldAccountDisplayName).value<QString>(), accountDisplayName);
+    QCOMPARE(oa.value(QContactOnlineAccount__FieldServiceProviderDisplayName).value<QString>(), serviceProviderDisplayName);
+}
 
 void tst_QContactManager::lateDeletion()
 {

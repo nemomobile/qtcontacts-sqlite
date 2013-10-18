@@ -324,7 +324,9 @@ static const FieldInfo onlineAccountFields[] =
     { QContactOnlineAccount::FieldSubTypes, "subTypes", StringListField },
     { QContactOnlineAccount__FieldAccountPath, "accountPath", StringField },
     { QContactOnlineAccount__FieldAccountIconPath, "accountIconPath", StringField },
-    { QContactOnlineAccount__FieldEnabled, "enabled", BooleanField }
+    { QContactOnlineAccount__FieldEnabled, "enabled", BooleanField },
+    { QContactOnlineAccount__FieldAccountDisplayName, "accountDisplayName", StringField },
+    { QContactOnlineAccount__FieldServiceProviderDisplayName, "serviceProviderDisplayName", StringField }
 };
 
 static void setValues(QContactOnlineAccount *detail, QSqlQuery *query, const int offset)
@@ -348,9 +350,11 @@ static void setValues(QContactOnlineAccount *detail, QSqlQuery *query, const int
     setValue(detail, T::FieldSubTypes       , query->value(offset + 5).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
 #endif
 
-    setValue(detail, QContactOnlineAccount__FieldAccountPath,     query->value(offset + 6));
-    setValue(detail, QContactOnlineAccount__FieldAccountIconPath, query->value(offset + 7));
-    setValue(detail, QContactOnlineAccount__FieldEnabled,         query->value(offset + 8));
+    setValue(detail, QContactOnlineAccount__FieldAccountPath,                query->value(offset + 6));
+    setValue(detail, QContactOnlineAccount__FieldAccountIconPath,            query->value(offset + 7));
+    setValue(detail, QContactOnlineAccount__FieldEnabled,                    query->value(offset + 8));
+    setValue(detail, QContactOnlineAccount__FieldAccountDisplayName,         query->value(offset + 9));
+    setValue(detail, QContactOnlineAccount__FieldServiceProviderDisplayName, query->value(offset + 10));
 }
 
 static const FieldInfo organizationFields[] =
