@@ -1659,48 +1659,14 @@ QContactManager::Error ContactReader::queryContacts(
 
     QContactFetchHint::OptimizationHints optimizationHints(fetchHint.optimizationHints());
 
-    // Skip relationships if they're able to be left out
-    if ((optimizationHints & QContactFetchHint::NoRelationships) == 0) {
-        const QString relationshipQuery = QString::fromLatin1(
-            "\n SELECT"
-            "\n  temp.%1.contactId,"
-            "\n  Relationships.type,"
-            "\n  Relationships.firstId,"
-            "\n  Relationships.secondId"
-            "\n FROM temp.%1"
-            "\n  INNER JOIN Relationships"
-            "\n    ON (temp.%1.contactId = Relationships.firstId"
-            "\n     OR temp.%1.contactId = Relationships.secondId)"
-            "\n ORDER BY temp.%1.rowId ASC;").arg(tableName);
-
-        Table table = {
-            QSqlQuery(m_database),
-            &readRelationshipTable,
-            0
-        };
-
-        table.query.setForwardOnly(true);
-        if (!table.query.prepare(relationshipQuery)) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare relationship table query:\n%1\n%2")
-                    .arg(relationshipQuery)
-                    .arg(table.query.lastError().text()));
-        } else {
-            if (!table.query.exec()) {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to query relationship table: %1")
-                        .arg(table.query.lastError().text()));
-            } else if (table.query.next()) {
-                table.currentId = table.query.value(0).toUInt();
-                tables.append(table);
-            }
-        }
-    }
-
     const int maximumCount = fetchHint.maxCountHint();
     const int batchSize = (maximumCount > 0) ? maximumCount : ReportBatchSize;
 
     do {
         int contactCount = contacts->count();
         QList<bool> syncableContact;
+        QStringList iidList;
+        QMap<quint32, int> contactIdIndex;
 
         for (int i = 0; i < batchSize && query.next(); ++i) {
             quint32 dbId = query.value(0).toUInt();
@@ -1708,6 +1674,9 @@ QContactManager::Error ContactReader::queryContacts(
 
             QContactId id(ContactId::contactId(ContactId::apiId(dbId)));
             contact.setId(id);
+
+            iidList.append(QString::number(dbId));
+            contactIdIndex.insert(dbId, contactCount + i);
 
             QString persistedDL = query.value(1).toString();
             if (!persistedDL.isEmpty())
@@ -1796,6 +1765,65 @@ QContactManager::Error ContactReader::queryContacts(
 
                 if (table.query.isValid() && (table.currentId == contactId)) {
                     table.read(contactId, &contact, &table.query, *sit, table.currentId);
+                }
+            }
+        }
+
+        if ((optimizationHints & QContactFetchHint::NoRelationships) == 0) {
+            // Find the relationships for the contacts in this batch
+            QMap<quint32, QList<QContactRelationship> > contactRelationships;
+
+            QString queryStatement(QString::fromLatin1(
+                "SELECT type,firstId,secondId "
+                "FROM Relationships "
+                "WHERE (firstId IN (%1) OR secondId IN (%1))").arg(iidList.join(QChar::fromLatin1(','))));
+
+            QSqlQuery relationshipQuery(m_database);
+            relationshipQuery.setForwardOnly(true);
+            if (!relationshipQuery.prepare(queryStatement)) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for contact relationships:\n%1\nQuery:\n%2")
+                        .arg(relationshipQuery.lastError().text())
+                        .arg(queryStatement));
+                return QContactManager::UnspecifiedError;
+            }
+            if (!relationshipQuery.exec()) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to query contact relationships\n%1\nQuery:\n%2")
+                        .arg(relationshipQuery.lastError().text())
+                        .arg(queryStatement));
+                return QContactManager::UnspecifiedError;
+            }
+
+            while (relationshipQuery.next()) {
+                QString type = relationshipQuery.value(0).toString();
+                quint32 firstId = relationshipQuery.value(1).toUInt();
+                quint32 secondId = relationshipQuery.value(2).toUInt();
+
+                QContactRelationship rel(makeRelationship(type, firstId, secondId));
+
+                QMap<quint32, int>::iterator iit = contactIdIndex.find(firstId);
+                if (iit != contactIdIndex.end()) {
+                    contactRelationships[firstId].append(rel);
+                }
+                iit = contactIdIndex.find(secondId);
+                if (iit != contactIdIndex.end()) {
+                    contactRelationships[secondId].append(rel);
+                }
+            }
+
+            relationshipQuery.finish();
+
+            // Set the relationship lists for the contacts in this batch
+            QMap<quint32, QList<QContactRelationship> >::const_iterator rit = contactRelationships.constBegin(), rend = contactRelationships.constEnd();
+            for ( ; rit != rend; ++rit) {
+                quint32 contactId = rit.key();
+
+                QMap<quint32, int>::iterator iit = contactIdIndex.find(contactId);
+                if (iit != contactIdIndex.end()) {
+                    int contactIndex = *iit;
+                    QContact &contact(*(contacts->begin() + contactIndex));
+
+                    // Set the relationships for this contact
+                    QContactManagerEngine::setContactRelationships(&contact, rit.value());
                 }
             }
         }
