@@ -124,6 +124,24 @@ template<int N> static void setValue(
 }
 #endif
 
+static QVariant stringListValue(const QVariant &columnValue)
+{
+    if (columnValue.isNull())
+        return columnValue;
+
+    QString listString(columnValue.toString());
+    return listString.split(QLatin1Char(';'), QString::SkipEmptyParts);
+}
+
+static QVariant urlValue(const QVariant &columnValue)
+{
+    if (columnValue.isNull())
+        return columnValue;
+
+    QString urlString(columnValue.toString());
+    return QUrl(urlString);
+}
+
 static const FieldInfo displayLabelFields[] =
 {
     { QContactDisplayLabel::FieldLabel, "displayLabel", StringField }
@@ -233,8 +251,8 @@ static void setValues(QContactAvatar *detail, QSqlQuery *query, const int offset
 {
     typedef QContactAvatar T;
 
-    setValue(detail, T::FieldImageUrl, QUrl(query->value(offset + 0).toString()));
-    setValue(detail, T::FieldVideoUrl, QUrl(query->value(offset + 1).toString()));
+    setValue(detail, T::FieldImageUrl, urlValue(query->value(offset + 0)));
+    setValue(detail, T::FieldVideoUrl, urlValue(query->value(offset + 1)));
     setValue(detail, QContactAvatar__FieldAvatarMetadata, query->value(offset + 2));
 }
 
@@ -341,13 +359,13 @@ static void setValues(QContactOnlineAccount *detail, QSqlQuery *query, const int
     setValue(detail, T::FieldProtocol       , query->value(offset + 2));
 #endif
     setValue(detail, T::FieldServiceProvider, query->value(offset + 3));
-    setValue(detail, T::FieldCapabilities   , query->value(offset + 4).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
+    setValue(detail, T::FieldCapabilities   , stringListValue(query->value(offset + 4)));
 
 #ifdef USING_QTPIM
     QStringList subTypeNames(query->value(offset + 5).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
     setValue(detail, T::FieldSubTypes, QVariant::fromValue<QList<int> >(OnlineAccount::subTypeList(subTypeNames)));
 #else
-    setValue(detail, T::FieldSubTypes       , query->value(offset + 5).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
+    setValue(detail, T::FieldSubTypes       , stringListValue(query->value(offset + 5)));
 #endif
 
     setValue(detail, QContactOnlineAccount__FieldAccountPath,                query->value(offset + 6));
@@ -375,8 +393,8 @@ static void setValues(QContactOrganization *detail, QSqlQuery *query, const int 
     setValue(detail, T::FieldRole      , query->value(offset + 1));
     setValue(detail, T::FieldTitle     , query->value(offset + 2));
     setValue(detail, T::FieldLocation  , query->value(offset + 3));
-    setValue(detail, T::FieldDepartment, query->value(offset + 4).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
-    setValue(detail, T::FieldLogoUrl   , QUrl(query->value(offset + 5).toString()));
+    setValue(detail, T::FieldDepartment, stringListValue(query->value(offset + 4)));
+    setValue(detail, T::FieldLogoUrl   , urlValue(query->value(offset + 5)));
 }
 
 static const FieldInfo phoneNumberFields[] =
@@ -396,7 +414,7 @@ static void setValues(QContactPhoneNumber *detail, QSqlQuery *query, const int o
     QStringList subTypeNames(query->value(offset + 1).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
     setValue(detail, T::FieldSubTypes, QVariant::fromValue<QList<int> >(PhoneNumber::subTypeList(subTypeNames)));
 #else
-    setValue(detail, T::FieldSubTypes, query->value(offset + 1).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
+    setValue(detail, T::FieldSubTypes, stringListValue(query->value(offset + 1)));
 #endif
 
     setValue(detail, QContactPhoneNumber__FieldNormalizedNumber, query->value(offset + 2));
@@ -440,8 +458,8 @@ static void setValues(QContactRingtone *detail, QSqlQuery *query, const int offs
 {
     typedef QContactRingtone T;
 
-    setValue(detail, T::FieldAudioRingtoneUrl, QUrl(query->value(offset + 0).toString()));
-    setValue(detail, T::FieldVideoRingtoneUrl, QUrl(query->value(offset + 1).toString()));
+    setValue(detail, T::FieldAudioRingtoneUrl, urlValue(query->value(offset + 0)));
+    setValue(detail, T::FieldVideoRingtoneUrl, urlValue(query->value(offset + 1)));
 }
 
 static const FieldInfo tagFields[] =
@@ -466,7 +484,7 @@ static void setValues(QContactUrl *detail, QSqlQuery *query, const int offset)
 {
     typedef QContactUrl T;
 
-    setValue(detail, T::FieldUrl    , QUrl(query->value(offset + 0).toString()));
+    setValue(detail, T::FieldUrl    , urlValue(query->value(offset + 0)));
 #ifdef USING_QTPIM
     setValue(detail, T::FieldSubType, QVariant::fromValue<int>(Url::subType(query->value(offset + 1).toString())));
 #else
