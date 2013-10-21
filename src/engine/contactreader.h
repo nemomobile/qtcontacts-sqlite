@@ -95,14 +95,13 @@ protected:
     QContactManager::Error queryContacts(
             const QString &table, QList<QContact> *contacts, const QContactFetchHint &fetchHint, bool relaxConstraints = false);
     QContactManager::Error queryContacts(
-            const QString &table, QList<QContact> *contacts, const QContactFetchHint &fetchHint, bool relaxConstraints, QSqlQuery &query, QList<QSqlQuery> *activeQueries);
+            const QString &table, QList<QContact> *contacts, const QContactFetchHint &fetchHint, bool relaxConstraints, QSqlQuery &query);
 
     virtual void contactsAvailable(const QList<QContact> &contacts);
     virtual void contactIdsAvailable(const QList<QContactId> &contactIds);
 
 private:
     ContactsDatabase &m_database;
-    QMap<QString, QMap<QString, QSqlQuery> > m_cachedDetailTableQueries;
 };
 
 #endif

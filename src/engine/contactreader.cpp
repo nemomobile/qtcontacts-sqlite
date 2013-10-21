@@ -95,6 +95,8 @@ enum FieldType {
     OtherField
 };
 
+static const int invalidField = -1;
+
 struct FieldInfo
 {
     int field;
@@ -143,7 +145,9 @@ static const FieldInfo displayLabelFields[] =
 static const FieldInfo nameFields[] =
 {
     { QContactName::FieldFirstName, "firstName", LocalizedField },
+    { invalidField, "lowerFirstName", LocalizedField },
     { QContactName::FieldLastName, "lastName", LocalizedField },
+    { invalidField, "lowerLastName", LocalizedField },
     { QContactName::FieldMiddleName, "middleName", LocalizedField },
     { QContactName::FieldPrefix, "prefix", LocalizedField },
     { QContactName::FieldSuffix, "suffix", LocalizedField },
@@ -259,6 +263,7 @@ static void setValues(QContactBirthday *detail, QSqlQuery *query, const int offs
 static const FieldInfo emailAddressFields[] =
 {
     { QContactEmailAddress::FieldEmailAddress, "emailAddress", StringField },
+    { invalidField, "lowerEmailAddress", StringField },
     { QContactDetail::FieldContext, "context", StringField }
 };
 
@@ -296,7 +301,8 @@ static void setValues(QContactHobby *detail, QSqlQuery *query, const int offset)
 
 static const FieldInfo nicknameFields[] =
 {
-    { QContactNickname::FieldNickname, "nickname", LocalizedField }
+    { QContactNickname::FieldNickname, "nickname", LocalizedField },
+    { invalidField, "lowerNickname", LocalizedField }
 };
 
 static void setValues(QContactNickname *detail, QSqlQuery *query, const int offset)
@@ -322,6 +328,7 @@ static void setValues(QContactNote *detail, QSqlQuery *query, const int offset)
 static const FieldInfo onlineAccountFields[] =
 {
     { QContactOnlineAccount::FieldAccountUri, "accountUri", StringField },
+    { invalidField, "lowerAccountUri", StringField },
     { QContactOnlineAccount::FieldProtocol, "protocol", StringField },
     { QContactOnlineAccount::FieldServiceProvider, "serviceProvider", LocalizedField },
     { QContactOnlineAccount::FieldCapabilities, "capabilities", StringListField },
@@ -510,77 +517,74 @@ static int contextType(const QString &type)
     return -1;
 }
 
-template <typename T> static void readDetail(quint32 contactId, quint32 &currentId, QContact *contact, QSqlQuery *query, bool syncable, const QString &syncTarget, bool relaxConstraints, bool append)
+template <typename T>
+static void readDetail(QContact *contact, QSqlQuery *query, quint32 contactId, quint32 detailId, bool syncable, const QString &syncTarget, bool relaxConstraints, int offset)
 {
     const bool aggregateContact(syncTarget == aggregateSyncTarget);
 
-    do {
-        if (!append) {
-            // We still need to read the table rows, to get to the following details
-            continue;
-        }
+    T detail;
 
-        T detail;
+    /*
+    const quint32 detailId = query->value(0).toUInt();
+    const quint32 contactId = query->value(1).toUInt();
+    const QString detailName = query->value(2).toString();
+    */
+    const QString detailUriValue = query->value(3).toString();
+    const QString linkedDetailUrisValue = query->value(4).toString();
+    const QString contextValue = query->value(5).toString();
+    const int accessConstraints = query->value(6).toInt();
+    QString provenance = query->value(7).toString();
+    const bool modifiable = query->value(8).toBool();
+    const bool nonexportable = query->value(9).toBool();
 
-        const QString detailUriValue = query->value(0).toString();
-        const QString linkedDetailUrisValue = query->value(1).toString();
-        const QString contextValue = query->value(2).toString();
-        const int accessConstraints = query->value(3).toInt();
-        QString provenance = query->value(4).toString();
-        const bool modifiable = query->value(5).toBool();
-        const bool nonexportable = query->value(6).toBool();
-        const quint32 detailId = query->value(7).toUInt();
-        const quint32 contactId = query->value(8).toUInt();
-
-        if (!detailUriValue.isEmpty()) {
-            setValue(&detail,
-                     QContactDetail::FieldDetailUri,
-                     detailUriValue);
-        }
-        if (!linkedDetailUrisValue.isEmpty()) {
-            setValue(&detail,
-                     QContactDetail::FieldLinkedDetailUris,
-                     linkedDetailUrisValue.split(QLatin1Char(';'), QString::SkipEmptyParts));
-        }
-        if (!contextValue.isEmpty()) {
-            QList<int> contexts;
-            foreach (const QString &context, contextValue.split(QLatin1Char(';'), QString::SkipEmptyParts)) {
-                int type = contextType(context);
-                if (type != -1) {
-                    contexts.append(type);
-                }
-            }
-            if (!contexts.isEmpty()) {
-                detail.setContexts(contexts);
+    if (!detailUriValue.isEmpty()) {
+        setValue(&detail,
+                 QContactDetail::FieldDetailUri,
+                 detailUriValue);
+    }
+    if (!linkedDetailUrisValue.isEmpty()) {
+        setValue(&detail,
+                 QContactDetail::FieldLinkedDetailUris,
+                 linkedDetailUrisValue.split(QLatin1Char(';'), QString::SkipEmptyParts));
+    }
+    if (!contextValue.isEmpty()) {
+        QList<int> contexts;
+        foreach (const QString &context, contextValue.split(QLatin1Char(';'), QString::SkipEmptyParts)) {
+            int type = contextType(context);
+            if (type != -1) {
+                contexts.append(type);
             }
         }
-
-        if (!aggregateContact) {
-            // This detail is not aggregated from another - its provenance should match its ID
-            provenance = QStringLiteral("%1:%2:%3").arg(contactId).arg(detailId).arg(syncTarget);
+        if (!contexts.isEmpty()) {
+            detail.setContexts(contexts);
         }
-        setValue(&detail, QContactDetail__FieldProvenance, provenance);
+    }
 
-        // Only report modifiable state for non-local, non-aggregate contacts
-        if (syncable) {
-            setValue(&detail, QContactDetail__FieldModifiable, modifiable);
-        }
+    if (!aggregateContact) {
+        // This detail is not aggregated from another - its provenance should match its ID
+        provenance = QStringLiteral("%1:%2:%3").arg(contactId).arg(detailId).arg(syncTarget);
+    }
+    setValue(&detail, QContactDetail__FieldProvenance, provenance);
 
-        // Only include non-exportable if it is set
-        if (nonexportable) {
-            setValue(&detail, QContactDetail__FieldNonexportable, nonexportable);
-        }
+    // Only report modifiable state for non-local, non-aggregate contacts
+    if (syncable) {
+        setValue(&detail, QContactDetail__FieldModifiable, modifiable);
+    }
 
-        // Constraints should be applied unless generating a partial aggregate; the partial aggregate
-        // is intended for modification, so adding constraints prevents it from being used correctly
-        if (!relaxConstraints) {
-            QContactManagerEngine::setDetailAccessConstraints(&detail, static_cast<QContactDetail::AccessConstraints>(accessConstraints));
-        }
+    // Only include non-exportable if it is set
+    if (nonexportable) {
+        setValue(&detail, QContactDetail__FieldNonexportable, nonexportable);
+    }
 
-        setValues(&detail, query, 9);
+    // Constraints should be applied unless generating a partial aggregate; the partial aggregate
+    // is intended for modification, so adding constraints prevents it from being used correctly
+    if (!relaxConstraints) {
+        QContactManagerEngine::setDetailAccessConstraints(&detail, static_cast<QContactDetail::AccessConstraints>(accessConstraints));
+    }
 
-        contact->saveDetail(&detail);
-    } while (query->next() && (currentId = query->value(8).toUInt()) == contactId);
+    setValues(&detail, query, offset);
+
+    contact->saveDetail(&detail);
 }
 
 static QContactRelationship makeRelationship(const QString &type, quint32 firstId, quint32 secondId)
@@ -597,14 +601,7 @@ static QContactRelationship makeRelationship(const QString &type, quint32 firstI
     return relationship;
 }
 
-typedef void (*ReadDetail)(quint32 contactId,
-                           quint32 &currentId,
-                           QContact *contact,
-                           QSqlQuery *query,
-                           bool syncable,
-                           const QString &syncTarget,
-                           bool relaxConstraints,
-                           bool append);
+typedef void (*ReadDetail)(QContact *contact, QSqlQuery *query, quint32 contactId, quint32 detailId, bool syncable, const QString &syncTarget, bool relaxConstraints, int offset);
 
 struct DetailInfo
 {
@@ -613,6 +610,7 @@ struct DetailInfo
     const char *table;
     const FieldInfo *fields;
     const int fieldCount;
+    const bool includesContext;
     const bool join;
     const ReadDetail read;
 
@@ -629,11 +627,11 @@ template <typename T, int N> static int lengthOf(const T(&)[N]) { return N; }
 template <typename T> QContactDetail::DetailType detailIdentifier() { return T::Type; }
 
 #define PREFIX_LENGTH 8
-#define DEFINE_DETAIL(Detail, Table, fields, join) \
-    { detailIdentifier<Detail>(), #Detail + PREFIX_LENGTH, #Table, fields, lengthOf(fields), join, readDetail<Detail> }
+#define DEFINE_DETAIL(Detail, Table, fields, includesContext, join) \
+    { detailIdentifier<Detail>(), #Detail + PREFIX_LENGTH, #Table, fields, lengthOf(fields), includesContext, join, readDetail<Detail> }
 
 #define DEFINE_DETAIL_PRIMARY_TABLE(Detail, fields) \
-    { detailIdentifier<Detail>(), #Detail + PREFIX_LENGTH, 0, fields, lengthOf(fields), false, 0 }
+    { detailIdentifier<Detail>(), #Detail + PREFIX_LENGTH, 0, fields, lengthOf(fields), false, false, 0 }
 
 // Note: join should be true only if there can be only a single row for each contact in that table
 static const DetailInfo detailInfo[] =
@@ -646,30 +644,42 @@ static const DetailInfo detailInfo[] =
     DEFINE_DETAIL_PRIMARY_TABLE(QContactFavorite,     favoriteFields),
     DEFINE_DETAIL_PRIMARY_TABLE(QContactStatusFlags,  statusFlagsFields),
     DEFINE_DETAIL_PRIMARY_TABLE(QContactType,         typeFields),
-    DEFINE_DETAIL(QContactAddress       , Addresses      , addressFields       , false),
-    DEFINE_DETAIL(QContactAnniversary   , Anniversaries  , anniversaryFields   , false),
-    DEFINE_DETAIL(QContactAvatar        , Avatars        , avatarFields        , false),
-    DEFINE_DETAIL(QContactBirthday      , Birthdays      , birthdayFields      , true),
-    DEFINE_DETAIL(QContactEmailAddress  , EmailAddresses , emailAddressFields  , false),
-    DEFINE_DETAIL(QContactGuid          , Guids          , guidFields          , true),
-    DEFINE_DETAIL(QContactHobby         , Hobbies        , hobbyFields         , false),
-    DEFINE_DETAIL(QContactNickname      , Nicknames      , nicknameFields      , false),
-    DEFINE_DETAIL(QContactNote          , Notes          , noteFields          , false),
-    DEFINE_DETAIL(QContactOnlineAccount , OnlineAccounts , onlineAccountFields , false),
-    DEFINE_DETAIL(QContactOrganization  , Organizations  , organizationFields  , false),
-    DEFINE_DETAIL(QContactPhoneNumber   , PhoneNumbers   , phoneNumberFields   , false),
-    DEFINE_DETAIL(QContactPresence      , Presences      , presenceFields      , false),
-    DEFINE_DETAIL(QContactRingtone      , Ringtones      , ringtoneFields      , false),
-    DEFINE_DETAIL(QContactTag           , Tags           , tagFields           , false),
-    DEFINE_DETAIL(QContactUrl           , Urls           , urlFields           , false),
-    DEFINE_DETAIL(QContactOriginMetadata, OriginMetadata , originMetadataFields, true),
-    DEFINE_DETAIL(QContactGlobalPresence, GlobalPresences, presenceFields      , true),
-    DEFINE_DETAIL(QContactExtendedDetail, ExtendedDetails, extendedDetailFields, false),
+    DEFINE_DETAIL(QContactAddress       , Addresses      , addressFields       , true , false),
+    DEFINE_DETAIL(QContactAnniversary   , Anniversaries  , anniversaryFields   , false, false),
+    DEFINE_DETAIL(QContactAvatar        , Avatars        , avatarFields        , false, false),
+    DEFINE_DETAIL(QContactBirthday      , Birthdays      , birthdayFields      , false, true),
+    DEFINE_DETAIL(QContactEmailAddress  , EmailAddresses , emailAddressFields  , true , false),
+    DEFINE_DETAIL(QContactGuid          , Guids          , guidFields          , false, true),
+    DEFINE_DETAIL(QContactHobby         , Hobbies        , hobbyFields         , false, false),
+    DEFINE_DETAIL(QContactNickname      , Nicknames      , nicknameFields      , false, false),
+    DEFINE_DETAIL(QContactNote          , Notes          , noteFields          , false, false),
+    DEFINE_DETAIL(QContactOnlineAccount , OnlineAccounts , onlineAccountFields , false, false),
+    DEFINE_DETAIL(QContactOrganization  , Organizations  , organizationFields  , false, false),
+    DEFINE_DETAIL(QContactPhoneNumber   , PhoneNumbers   , phoneNumberFields   , false, false),
+    DEFINE_DETAIL(QContactPresence      , Presences      , presenceFields      , false, false),
+    DEFINE_DETAIL(QContactRingtone      , Ringtones      , ringtoneFields      , false, false),
+    DEFINE_DETAIL(QContactTag           , Tags           , tagFields           , false, false),
+    DEFINE_DETAIL(QContactUrl           , Urls           , urlFields           , false, false),
+    DEFINE_DETAIL(QContactOriginMetadata, OriginMetadata , originMetadataFields, false, true),
+    DEFINE_DETAIL(QContactGlobalPresence, GlobalPresences, presenceFields      , false, true),
+    DEFINE_DETAIL(QContactExtendedDetail, ExtendedDetails, extendedDetailFields, false, false),
 };
 
 #undef DEFINE_DETAIL_PRIMARY_TABLE
 #undef DEFINE_DETAIL
 #undef PREFIX_LENGTH
+
+QContactDetail::DetailType detailIdentifier(const QString &name)
+{
+    for (int i = 0; i < lengthOf(detailInfo); ++i) {
+        const DetailInfo &detail = detailInfo[i];
+        if (name == QLatin1String(detail.detailName)) {
+            return detail.detailType;
+        }
+    }
+
+    return QContactDetail::TypeUndefined;
+}
 
 static QString fieldName(const char *table, const char *field)
 {
@@ -720,7 +730,7 @@ static bool filterOnField(const QContactDetailFilter &filter, F field)
 template<typename F>
 static bool validFilterField(F filter)
 {
-    return (filter.detailField() != -1);
+    return (filter.detailField() != invalidField);
 }
 
 template<typename F>
@@ -1809,92 +1819,72 @@ QContactManager::Error ContactReader::queryContacts(
         return QContactManager::UnspecifiedError;
     }
 
-    QList<QSqlQuery> activeQueries;
-    QContactManager::Error err = queryContacts(tableName, contacts, fetchHint, relaxConstraints, query, &activeQueries);
+    QContactManager::Error err = queryContacts(tableName, contacts, fetchHint, relaxConstraints, query);
 
-    // Ensure all active queries are completed
     query.finish();
-    QList<QSqlQuery>::iterator it = activeQueries.begin(), end = activeQueries.end();
-    for ( ; it != end; ++it) {
-        (*it).finish();
-    }
 
     return err;
 }
 
 QContactManager::Error ContactReader::queryContacts(
-        const QString &tableName, QList<QContact> *contacts, const QContactFetchHint &fetchHint, bool relaxConstraints, QSqlQuery &query, QList<QSqlQuery> *activeQueries)
+        const QString &tableName, QList<QContact> *contacts, const QContactFetchHint &fetchHint, bool relaxConstraints, QSqlQuery &query)
 {
-    Q_ASSERT(activeQueries);
+    // Formulate the query to fetch the contact details
+    const QString detailQueryTemplate(QString::fromLatin1(
+        "SELECT "
+            "Details.detailId,"
+            "Details.contactId,"
+            "Details.detail,"
+            "Details.detailUri,"
+            "Details.linkedDetailUris,"
+            "Details.contexts,"
+            "Details.accessConstraints,"
+            "Details.provenance,"
+            "COALESCE(Details.modifiable, 0),"
+            "COALESCE(Details.nonexportable, 0),"
+            "%1 "
+        "FROM %3 "
+        "JOIN Details ON Details.contactId = %3.contactId "
+        "%2"
+        ));
 
-    const QString tableTemplate = QString(QLatin1String(
-            "\n SELECT"
-            "\n  Details.detailUri,"
-            "\n  Details.linkedDetailUris,"
-            "\n  Details.contexts,"
-            "\n  Details.accessConstraints,"
-            "\n  Details.provenance,"
-            "\n  COALESCE(Details.modifiable, 0),"
-            "\n  COALESCE(Details.nonexportable, 0),"
-            "\n  %2.*"
-            "\n FROM temp.%1"
-            "\n  INNER JOIN %2 ON temp.%1.contactId = %2.contactId"
-            "\n  LEFT JOIN Details ON %2.detailId = Details.detailId"
-            "\n ORDER BY temp.%1.rowId ASC;")).arg(tableName);
+    const QString selectTemplate(QString::fromLatin1(
+        "%1.*"));
+    const QString joinTemplate(QString::fromLatin1(
+        "LEFT JOIN %1 ON %1.detailId = Details.detailId"));
 
-    // This is the zero-based offset of the contact ID value in the table query above:
-    const int idValueOffset = 8;
+    QStringList selectSpec;
+    QStringList joinSpec;
+
+    QHash<QString, QPair<ReadDetail, int> > readProperties;
+    int offset = 10 + 2; // Details columns + ID columns of the joined table preceding the first data column
 
     const ContactWriter::DetailList &definitionMask = fetchHint.detailTypesHint();
 
-    QMap<QString, QSqlQuery> &cachedQueries(m_cachedDetailTableQueries[tableName]);
-
-    QList<Table> tables;
     for (int i = 0; i < lengthOf(detailInfo); ++i) {
         const DetailInfo &detail = detailInfo[i];
         if (!detail.read)
             continue;
 
         if (definitionMask.isEmpty() || definitionMask.contains(detail.detailType)) {
-            // we need to query this particular detail table
-            // use cached prepared queries if available, else prepare and cache query.
-            QMap<QString, QSqlQuery>::iterator qit = cachedQueries.find(detail.table);
-            if (qit == cachedQueries.end()) {
-                // Not yet in the cache
-                const QString tableQueryStatement(tableTemplate.arg(QLatin1String(detail.table)));
-                QSqlQuery detailTableQuery(m_database);
-                detailTableQuery.setForwardOnly(true);
-                if (!detailTableQuery.prepare(tableQueryStatement)) {
-                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare table %1:\n%2\n%3")
-                            .arg(detail.table)
-                            .arg(tableQueryStatement)
-                            .arg(detailTableQuery.lastError().text()));
-                    return QContactManager::UnspecifiedError;
-                } else {
-                    qit = cachedQueries.insert(detail.table, detailTableQuery);
-                }
-            }
+            // we need to join this particular detail table
+            const QString detailTable(QString::fromLatin1(detail.table));
+            const QString detailName(QString::fromLatin1(detail.detailName));
 
-            // Make a copy of the prepared query
-            activeQueries->append(*qit);
-            QSqlQuery &tableQuery(activeQueries->last());
+            selectSpec.append(selectTemplate.arg(detailTable));
+            joinSpec.append(joinTemplate.arg(detailTable));
 
-            if (!tableQuery.exec()) {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to query table %1:\n%2")
-                        .arg(detail.table)
-                        .arg(tableQuery.lastError().text()));
-                return QContactManager::UnspecifiedError;
-            } else if (tableQuery.next()) {
-                quint32 currentId = tableQuery.value(idValueOffset).toUInt();
-
-                Table table = { &tableQuery, detail.detailType, detail.read, currentId };
-                tables.append(table);
-            }
+            readProperties.insert(detailName, qMakePair(detail.read, offset));
+            offset += detail.fieldCount + (detail.includesContext ? 1 : 2);
         }
     }
 
+    QString detailQuery(detailQueryTemplate.arg(selectSpec.join(QChar::fromLatin1(',')))
+                                           .arg(joinSpec.join(QChar::fromLatin1(' '))));
+
     QContactFetchHint::OptimizationHints optimizationHints(fetchHint.optimizationHints());
 
+    // Query the contact data in batches
     const int maximumCount = fetchHint.maxCountHint();
     const int batchSize = (maximumCount > 0) ? maximumCount : ReportBatchSize;
 
@@ -1903,8 +1893,9 @@ QContactManager::Error ContactReader::queryContacts(
         QList<bool> syncableContact;
         QStringList contactSyncTarget;
         QStringList iidList;
+        QVariantList varIds;
         QMap<quint32, int> contactIdIndex;
-        QMap<QContactDetail::DetailType, QList<quint32> > transientDetailContacts;
+        QMap<quint32, QSet<QContactDetail::DetailType> > transientContactDetails;
 
         for (int i = 0; i < batchSize && query.next(); ++i) {
             quint32 dbId = query.value(0).toUInt();
@@ -1914,6 +1905,7 @@ QContactManager::Error ContactReader::queryContacts(
             contact.setId(id);
 
             iidList.append(QString::number(dbId));
+            varIds.append(QVariant(dbId));
             contactIdIndex.insert(dbId, contactCount + i);
 
             QString persistedDL = query.value(1).toString();
@@ -2045,10 +2037,7 @@ QContactManager::Error ContactReader::queryContacts(
                 }
 
                 // Mark this contact as not requiring table data for these detailtypes
-                foreach (QContactDetail::DetailType type, transientTypes) {
-                    QList<quint32> &idList(transientDetailContacts[type]);
-                    idList.append(dbId);
-                }
+                transientContactDetails.insert(dbId, transientTypes);
             }
 
             // Add the updated status flags
@@ -2062,25 +2051,65 @@ QContactManager::Error ContactReader::queryContacts(
             contacts->append(contact);
         }
 
-        for (int j = 0; j < tables.count(); ++j) {
-            Table &table = tables[j];
-            const QList<quint32> &transientContactIds(transientDetailContacts[table.detailType]);
+        if (!detailQuery.isEmpty()) {
+            // Store the IDs of the contacts in this batch in a temporary table
+            QString transientTable;
+            if (!m_database.createTransientContactIdsTable(tableName, varIds, &transientTable)) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create transient contacts table for query!"));
+                return QContactManager::UnspecifiedError;
+            }
 
-            QList<bool>::const_iterator sit = syncableContact.begin();
-            QStringList::const_iterator stit = contactSyncTarget.begin();
-            QList<QContact>::iterator it = contacts->begin() + contactCount;
-            for (QList<QContact>::iterator end = contacts->end(); it != end; ++it, ++sit, ++stit) {
-                QContact &contact(*it);
-                quint32 contactId = ContactId::databaseId(contact.id());
+            QString queryStatement(detailQuery.arg(transientTable));
 
-                if (table.query->isValid() && (table.currentId == contactId)) {
-                    // If the transient store contains details of this type for this contact, they take precedence over the
-                    // details stored in the tables
-                    const bool contactHasTransient(transientContactIds.contains(contactId));
+            // Read the details for these contacts
+            QSqlQuery detailQuery(m_database);
+            detailQuery.setForwardOnly(true);
+            if (!detailQuery.prepare(queryStatement)) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for contact details:\n%1\nQuery:\n%2")
+                        .arg(detailQuery.lastError().text())
+                        .arg(queryStatement));
+                return QContactManager::UnspecifiedError;
+            }
+            if (!detailQuery.exec()) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to query contact details\n%1\nQuery:\n%2")
+                        .arg(detailQuery.lastError().text())
+                        .arg(queryStatement));
+                return QContactManager::UnspecifiedError;
+            }
 
-                    table.read(contactId, table.currentId, &contact, table.query, *sit, *stit, relaxConstraints, !contactHasTransient);
+            while (detailQuery.next()) {
+                const quint32 detailId = detailQuery.value(0).toUInt();
+                const quint32 contactId = detailQuery.value(1).toUInt();
+                const QString detailName = detailQuery.value(2).toString();
+
+                // Are we reporting this detail type?
+                const QPair<ReadDetail, int> properties(readProperties[detailName]);
+                if (properties.first && properties.second) {
+                    // Are there transient details of this type for this contact?
+                    QMap<quint32, QSet<QContactDetail::DetailType> >::const_iterator tit = transientContactDetails.constFind(contactId);
+                    if (tit != transientContactDetails.constEnd()) {
+                        const QContactDetail::DetailType detailType(detailIdentifier(detailName));
+                        if ((*tit).contains(detailType)) {
+                            // This contact has transient details of this type; skip the extraction
+                            continue;
+                        }
+                    }
+
+                    QMap<quint32, int>::iterator iit = contactIdIndex.find(contactId);
+                    if (iit != contactIdIndex.end()) {
+                        int contactIndex = *iit;
+                        QContact &contact(*(contacts->begin() + contactIndex));
+
+                        bool syncable = *(syncableContact.constBegin() + (contactIndex - contactCount));
+                        const QString &syncTarget = *(contactSyncTarget.constBegin() + (contactIndex - contactCount));
+
+                        // Extract the values from the result row
+                        properties.first(&contact, &detailQuery, contactId, detailId, syncable, syncTarget, relaxConstraints, properties.second);
+                    }
                 }
             }
+
+            detailQuery.finish();
         }
 
         if ((optimizationHints & QContactFetchHint::NoRelationships) == 0) {
