@@ -35,6 +35,7 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QSqlError>
 #include <QSqlQuery>
 
@@ -960,6 +961,13 @@ void clearTemporaryContactIdsTable(QSqlDatabase &db, const QString &table)
     }
 }
 
+// QDir::isReadable() doesn't support group permissions, only user permissions.
+bool directoryIsRW(const QString &dirPath)
+{
+  QFileInfo databaseDirInfo(dirPath);
+  return (databaseDirInfo.permission(QFile::ReadGroup | QFile::WriteGroup)
+       || databaseDirInfo.permission(QFile::ReadUser  | QFile::WriteUser));
+}
 
 QSqlDatabase ContactsDatabase::open(const QString &databaseName)
 {
@@ -973,7 +981,7 @@ QSqlDatabase ContactsDatabase::open(const QString &databaseName)
 
     // See if we can access the privileged version of the DB
     QDir databaseDir(privilegedDataDir);
-    if (databaseDir.exists() && databaseDir.isReadable()) {
+    if (databaseDir.exists() && directoryIsRW(privilegedDataDir)) {
         databaseDir = privilegedDataDir + QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR);
     } else {
         databaseDir = unprivilegedDataDir + QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR);
