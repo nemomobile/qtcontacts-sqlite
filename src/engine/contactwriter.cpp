@@ -119,6 +119,7 @@ static const char *possibleAggregatesWhere = /* SELECT contactId FROM Contacts .
         "\n WHERE Contacts.syncTarget = 'aggregate'"
         "\n AND (Contacts.lowerLastName = '' OR :lastName = '' OR Contacts.lowerLastName = :lastName)"
         "\n AND COALESCE(Contacts.gender, '') != :excludeGender"
+        "\n AND contactId > 2" // exclude self contact
         "\n AND contactId NOT IN ("
         "\n   SELECT secondId FROM Relationships WHERE firstId = :contactId AND type = 'IsNot'"
         "\n   UNION"
