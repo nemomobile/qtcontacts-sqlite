@@ -4531,6 +4531,30 @@ void tst_QContactManager::constituentOfSelf()
 
     flags = self.detail<QContactStatusFlags>();
     QCOMPARE(flags.testFlag(QContactStatusFlags::IsOnline), false);
+
+    // Add a name to the self contact
+    QContactName n = self.detail<QContactName>();
+    n.setFirstName("firstname");
+    n.setLastName("lastname");
+    self.saveDetail(&n);
+
+    QVERIFY(m.saveContact(&self));
+    QVERIFY(m.error() == QContactManager::NoError);
+
+    // Create a new contact with a matching name
+    QContact newContact;
+
+    n = QContactName();
+    n.setFirstName("firstname");
+    n.setLastName("lastname");
+    newContact.saveDetail(&n);
+
+    QVERIFY(m.saveContact(&newContact));
+    QVERIFY(m.error() == QContactManager::NoError);
+
+    // Verify that the new contact was not aggregated into the self contact
+    newContact = m.contact(retrievalId(newContact));
+    QVERIFY(!relatedContactIds(newContact.relatedContacts()).contains(m.selfContactId()));
 }
 #endif
 
