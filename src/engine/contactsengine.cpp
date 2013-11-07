@@ -800,6 +800,8 @@ void JobThread::run()
             m_finishedWait.wakeOne();
         }
     }
+
+    database.close();
 }
 
 ContactsEngine::ContactsEngine(const QString &name)
@@ -816,6 +818,7 @@ ContactsEngine::ContactsEngine(const QString &name)
 
 ContactsEngine::~ContactsEngine()
 {
+    m_database.close();
     delete m_synchronousWriter;
     delete m_synchronousReader;
     delete m_jobThread;
