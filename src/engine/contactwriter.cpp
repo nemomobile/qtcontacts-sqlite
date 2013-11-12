@@ -1526,25 +1526,9 @@ static bool detailListContains(const ContactWriter::DetailList &list)
     return list.contains(detailType<T>());
 }
 
-// Presence and GlobalPresence should be handled together
-template<>
-bool detailListContains<QContactGlobalPresence>(const ContactWriter::DetailList &list)
-{
-    return list.contains(detailType<QContactPresence>()) || list.contains(detailType<QContactGlobalPresence>());
-}
-template<>
-bool detailListContains<QContactPresence>(const ContactWriter::DetailList &list)
-{
-    return list.contains(detailType<QContactPresence>()) || list.contains(detailType<QContactGlobalPresence>());
-}
-
 static bool detailListContains(const ContactWriter::DetailList &list, const QContactDetail &detail)
 {
-#ifdef USING_QTPIM
-    return list.contains(detail.type());
-#else
-    return list.contains(detail.definitionName());
-#endif
+    return list.contains(detailType(detail));
 }
 
 template <typename T> bool ContactWriter::removeCommonDetails(
@@ -1759,6 +1743,12 @@ template <typename T> bool ContactWriter::writeCommonDetails(
     return true;
 }
 
+// Define the type that another type is generated from
+template<typename T>
+struct GeneratorType { typedef T type; };
+template<>
+struct GeneratorType<QContactGlobalPresence> { typedef QContactPresence type; };
+
 template <typename T> bool ContactWriter::writeDetails(
         quint32 contactId,
         QContact *contact,
@@ -1769,7 +1759,9 @@ template <typename T> bool ContactWriter::writeDetails(
         bool wasLocal,
         QContactManager::Error *error)
 {
-    if (!definitionMask.isEmpty() && !detailListContains<T>(definitionMask))
+    if (!definitionMask.isEmpty() &&                                          // only a subset of detail types are being written
+        !detailListContains<T>(definitionMask) &&                             // this type is not in the set
+        !detailListContains<typename GeneratorType<T>::type>(definitionMask)) // this type's generator type is not in the set
         return true;
 
     if (!removeCommonDetails<T>(contactId, error))
@@ -1822,11 +1814,11 @@ static bool betterPresence(const QContactPresence &detail, const QContactPresenc
     if (best.isEmpty())
         return true;
 
-    if (best.presenceState() == QContactPresence::PresenceUnknown) {
-        return (detail.presenceState() != QContactPresence::PresenceUnknown);
-    }
+    QContactPresence::PresenceState detailState(detail.presenceState());
+    if (detailState == QContactPresence::PresenceUnknown)
+        return false;
 
-    return (detail.presenceState() < best.presenceState());
+    return (detailState < best.presenceState() || best.presenceState() == QContactPresence::PresenceUnknown);
 }
 
 QContactManager::Error ContactWriter::save(
@@ -3165,8 +3157,12 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
         }
     }
 
-    // update the global presence (display label may be derived from it)
-    updateGlobalPresence(contact);
+    if (definitionMask.isEmpty() ||
+        detailListContains<QContactPresence>(definitionMask) ||
+        detailListContains<QContactGlobalPresence>(definitionMask)) {
+        // update the global presence (display label may be derived from it)
+        updateGlobalPresence(contact);
+    }
 
     // update the display label for this contact
     m_engine.regenerateDisplayLabel(*contact);
@@ -3300,8 +3296,12 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
     }
 #endif
 
-    // update the global presence (display label may be derived from it)
-    updateGlobalPresence(contact);
+    if (definitionMask.isEmpty() ||
+        detailListContains<QContactPresence>(definitionMask) ||
+        detailListContains<QContactGlobalPresence>(definitionMask)) {
+        // update the global presence (display label may be derived from it)
+        updateGlobalPresence(contact);
+    }
 
     // update the display label for this contact
     m_engine.regenerateDisplayLabel(*contact);
