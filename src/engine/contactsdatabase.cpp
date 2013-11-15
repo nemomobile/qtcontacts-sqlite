@@ -849,6 +849,66 @@ static void bindValues(QSqlQuery &query, const QMap<QString, QVariant> &values)
     }
 }
 
+static bool countTransientTables(QSqlDatabase &db, const QString &table, int *count)
+{
+    static const QString sql(QString::fromLatin1("SELECT COUNT(*) FROM sqlite_temp_master WHERE type = 'table' and name LIKE '%1_transient%'"));
+
+    *count = 0;
+
+    QSqlQuery query(db);
+    if (!query.exec(sql.arg(table))) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to count transient tables for table: %1").arg(table));
+        return false;
+    } else while (query.next()) {
+        *count = query.value(0).toInt();
+    }
+
+    return true;
+}
+
+static bool findTransientTables(QSqlDatabase &db, const QString &table, QStringList *tableNames)
+{
+    static const QString sql(QString::fromLatin1("SELECT name FROM sqlite_temp_master WHERE type = 'table' and name LIKE '%1_transient%'"));
+
+    QSqlQuery query(db);
+    if (!query.exec(sql.arg(table))) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to query transient tables for table: %1").arg(table));
+        return false;
+    } else while (query.next()) {
+        tableNames->append(query.value(0).toString());
+    }
+
+    return true;
+}
+
+static bool dropTransientTables(QSqlDatabase &db, const QString &table)
+{
+    static const QString dropTableStatement = QString::fromLatin1("DROP TABLE temp.%1");
+
+    QStringList tableNames;
+    if (!findTransientTables(db, table, &tableNames))
+        return false;
+
+    foreach (const QString tableName, tableNames) {
+        QSqlQuery dropTableQuery(db);
+        const QString dropStatement(dropTableStatement.arg(tableName));
+        if (!dropTableQuery.prepare(dropStatement)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare drop transient table query: %1\n%2")
+                    .arg(dropTableQuery.lastError().text())
+                    .arg(dropStatement));
+            return false;
+        }
+        if (!dropTableQuery.exec()) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to drop transient temporary table: %1\n%2")
+                    .arg(dropTableQuery.lastError().text())
+                    .arg(dropStatement));
+            return false;
+        }
+    }
+
+    return true;
+}
+
 template<typename ValueContainer>
 bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool filter, const QVariantList &boundIds, 
                                     const QString &join, const QString &where, const QString &orderBy, const ValueContainer &boundValues)
@@ -856,7 +916,6 @@ bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool
     QMutexLocker locker(ContactsDatabase::accessMutex());
 
     static const QString createStatement(QString::fromLatin1("CREATE TABLE IF NOT EXISTS temp.%1 (contactId INTEGER)"));
-    static const QString deleteRecordsStatement(QString::fromLatin1("DELETE FROM temp.%1"));
     static const QString insertFilterStatement(QString::fromLatin1("INSERT INTO temp.%1 (contactId) SELECT Contacts.contactId FROM Contacts %2 %3"));
 
     // Create the temporary table (if we haven't already).
@@ -874,22 +933,6 @@ bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool
         return false;
     }
     tableQuery.finish();
-
-    // Delete all existing records.
-    QSqlQuery deleteRecordsQuery(db);
-    if (!deleteRecordsQuery.prepare(deleteRecordsStatement.arg(table))) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare delete records query: %1\n%2")
-                .arg(deleteRecordsQuery.lastError().text())
-                .arg(deleteRecordsStatement));
-        return false;
-    }
-    if (!deleteRecordsQuery.exec()) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to delete temporary records: %1\n%2")
-                .arg(deleteRecordsQuery.lastError().text())
-                .arg(deleteRecordsStatement));
-        return false;
-    }
-    deleteRecordsQuery.finish();
 
     // insert into the temporary table, all of the ids
     // which will be specified either by id list, or by filter.
@@ -965,8 +1008,11 @@ void clearTemporaryContactIdsTable(QSqlDatabase &db, const QString &table)
 {
     QMutexLocker locker(ContactsDatabase::accessMutex());
 
+    // Drop any transient tables associated with this table
+    dropTransientTables(db, table);
+
     QSqlQuery dropTableQuery(db);
-    const QString dropTableStatement = QString::fromLatin1("DROP TABLE temp.%1").arg(table);
+    const QString dropTableStatement = QString::fromLatin1("DROP TABLE IF EXISTS temp.%1").arg(table);
     if (!dropTableQuery.prepare(dropTableStatement) || !dropTableQuery.exec()) {
         // couldn't drop the table, just delete all entries instead.
         QSqlQuery deleteRecordsQuery(db);
@@ -982,6 +1028,74 @@ void clearTemporaryContactIdsTable(QSqlDatabase &db, const QString &table)
                     .arg(deleteRecordsStatement));
         }
     }
+}
+
+static bool createTransientContactIdsTable(QSqlDatabase &db, const QString &table, const QVariantList &ids, QString *transientTableName)
+{
+    QMutexLocker locker(ContactsDatabase::accessMutex());
+
+    static const QString createTableStatement(QString::fromLatin1("CREATE TABLE %1 (contactId INTEGER)"));
+    static const QString insertIdsStatement(QString::fromLatin1("INSERT INTO %1 (contactId) VALUES(:contactId)"));
+
+    int existingTables = 0;
+    if (!countTransientTables(db, table, &existingTables))
+        return false;
+
+    QString tableName(QString::fromLatin1("temp.%1_transient%2").arg(table).arg(existingTables));
+
+    QSqlQuery tableQuery(db);
+    const QString createStatement(createTableStatement.arg(tableName));
+    if (!tableQuery.prepare(createStatement)) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare transient table query: %1\n%2")
+                .arg(tableQuery.lastError().text())
+                .arg(createStatement));
+        return false;
+    }
+    if (!tableQuery.exec()) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create transient table: %1\n%2")
+                .arg(tableQuery.lastError().text())
+                .arg(createStatement));
+        return false;
+    }
+    tableQuery.finish();
+
+    QSqlQuery insertQuery(db);
+
+    QVariantList::const_iterator it = ids.constBegin(), end = ids.constEnd();
+    while (it != end) {
+        // SQLite allows up to 500 rows per insert
+        quint32 remainder = (end - it);
+        QVariantList::const_iterator batchEnd = it + std::min<quint32>(remainder, 500);
+
+        QString insertStatement = QString::fromLatin1("INSERT INTO %1 (contactId) VALUES ").arg(tableName);
+        while (true) {
+            const QVariant &v(*it);
+            const quint32 dbId(v.value<quint32>());
+            insertStatement.append(QString::fromLatin1("(%1)").arg(dbId));
+            if (++it == batchEnd) {
+                break;
+            } else {
+                insertStatement.append(QString::fromLatin1(","));
+            }
+        }
+
+        if (!insertQuery.prepare(insertStatement)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare transient contact ids: %1\n%2")
+                    .arg(insertQuery.lastError().text())
+                    .arg(insertStatement));
+            return false;
+        }
+        if (!insertQuery.exec()) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to insert transient contact ids: %1\n%2")
+                    .arg(insertQuery.lastError().text())
+                    .arg(insertStatement));
+            return false;
+        }
+        insertQuery.finish();
+    }
+
+    *transientTableName = tableName;
+    return true;
 }
 
 // There is no QDir::isWritable()/isExecutable(). Only isReadable() is part of QDir.
@@ -1157,6 +1271,16 @@ bool ContactsDatabase::createTemporaryContactIdsTable(QSqlDatabase &db, const QS
 void ContactsDatabase::clearTemporaryContactIdsTable(QSqlDatabase &db, const QString &table)
 {
     ::clearTemporaryContactIdsTable(db, table);
+}
+
+bool ContactsDatabase::createTransientContactIdsTable(QSqlDatabase &db, const QString &table, const QVariantList &ids, QString *transientTableName)
+{
+    return ::createTransientContactIdsTable(db, table, ids, transientTableName);
+}
+
+void ContactsDatabase::clearTransientContactIdsTable(QSqlDatabase &db, const QString &table)
+{
+    ::dropTransientTables(db, table);
 }
 
 QMutex *ContactsDatabase::accessMutex()

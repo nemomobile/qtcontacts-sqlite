@@ -1120,14 +1120,19 @@ static QString buildWhere(const QContactDetailRangeFilter &filter, QVariantList 
 }
 
 #ifdef USING_QTPIM
-static QString buildWhere(const QContactIdFilter &filter, QVariantList *bindings, bool *failed)
+static QString buildWhere(const QContactIdFilter &filter, QSqlDatabase &db, const QString &table, QVariantList *bindings, bool *failed)
 #else
-static QString buildWhere(const QContactLocalIdFilter &filter, QVariantList *bindings, bool *failed)
+static QString buildWhere(const QContactLocalIdFilter &filter, QSqlDatabase &db, const QString &table, QVariantList *bindings, bool *failed)
 #endif
 {
-    QList<quint32> dbIds;
-
     const QList<QContactIdType> &filterIds(filter.ids());
+    if (filterIds.isEmpty()) {
+        *failed = true;
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with empty contact ID list"));
+        return QLatin1String("FALSE");
+    }
+
+    QList<quint32> dbIds;
     dbIds.reserve(filterIds.count());
     bindings->reserve(filterIds.count());
 
@@ -1135,10 +1140,23 @@ static QString buildWhere(const QContactLocalIdFilter &filter, QVariantList *bin
         dbIds.append(ContactId::databaseId(id));
     }
 
-    if (dbIds.isEmpty()) {
-        *failed = true;
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with empty contact ID list"));
-        return QLatin1String("FALSE");
+    // We don't want to exceed the maximum bound variables limit; if there are too
+    // many IDs in the list, create a temporary table to look them up from
+    const int maxInlineIdsCount = 800;
+    if (filterIds.count() > maxInlineIdsCount) {
+        QVariantList varIds;
+        foreach (const QContactIdType &id, filterIds) {
+            varIds.append(QVariant(ContactId::databaseId(id)));
+        }
+
+        QString transientTable;
+        if (!ContactsDatabase::createTransientContactIdsTable(db, table, varIds, &transientTable)) {
+            *failed = true;
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere due to transient table failure"));
+            return QLatin1String("FALSE");
+        }
+
+        return QString::fromLatin1("Contacts.contactId IN (SELECT contactId FROM %1)").arg(transientTable);
     }
 
     QString statement = QLatin1String("Contacts.contactId IN (?");
@@ -1251,9 +1269,9 @@ static QString buildWhere(const QContactChangeLogFilter &filter, QVariantList *b
     return QLatin1String("FALSE");
 }
 
-static QString buildWhere(const QContactFilter &filter, QVariantList *bindings, bool *failed);
+static QString buildWhere(const QContactFilter &filter, QSqlDatabase &db, const QString &table, QVariantList *bindings, bool *failed);
 
-static QString buildWhere(const QContactUnionFilter &filter, QVariantList *bindings, bool *failed)
+static QString buildWhere(const QContactUnionFilter &filter, QSqlDatabase &db, const QString &table, QVariantList *bindings, bool *failed)
 {
     const QList<QContactFilter> filters  = filter.filters();
     if (filters.isEmpty())
@@ -1261,7 +1279,7 @@ static QString buildWhere(const QContactUnionFilter &filter, QVariantList *bindi
 
     QStringList fragments;
     foreach (const QContactFilter &filter, filters) {
-        const QString fragment = buildWhere(filter, bindings, failed);
+        const QString fragment = buildWhere(filter, db, table, bindings, failed);
         if (!*failed && !fragment.isEmpty()) {
             fragments.append(fragment);
         }
@@ -1270,7 +1288,7 @@ static QString buildWhere(const QContactUnionFilter &filter, QVariantList *bindi
     return QString::fromLatin1("( %1 )").arg(fragments.join(QLatin1String(" OR ")));
 }
 
-static QString buildWhere(const QContactIntersectionFilter &filter, QVariantList *bindings, bool *failed)
+static QString buildWhere(const QContactIntersectionFilter &filter, QSqlDatabase &db, const QString &table, QVariantList *bindings, bool *failed)
 {
     const QList<QContactFilter> filters  = filter.filters();
     if (filters.isEmpty())
@@ -1278,7 +1296,7 @@ static QString buildWhere(const QContactIntersectionFilter &filter, QVariantList
 
     QStringList fragments;
     foreach (const QContactFilter &filter, filters) {
-        const QString fragment = buildWhere(filter, bindings, failed);
+        const QString fragment = buildWhere(filter, db, table, bindings, failed);
         if (filter.type() != QContactFilter::DefaultFilter && !*failed) {
             // default filter gets special (permissive) treatment by the intersection filter.
             fragments.append(fragment.isEmpty() ? QLatin1String("NULL") : fragment);
@@ -1288,7 +1306,7 @@ static QString buildWhere(const QContactIntersectionFilter &filter, QVariantList
     return fragments.join(QLatin1String(" AND "));
 }
 
-static QString buildWhere(const QContactFilter &filter, QVariantList *bindings, bool *failed)
+static QString buildWhere(const QContactFilter &filter, QSqlDatabase &db, const QString &table, QVariantList *bindings, bool *failed)
 {
     switch (filter.type()) {
     case QContactFilter::DefaultFilter:
@@ -1302,15 +1320,15 @@ static QString buildWhere(const QContactFilter &filter, QVariantList *bindings, 
     case QContactFilter::RelationshipFilter:
         return buildWhere(static_cast<const QContactRelationshipFilter &>(filter), bindings, failed);
     case QContactFilter::IntersectionFilter:
-        return buildWhere(static_cast<const QContactIntersectionFilter &>(filter), bindings, failed);
+        return buildWhere(static_cast<const QContactIntersectionFilter &>(filter), db, table, bindings, failed);
     case QContactFilter::UnionFilter:
-        return buildWhere(static_cast<const QContactUnionFilter &>(filter), bindings, failed);
+        return buildWhere(static_cast<const QContactUnionFilter &>(filter), db, table, bindings, failed);
 #ifdef USING_QTPIM
     case QContactFilter::IdFilter:
-        return buildWhere(static_cast<const QContactIdFilter &>(filter), bindings, failed);
+        return buildWhere(static_cast<const QContactIdFilter &>(filter), db, table, bindings, failed);
 #else
     case QContactFilter::LocalIdFilter:
-        return buildWhere(static_cast<const QContactLocalIdFilter &>(filter), bindings, failed);
+        return buildWhere(static_cast<const QContactLocalIdFilter &>(filter), db, table, bindings, failed);
 #endif
     default:
         *failed = true;
@@ -1608,11 +1626,13 @@ QContactManager::Error ContactReader::readContacts(
 {
     QMutexLocker locker(ContactsDatabase::accessMutex());
 
+    ContactsDatabase::clearTemporaryContactIdsTable(m_database, table);
+
     QString join;
     const QString orderBy = buildOrderBy(order, &join);
     bool whereFailed = false;
     QVariantList bindings;
-    QString where = buildWhere(filter, &bindings, &whereFailed);
+    QString where = buildWhere(filter, m_database, table, &bindings, &whereFailed);
     if (whereFailed) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create WHERE expression: invalid filter specification"));
         return QContactManager::UnspecifiedError;
@@ -1644,6 +1664,8 @@ QContactManager::Error ContactReader::readContacts(
     }
 
     contacts->reserve(contactIds.size());
+
+    ContactsDatabase::clearTemporaryContactIdsTable(m_database, table);
 
     QContactManager::Error error = QContactManager::NoError;
     if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, table, boundIds)) {
@@ -1946,11 +1968,16 @@ QContactManager::Error ContactReader::readContactIds(
 {
     QMutexLocker locker(ContactsDatabase::accessMutex());
 
+    // Use a dummy table name to identify any temporary tables we create
+    const QString tableName(QString::fromLatin1("readContactIds"));
+
+    ContactsDatabase::clearTransientContactIdsTable(m_database, tableName);
+
     QString join;
     const QString orderBy = buildOrderBy(order, &join);
     bool failed = false;
     QVariantList bindings;
-    QString where = buildWhere(filter, &bindings, &failed);
+    QString where = buildWhere(filter, m_database, tableName, &bindings, &failed);
 
     if (failed) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create WHERE expression: invalid filter specification"));

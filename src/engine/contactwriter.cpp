@@ -1251,6 +1251,8 @@ QContactManager::Error ContactWriter::remove(const QList<QContactIdType> &contac
     QList<quint32> aggregatesOfRemoved;
     QList<quint32> aggregatesToRemove;
 
+    ContactsDatabase::clearTemporaryContactIdsTable(m_database, aggregationIdsTable);
+
     if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, aggregationIdsTable, boundRealRemoveIds)) {
         return QContactManager::UnspecifiedError;
     } else {
@@ -1313,6 +1315,8 @@ QContactManager::Error ContactWriter::remove(const QList<QContactIdType> &contac
 
     // remove the aggregate contacts - and any contacts they aggregate
     if (boundAggregatesToRemove.size() > 0) {
+        ContactsDatabase::clearTemporaryContactIdsTable(m_database, aggregationIdsTable);
+
         if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, aggregationIdsTable, boundAggregatesToRemove)) {
             if (!withinTransaction) {
                 // only rollback the transaction if we created it
@@ -2847,13 +2851,16 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
     bool found = false;
 
     // step one: build the temporary table which contains all "possible" aggregate contact ids.
+    const QString tempName(QString::fromLatin1("PossibleAggregates"));
+    ContactsDatabase::clearTemporaryContactIdsTable(m_database, tempName);
+
     QString orderBy = QLatin1String("contactId ASC ");
     QString where = QLatin1String(possibleAggregatesWhere);
     QMap<QString, QVariant> bindings;
     bindings.insert(":lastName", lastName);
     bindings.insert(":contactId", contactId);
     bindings.insert(":excludeGender", excludeGender);
-    if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, "PossibleAggregates",
+    if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, tempName,
                                                           QString(), where, orderBy, bindings)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error creating PossibleAggregates temporary table"));
         return QContactManager::UnspecifiedError;
