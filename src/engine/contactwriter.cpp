@@ -3014,7 +3014,7 @@ void ContactWriter::regenerateAggregates(const QList<quint32> &aggregateIds, con
     }
 
     QMap<int, QContactManager::Error> errorMap;
-    QContactManager::Error writeError = save(&aggregatesToSave, DetailList(), 0, &errorMap, withinTransaction, true); // we're updating aggregates.
+    QContactManager::Error writeError = save(&aggregatesToSave, definitionMask, 0, &errorMap, withinTransaction, true); // we're updating aggregates.
     if (writeError != QContactManager::NoError) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to write updated aggregate contacts during regenerate.  definitionMask:") << definitionMask);
     }
