@@ -804,8 +804,9 @@ void JobThread::run()
     database.close();
 }
 
-ContactsEngine::ContactsEngine(const QString &name)
+ContactsEngine::ContactsEngine(const QString &name, const QMap<QString, QString> &parameters)
     : m_name(name)
+    , m_parameters(parameters)
     , m_synchronousReader(0)
     , m_synchronousWriter(0)
     , m_jobThread(0)
@@ -814,6 +815,12 @@ ContactsEngine::ContactsEngine(const QString &name)
     static bool registered = qRegisterMetaType<QList<int> >("QList<int>");
     Q_UNUSED(registered)
 #endif
+
+    QString separatePresenceChanges = m_parameters.value(QString::fromLatin1("separatePresenceChanges"));
+    if (separatePresenceChanges.toLower() == QLatin1String("true") ||
+        separatePresenceChanges.toInt() == 1) {
+        setSeparatePresenceChanges(true);
+    }
 }
 
 ContactsEngine::~ContactsEngine()
@@ -840,6 +847,7 @@ QContactManager::Error ContactsEngine::open()
         ContactNotifier::initialize();
         ContactNotifier::connect("contactsAdded", "au", this, SLOT(_q_contactsAdded(QVector<quint32>)));
         ContactNotifier::connect("contactsChanged", "au", this, SLOT(_q_contactsChanged(QVector<quint32>)));
+        ContactNotifier::connect("contactsPresenceChanged", "au", this, SLOT(_q_contactsPresenceChanged(QVector<quint32>)));
         ContactNotifier::connect("contactsRemoved", "au", this, SLOT(_q_contactsRemoved(QVector<quint32>)));
         ContactNotifier::connect("selfContactIdChanged", "uu", this, SLOT(_q_selfContactIdChanged(quint32,quint32)));
         ContactNotifier::connect("relationshipsAdded", "au", this, SLOT(_q_relationshipsAdded(QVector<quint32>)));
@@ -854,6 +862,11 @@ QContactManager::Error ContactsEngine::open()
 QString ContactsEngine::managerName() const
 {
     return m_name;
+}
+
+QMap<QString, QString> ContactsEngine::managerParameters() const
+{
+    return m_parameters;
 }
 
 int ContactsEngine::managerVersion() const
@@ -1410,6 +1423,15 @@ void ContactsEngine::_q_contactsAdded(const QVector<quint32> &contactIds)
 void ContactsEngine::_q_contactsChanged(const QVector<quint32> &contactIds)
 {
     emit contactsChanged(idList(contactIds));
+}
+
+void ContactsEngine::_q_contactsPresenceChanged(const QVector<quint32> &contactIds)
+{
+    if (m_separatePresenceChanges) {
+        emit contactsPresenceChanged(idList(contactIds));
+    } else {
+        emit contactsChanged(idList(contactIds));
+    }
 }
 
 void ContactsEngine::_q_contactsRemoved(const QVector<quint32> &contactIds)

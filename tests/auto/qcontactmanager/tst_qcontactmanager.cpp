@@ -62,6 +62,9 @@
 #include "qcontactchangeset.h"
 #endif
 
+// Needed for access to the QContactManager's internal engine
+#include "private/qcontactmanager_p.h"
+
 #include "../../util.h"
 #include "../../qcontactmanagerdataholder.h"
 
@@ -137,6 +140,10 @@ private slots:
     void symbianManager();
     void symbianManager_data() {addManagers();}
 #endif
+
+    /* Presence reporting specific to qtcontacts-sqlite */
+    void presenceReporting();
+    void presenceReporting_data();
 
     /* Tests that are run on all managers */
     void metadata();
@@ -1815,6 +1822,136 @@ void tst_QContactManager::symbianManager()
     QList<QContact> allContacts = cm->contacts();
 }
 #endif
+
+void tst_QContactManager::presenceReporting()
+{
+    QFETCH(QString, uri);
+    QFETCH(bool, separatePresenceChanges);
+
+    QScopedPointer<QContactManager> cm(QContactManager::fromUri(uri));
+
+    QSignalSpy addedSpy(cm.data(), contactsAddedSignal);
+    QSignalSpy changedSpy(cm.data(), contactsChangedSignal);
+    QSignalSpy removedSpy(cm.data(), contactsRemovedSignal);
+
+    // The contactsPresenceChanged signal is not exported by QContactManager, so we
+    // need to find it from the manager's engine object
+    typedef QtContactsSqliteExtensions::ContactManagerEngine EngineType;
+    EngineType *cme = qobject_cast<EngineType *>(QContactManagerData::managerData(cm.data())->m_engine);
+    QSignalSpy presenceChangedSpy(cme, contactsPresenceChangedSignal);
+
+    QContact a;
+
+    QContactName n;
+    n.setFirstName("A");
+    n.setMiddleName("Test");
+    n.setLastName("Presence-Update");
+    a.saveDetail(&n);
+
+    QContactPresence p;
+    p.setPresenceState(QContactPresence::PresenceAway);
+    QVERIFY(a.saveDetail(&p));
+
+    QContactOnlineAccount oa;
+    oa.setAccountUri("FakeImAccount");
+    oa.setValue(QContactOnlineAccount__FieldEnabled, false);
+    QVERIFY(a.saveDetail(&oa));
+
+    QContactOriginMetadata om;
+    om.setId("TestContact");
+    om.setGroupId("TestGroup");
+    om.setEnabled(false);
+    QVERIFY(a.saveDetail(&om));
+
+    QVERIFY(cm->saveContact(&a));
+    a = cm->contact(retrievalId(a));
+
+    QTest::qWait(500); // wait for signal coalescing.
+    QTRY_VERIFY(addedSpy.count() > 0);
+    addedSpy.clear();
+    QCOMPARE(changedSpy.count(), 0);
+    QCOMPARE(presenceChangedSpy.count(), 0);
+    QCOMPARE(removedSpy.count(), 0);
+
+    // Test a presence-only update (can include presence/origin-metadata/online-account changes)
+    p = a.detail<QContactPresence>();
+    p.setPresenceState(QContactPresence::PresenceAvailable);
+    QVERIFY(a.saveDetail(&p));
+
+    oa = a.detail<QContactOnlineAccount>();
+    oa.setValue(QContactOnlineAccount__FieldEnabled, true);
+    QVERIFY(a.saveDetail(&oa));
+
+    om = a.detail<QContactOriginMetadata>();
+    om.setEnabled(true);
+    QVERIFY(a.saveDetail(&om));
+
+    // We need to use a detail definition mask to enable the presence-only update
+    QList<QContact> contacts;
+    contacts.append(a);
+    QVERIFY(cm->saveContacts(&contacts, DetailList() << detailType<QContactPresence>()
+                                                     << detailType<QContactOnlineAccount>()
+                                                     << detailType<QContactOriginMetadata>()));
+    a = cm->contact(retrievalId(a));
+
+    QTest::qWait(500); // wait for signal coalescing.
+    if (separatePresenceChanges) {
+        QTRY_VERIFY(presenceChangedSpy.count() > 0);
+        presenceChangedSpy.clear();
+        QCOMPARE(changedSpy.count(), 0);
+    } else {
+        QTRY_VERIFY(changedSpy.count() > 0);
+        changedSpy.clear();
+        QCOMPARE(presenceChangedSpy.count(), 0);
+    }
+    QCOMPARE(addedSpy.count(), 0);
+    QCOMPARE(removedSpy.count(), 0);
+
+    // Test an update including non-presence changes
+    p = a.detail<QContactPresence>();
+    p.setPresenceState(QContactPresence::PresenceBusy);
+    QVERIFY(a.saveDetail(&p));
+
+    n = a.detail<QContactName>();
+    n.setMiddleName("Dummy");
+    QVERIFY(a.saveDetail(&n));
+
+    contacts.clear();
+    contacts.append(a);
+    QVERIFY(cm->saveContacts(&contacts, DetailList() << detailType<QContactPresence>()
+                                                     << detailType<QContactName>()));
+    a = cm->contact(retrievalId(a));
+
+    QTest::qWait(500); // wait for signal coalescing.
+    QTRY_VERIFY(changedSpy.count() > 0);
+    changedSpy.clear();
+    QCOMPARE(addedSpy.count(), 0);
+    QCOMPARE(presenceChangedSpy.count(), 0);
+    QCOMPARE(removedSpy.count(), 0);
+
+    QVERIFY(cm->removeContact(retrievalId(a)));
+
+    QTest::qWait(500);
+    QTRY_VERIFY(removedSpy.count() > 0);
+    removedSpy.clear();
+    QCOMPARE(addedSpy.count(), 0);
+    QCOMPARE(changedSpy.count(), 0);
+    QCOMPARE(presenceChangedSpy.count(), 0);
+}
+
+void tst_QContactManager::presenceReporting_data()
+{
+    QTest::addColumn<bool>("separatePresenceChanges");
+    QTest::addColumn<QString>("uri");
+
+    const QString managerName(QString::fromLatin1("org.nemomobile.contacts.sqlite"));
+    QMap<QString, QString> params;
+
+    QTest::newRow("combinePresenceChanges") << false << QContactManager::buildUri(managerName, params);
+
+    params.insert(QString::fromLatin1("separatePresenceChanges"), QString::fromLatin1("true"));
+    QTest::newRow("separatePresenceChanges") << true << QContactManager::buildUri(managerName, params);
+}
 
 void tst_QContactManager::nameSynthesis_data()
 {

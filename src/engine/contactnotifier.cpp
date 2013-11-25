@@ -86,6 +86,18 @@ void contactsChanged(const QList<QContactIdType> &contactIds)
     }
 }
 
+void contactsPresenceChanged(const QList<QContactIdType> &contactIds)
+{
+    if (!contactIds.isEmpty()) {
+        QDBusMessage message = QDBusMessage::createSignal(
+                    QLatin1String(NOTIFIER_PATH),
+                    QLatin1String(NOTIFIER_INTERFACE),
+                    QLatin1String("contactsPresenceChanged"));
+        message.setArguments(QVariantList() << QVariant::fromValue(idVector(contactIds)));
+        QDBusConnection::sessionBus().send(message);
+    }
+}
+
 void contactsRemoved(const QList<QContactIdType> &contactIds)
 {
     if (!contactIds.isEmpty()) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Jolla Ltd. <andrew.den.exter@jollamobile.com>
+ * Copyright (C) 2013 Jolla Ltd. <mattthew.vogt@jollamobile.com>
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -29,29 +29,46 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
  */
 
-#ifndef QTCONTACTSSQLITE_CONTACTNOTIFIER_H
-#define QTCONTACTSSQLITE_CONTACTNOTIFIER_H
+#ifndef CONTACTMANAGERENGINE_H
+#define CONTACTMANAGERENGINE_H
 
-#include "contactid_p.h"
+#include "qtcontacts-extensions-config.h"
 
-#include <QContact>
-#include <QObject>
-#include <QSet>
+#include <QContactManagerEngine>
 
-USE_CONTACTS_NAMESPACE
+#ifdef USING_QTPIM
+QTCONTACTS_USE_NAMESPACE
+#else
+QTM_USE_NAMESPACE
+#endif
 
-namespace ContactNotifier
+namespace QtContactsSqliteExtensions {
+
+class Q_DECL_EXPORT ContactManagerEngine
+#ifdef USING_QTPIM
+    : public QContactManagerEngine
+#else
+    : public QContactManagerEngineV2
+#endif
 {
-    void initialize();
-    void contactsAdded(const QList<QContactIdType> &contactIds);
-    void contactsChanged(const QList<QContactIdType> &contactIds);
-    void contactsPresenceChanged(const QList<QContactIdType> &contactIds);
-    void contactsRemoved(const QList<QContactIdType> &contactIds);
-    void selfContactIdChanged(QContactIdType oldId, QContactIdType newId);
-    void relationshipsAdded(const QList<QContactIdType> &contactIds);
-    void relationshipsRemoved(const QList<QContactIdType> &contactIds);
+    Q_OBJECT
 
-    bool connect(const char *name, const char *signature, QObject *receiver, const char *slot);
+public:
+    ContactManagerEngine() : m_separatePresenceChanges(false) {}
+
+    void setSeparatePresenceChanges(bool b) { m_separatePresenceChanges = b; }
+
+Q_SIGNALS:
+#ifdef USING_QTPIM
+    void contactsPresenceChanged(const QList<QContactId> &contactsIds);
+#else
+    void contactsPresenceChanged(const QList<QContactLocalId> &contactsIds);
+#endif
+
+protected:
+    bool m_separatePresenceChanges;
+};
+
 }
 
 #endif

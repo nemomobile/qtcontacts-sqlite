@@ -28,7 +28,8 @@ HEADERS += \
         contactsengine.h \
         contactnotifier.h \
         contactreader.h \
-        contactwriter.h
+        contactwriter.h \
+        ../extensions/contactmanagerengine.h
 
 SOURCES += \
         semaphore_p.cpp \

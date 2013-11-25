@@ -32,11 +32,7 @@
 #ifndef QTCONTACTSSQLITE_CONTACTSENGINE
 #define QTCONTACTSSQLITE_CONTACTSENGINE
 
-#ifdef USING_QTPIM
-#include <QContactManagerEngine>
-#else
-#include <QContactManagerEngineV2>
-#endif
+#include "contactmanagerengine.h"
 
 #include <QSqlDatabase>
 
@@ -57,21 +53,17 @@ inline void operator==(const QContactDetail &, const QContactDetail &) {}
 
 class JobThread;
 
-class ContactsEngine
-#ifdef USING_QTPIM
-    : public QContactManagerEngine
-#else
-    : public QContactManagerEngineV2
-#endif
+class ContactsEngine : public QtContactsSqliteExtensions::ContactManagerEngine
 {
     Q_OBJECT
 public:
-    ContactsEngine(const QString &name);
+    ContactsEngine(const QString &name, const QMap<QString, QString> &parameters);
     ~ContactsEngine();
 
     QContactManager::Error open();
 
     QString managerName() const;
+    QMap<QString, QString> managerParameters() const;
     int managerVersion() const;
 
     QList<QContactIdType> contactIds(
@@ -168,6 +160,7 @@ public:
 
 private slots:
     void _q_contactsChanged(const QVector<quint32> &contactIds);
+    void _q_contactsPresenceChanged(const QVector<quint32> &contactIds);
     void _q_contactsAdded(const QVector<quint32> &contactIds);
     void _q_contactsRemoved(const QVector<quint32> &contactIds);
     void _q_selfContactIdChanged(quint32,quint32);
@@ -176,8 +169,10 @@ private slots:
 
 private:
     QString databaseUuid();
+
     QString m_databaseUuid;
     const QString m_name;
+    QMap<QString, QString> m_parameters;
     QSqlDatabase m_database;
     mutable ContactReader *m_synchronousReader;
     ContactWriter *m_synchronousWriter;
