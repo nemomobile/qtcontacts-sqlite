@@ -700,6 +700,10 @@ bool ContactWriter::commitTransaction()
         ContactNotifier::contactsChanged(m_changedIds.toList());
         m_changedIds.clear();
     }
+    if (!m_presenceChangedIds.isEmpty()) {
+        ContactNotifier::contactsPresenceChanged(m_presenceChangedIds.toList());
+        m_presenceChangedIds.clear();
+    }
     if (!m_removedIds.isEmpty()) {
         ContactNotifier::contactsRemoved(m_removedIds.toList());
         m_removedIds.clear();
@@ -717,6 +721,7 @@ void ContactWriter::rollbackTransaction()
     }
 
     m_removedIds.clear();
+    m_presenceChangedIds.clear();
     m_changedIds.clear();
     m_addedIds.clear();
 }
@@ -1520,6 +1525,16 @@ static ContactWriter::DetailList getUnpromotedDetailTypes()
     return rv;
 }
 
+static ContactWriter::DetailList getPresenceUpdateDetailTypes()
+{
+    // The list of definition names for details whose changes constitute presence updates
+    ContactWriter::DetailList rv;
+    rv << detailType<QContactPresence>();
+    rv << detailType<QContactOriginMetadata>();
+    rv << detailType<QContactOnlineAccount>();
+    return rv;
+}
+
 template<typename T>
 static bool detailListContains(const ContactWriter::DetailList &list)
 {
@@ -1866,6 +1881,21 @@ QContactManager::Error ContactWriter::save(
         return QContactManager::UnspecifiedError;
     }
 
+    static const DetailList presenceUpdateDetailTypes(getPresenceUpdateDetailTypes());
+
+    bool presenceOnlyUpdate = false;
+    if (definitionMask.contains(detailType<QContactPresence>())) {
+        // If we only update presence/origin-metadata/online-account, we will report
+        // this change as a presence change only
+        presenceOnlyUpdate = true;
+        foreach (const DetailList::value_type &type, definitionMask) {
+            if (!presenceUpdateDetailTypes.contains(type)) {
+                presenceOnlyUpdate = false;
+                break;
+            }
+        }
+    }
+
     QContactManager::Error worstError = QContactManager::NoError;
     QContactManager::Error err = QContactManager::NoError;
     for (int i = 0; i < contacts->count(); ++i) {
@@ -1882,7 +1912,11 @@ QContactManager::Error ContactWriter::save(
         } else {
             err = update(&contact, definitionMask, &aggregateUpdated, true, withinAggregateUpdate);
             if (err == QContactManager::NoError) {
-                m_changedIds.insert(contactId);
+                if (presenceOnlyUpdate) {
+                    m_presenceChangedIds.insert(contactId);
+                } else {
+                    m_changedIds.insert(contactId);
+                }
             } else {
                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error updating contact %1: %2").arg(ContactId::toString(contactId)).arg(err));
             }
@@ -3014,7 +3048,7 @@ void ContactWriter::regenerateAggregates(const QList<quint32> &aggregateIds, con
     }
 
     QMap<int, QContactManager::Error> errorMap;
-    QContactManager::Error writeError = save(&aggregatesToSave, DetailList(), 0, &errorMap, withinTransaction, true); // we're updating aggregates.
+    QContactManager::Error writeError = save(&aggregatesToSave, definitionMask, 0, &errorMap, withinTransaction, true); // we're updating aggregates.
     if (writeError != QContactManager::NoError) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to write updated aggregate contacts during regenerate.  definitionMask:") << definitionMask);
     }

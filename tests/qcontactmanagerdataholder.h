@@ -79,6 +79,7 @@ public:
             if (mgr != QLatin1String("org.nemomobile.contacts.sqlite"))
                 continue;
             QMap<QString, QString> params;
+            params.insert("mergePresenceChanges", "false");
             QString mgrUri = QContactManager::buildUri(mgr, params);
             QContactManager* cm = QContactManager::fromUri(mgrUri);
             if (cm) {
