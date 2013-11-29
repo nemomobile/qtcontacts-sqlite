@@ -54,9 +54,9 @@ class Q_DECL_EXPORT ContactManagerEngine
     Q_OBJECT
 
 public:
-    ContactManagerEngine() : m_separatePresenceChanges(false) {}
+    ContactManagerEngine() : m_mergePresenceChanges(false) {}
 
-    void setSeparatePresenceChanges(bool b) { m_separatePresenceChanges = b; }
+    void setMergePresenceChanges(bool b) { m_mergePresenceChanges = b; }
 
 Q_SIGNALS:
 #ifdef USING_QTPIM
@@ -66,7 +66,7 @@ Q_SIGNALS:
 #endif
 
 protected:
-    bool m_separatePresenceChanges;
+    bool m_mergePresenceChanges;
 };
 
 }

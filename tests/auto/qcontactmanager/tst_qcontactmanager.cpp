@@ -104,6 +104,7 @@ private:
     void dumpContacts(QContactManager *cm);
     bool isSuperset(const QContact& ca, const QContact& cb);
     QList<QContactDetail> removeAllDefaultDetails(const QList<QContactDetail>& details);
+    QContactManager *newContactManager(const QMap<QString, QString> &params = QMap<QString, QString>());
     void addManagers(); // add standard managers to the data
 #ifndef DETAIL_DEFINITION_SUPPORTED
     QContact createContact(QString firstName, QString lastName, QString phoneNumber);
@@ -620,23 +621,27 @@ void tst_QContactManager::uriParsing_data()
     QTest::newRow("no manager or params or colon") << "qtcontacts:" << false << QString() << inparameters;
 }
 
+QContactManager *tst_QContactManager::newContactManager(const QMap<QString, QString> &params)
+{
+    QMap<QString, QString> parameters;
+    parameters.insert("mergePresenceChanges", "false");
+
+    QMap<QString, QString>::const_iterator it = params.constBegin(), end = params.constEnd();
+    for ( ; it != end; ++it) {
+        parameters.insert(it.key(), it.value());
+    }
+
+    return new QContactManager(DEFAULT_MANAGER, parameters);
+}
+
 void tst_QContactManager::addManagers()
 {
     QTest::addColumn<QString>("uri");
 
-    QStringList managers;
-
     // Only test the qtcontacts-sqlite engine
-    managers << QString(QLatin1String("org.nemomobile.contacts.sqlite"));
-
-    foreach(QString mgr, managers) {
-        QMap<QString, QString> params;
-        QTest::newRow(QString("mgr='%1'").arg(mgr).toLatin1().constData()) << QContactManager::buildUri(mgr, params);
-        if (mgr == "memory") {
-            params.insert("id", "tst_QContactManager");
-            QTest::newRow(QString("mgr='%1', params").arg(mgr).toLatin1().constData()) << QContactManager::buildUri(mgr, params);
-        }
-    }
+    QMap<QString, QString> params;
+    params.insert("mergePresenceChanges", "false");
+    QTest::newRow("mgr='" DEFAULT_MANAGER "'") << QContactManager::buildUri(DEFAULT_MANAGER, params);
 }
 
 /*
@@ -720,7 +725,7 @@ void tst_QContactManager::metadata()
 {
     // ensure that the backend is publishing its metadata (name / parameters / uri) correctly
     QFETCH(QString, uri);
-    QScopedPointer<QContactManager> cm(new QContactManager(DEFAULT_MANAGER));
+    QScopedPointer<QContactManager> cm(newContactManager());
     QVERIFY(QContactManager::buildUri(cm->managerName(), cm->managerParameters()) == cm->managerUri());
 }
 
@@ -728,7 +733,7 @@ void tst_QContactManager::metadata()
 void tst_QContactManager::nullIdOperations()
 {
     QFETCH(QString, uri);
-    QScopedPointer<QContactManager> cm(new QContactManager(DEFAULT_MANAGER));
+    QScopedPointer<QContactManager> cm(newContactManager());
     QVERIFY(!cm->removeContact(QContactIdType()));
     QVERIFY(cm->error() == QContactManager::DoesNotExistError);
 
@@ -1826,7 +1831,7 @@ void tst_QContactManager::symbianManager()
 void tst_QContactManager::presenceReporting()
 {
     QFETCH(QString, uri);
-    QFETCH(bool, separatePresenceChanges);
+    QFETCH(bool, mergePresenceChanges);
 
     QScopedPointer<QContactManager> cm(QContactManager::fromUri(uri));
 
@@ -1895,7 +1900,7 @@ void tst_QContactManager::presenceReporting()
     a = cm->contact(retrievalId(a));
 
     QTest::qWait(500); // wait for signal coalescing.
-    if (separatePresenceChanges) {
+    if (!mergePresenceChanges) {
         QTRY_VERIFY(presenceChangedSpy.count() > 0);
         presenceChangedSpy.clear();
         QCOMPARE(changedSpy.count(), 0);
@@ -1941,16 +1946,17 @@ void tst_QContactManager::presenceReporting()
 
 void tst_QContactManager::presenceReporting_data()
 {
-    QTest::addColumn<bool>("separatePresenceChanges");
+    QTest::addColumn<bool>("mergePresenceChanges");
     QTest::addColumn<QString>("uri");
 
-    const QString managerName(QString::fromLatin1("org.nemomobile.contacts.sqlite"));
+    const QString managerName(QString::fromLatin1(DEFAULT_MANAGER));
     QMap<QString, QString> params;
 
-    QTest::newRow("combinePresenceChanges") << false << QContactManager::buildUri(managerName, params);
+    params.insert(QString::fromLatin1("mergePresenceChanges"), QString::fromLatin1("true"));
+    QTest::newRow("mergePresenceChanges=true") << true << QContactManager::buildUri(managerName, params);
 
-    params.insert(QString::fromLatin1("separatePresenceChanges"), QString::fromLatin1("true"));
-    QTest::newRow("separatePresenceChanges") << true << QContactManager::buildUri(managerName, params);
+    params.insert(QString::fromLatin1("mergePresenceChanges"), QString::fromLatin1("false"));
+    QTest::newRow("mergePresenceChanges=false") << false << QContactManager::buildUri(managerName, params);
 }
 
 void tst_QContactManager::nameSynthesis_data()
@@ -2274,14 +2280,14 @@ void tst_QContactManager::compatibleContact_data()
 
 void tst_QContactManager::compatibleContact()
 {
-    QContactManager cm(DEFAULT_MANAGER);
+    QScopedPointer<QContactManager> cm(newContactManager());
 
     QFETCH(QContact, input);
     QFETCH(QContact, expected);
     QFETCH(QContactManager::Error, error);
     QEXPECT_FAIL("duplicate unique field", "Inexplicably broken", Abort);
-    QCOMPARE(cm.compatibleContact(input), expected);
-    QCOMPARE(cm.error(), error);
+    QCOMPARE(cm->compatibleContact(input), expected);
+    QCOMPARE(cm->error(), error);
 }
 #endif
 
@@ -2289,7 +2295,7 @@ void tst_QContactManager::compatibleContact()
 void tst_QContactManager::contactValidation()
 {
     /* Use the default engine as a reference (validation is not engine specific) */
-    QScopedPointer<QContactManager> cm(new QContactManager(DEFAULT_MANAGER));
+    QScopedPointer<QContactManager> cm(newContactManager());
     QContact c;
 
     /*
@@ -2390,7 +2396,7 @@ void tst_QContactManager::contactValidation()
 
 void tst_QContactManager::observerDeletion()
 {
-    QContactManager *manager = new QContactManager(DEFAULT_MANAGER);
+    QContactManager *manager = newContactManager();
     QContact c;
     QVERIFY(manager->saveContact(&c));
     QContactIdType id = ContactId::apiId(c);
@@ -2746,24 +2752,24 @@ void tst_QContactManager::errorStayingPut()
     /* Make sure that when we clone a manager, we don't clone the error */
     QMap<QString, QString> params;
     params.insert("id", "error isolation test");
-    QContactManager m1(DEFAULT_MANAGER,params);
+    QScopedPointer<QContactManager> m1(newContactManager(params));
 
-    QVERIFY(m1.error() == QContactManager::NoError);
+    QVERIFY(m1->error() == QContactManager::NoError);
 
     /* Remove an invalid contact to get an error */
-    QVERIFY(m1.removeContact(ContactId::apiId(0)) == false);
-    QVERIFY(m1.error() == QContactManager::DoesNotExistError);
+    QVERIFY(m1->removeContact(ContactId::apiId(0)) == false);
+    QVERIFY(m1->error() == QContactManager::DoesNotExistError);
 
     /* Create a new manager with hopefully the same backend */
-    QContactManager m2(DEFAULT_MANAGER, params);
+    QScopedPointer<QContactManager> m2(newContactManager(params));
 
-    QVERIFY(m1.error() == QContactManager::DoesNotExistError);
-    QVERIFY(m2.error() == QContactManager::NoError);
+    QVERIFY(m1->error() == QContactManager::DoesNotExistError);
+    QVERIFY(m2->error() == QContactManager::NoError);
 
     /* Cause an error on the other ones and check the first is not affected */
-    m2.saveContacts(0, 0);
-    QVERIFY(m1.error() == QContactManager::DoesNotExistError);
-    QVERIFY(m2.error() == QContactManager::BadArgumentError);
+    m2->saveContacts(0, 0);
+    QVERIFY(m1->error() == QContactManager::DoesNotExistError);
+    QVERIFY(m2->error() == QContactManager::BadArgumentError);
 
     QContact c;
 #ifdef USING_QTPIM
@@ -2775,9 +2781,9 @@ void tst_QContactManager::errorStayingPut()
 #endif
     c.saveDetail(&d);
 
-    QVERIFY(m1.saveContact(&c) == false);
-    QVERIFY(m1.error() == QContactManager::InvalidDetailError);
-    QVERIFY(m2.error() == QContactManager::BadArgumentError);
+    QVERIFY(m1->saveContact(&c) == false);
+    QVERIFY(m1->error() == QContactManager::InvalidDetailError);
+    QVERIFY(m2->error() == QContactManager::BadArgumentError);
 }
 
 #ifdef DETAIL_DEFINITION_SUPPORTED
@@ -4550,9 +4556,9 @@ void tst_QContactManager::compareVariant_data()
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
 void tst_QContactManager::constituentOfSelf()
 {
-    QContactManager m(DEFAULT_MANAGER);
+    QScopedPointer<QContactManager> m(newContactManager());
 
-    QContactId selfId(ContactId::contactId(m.selfContactId()));
+    QContactId selfId(ContactId::contactId(m->selfContactId()));
 
     // Create a contact which is aggregated by the self contact
     QContactSyncTarget cst;
@@ -4561,8 +4567,8 @@ void tst_QContactManager::constituentOfSelf()
     QContact constituent;
     QVERIFY(constituent.saveDetail(&cst));
 
-    QVERIFY(m.saveContact(&constituent));
-    QVERIFY(m.error() == QContactManager::NoError);
+    QVERIFY(m->saveContact(&constituent));
+    QVERIFY(m->error() == QContactManager::NoError);
 
     // Find the aggregate contact created by saving
     QContactRelationshipFilter relationshipFilter;
@@ -4572,18 +4578,18 @@ void tst_QContactManager::constituentOfSelf()
 
     // Now connect our contact to the real self contact
     QContactRelationship relationship(makeRelationship(QContactRelationship::Aggregates, selfId, constituent.id()));
-    QVERIFY(m.saveRelationship(&relationship));
+    QVERIFY(m->saveRelationship(&relationship));
 
-    foreach (const QContact &aggregator, m.contacts(relationshipFilter)) {
+    foreach (const QContact &aggregator, m->contacts(relationshipFilter)) {
         if (aggregator.id() != selfId) {
             // Remove the relationship between these contacts
             QContactRelationship relationship;
             relationship = makeRelationship(QContactRelationship::Aggregates, aggregator.id(), constituent.id());
-            QVERIFY(m.removeRelationship(relationship));
+            QVERIFY(m->removeRelationship(relationship));
 
             // The aggregator should have been removed
-            QContact nonexistent = m.contact(retrievalId(aggregator));
-            QVERIFY(m.error() == QContactManager::DoesNotExistError);
+            QContact nonexistent = m->contact(retrievalId(aggregator));
+            QVERIFY(m->error() == QContactManager::DoesNotExistError);
             QCOMPARE(nonexistent.id(), QContactId());
         }
     }
@@ -4592,21 +4598,21 @@ void tst_QContactManager::constituentOfSelf()
     QContactNickname nn;
     nn.setNickname("nickname");
 
-    constituent = m.contact(retrievalId(constituent));
+    constituent = m->contact(retrievalId(constituent));
     QVERIFY(constituent.saveDetail(&nn));
 
-    QVERIFY(m.saveContact(&constituent));
-    QVERIFY(m.error() == QContactManager::NoError);
+    QVERIFY(m->saveContact(&constituent));
+    QVERIFY(m->error() == QContactManager::NoError);
 
-    constituent = m.contact(retrievalId(constituent));
+    constituent = m->contact(retrievalId(constituent));
     QVERIFY(detailsSuperset(constituent.detail<QContactNickname>(), nn));
 
     // Change should be reflected in the self contact
-    QContact self = m.contact(m.selfContactId());
+    QContact self = m->contact(m->selfContactId());
     QVERIFY(detailsSuperset(self.detail<QContactNickname>(), nn));
 
     // Check that no new aggregate has been generated
-    foreach (const QContact &aggregator, m.contacts(relationshipFilter))
+    foreach (const QContact &aggregator, m->contacts(relationshipFilter))
         QCOMPARE(aggregator.id(), selfId);
 
     QContactStatusFlags flags = self.detail<QContactStatusFlags>();
@@ -4616,18 +4622,18 @@ void tst_QContactManager::constituentOfSelf()
     QContactPresence presence;
     presence.setPresenceState(QContactPresence::PresenceAway);
 
-    constituent = m.contact(retrievalId(constituent));
+    constituent = m->contact(retrievalId(constituent));
     QVERIFY(constituent.saveDetail(&presence));
 
-    QVERIFY(m.saveContact(&constituent));
-    QVERIFY(m.error() == QContactManager::NoError);
+    QVERIFY(m->saveContact(&constituent));
+    QVERIFY(m->error() == QContactManager::NoError);
 
-    constituent = m.contact(retrievalId(constituent));
+    constituent = m->contact(retrievalId(constituent));
     QVERIFY(detailsSuperset(constituent.detail<QContactPresence>(), presence));
     QCOMPARE(constituent.detail<QContactGlobalPresence>().presenceState(), presence.presenceState());
 
     // Update should be relected in the self contact
-    self = m.contact(m.selfContactId());
+    self = m->contact(m->selfContactId());
     QCOMPARE(self.detail<QContactGlobalPresence>().presenceState(), presence.presenceState());
 
     flags = self.detail<QContactStatusFlags>();
@@ -4638,18 +4644,18 @@ void tst_QContactManager::constituentOfSelf()
     presence.setPresenceState(QContactPresence::PresenceBusy);
     QVERIFY(constituent.saveDetail(&presence));
 
-    QVERIFY(m.saveContact(&constituent));
-    QVERIFY(m.error() == QContactManager::NoError);
+    QVERIFY(m->saveContact(&constituent));
+    QVERIFY(m->error() == QContactManager::NoError);
 
-    constituent = m.contact(retrievalId(constituent));
+    constituent = m->contact(retrievalId(constituent));
     QVERIFY(detailsSuperset(constituent.detail<QContactPresence>(), presence));
     QCOMPARE(constituent.detail<QContactGlobalPresence>().presenceState(), presence.presenceState());
 
-    self = m.contact(m.selfContactId());
+    self = m->contact(m->selfContactId());
     QCOMPARE(self.detail<QContactGlobalPresence>().presenceState(), presence.presenceState());
 
     // Check that no new aggregate has been generated
-    foreach (const QContact &aggregator, m.contacts(relationshipFilter))
+    foreach (const QContact &aggregator, m->contacts(relationshipFilter))
         QCOMPARE(aggregator.id(), selfId);
 
     flags = self.detail<QContactStatusFlags>();
@@ -4660,10 +4666,10 @@ void tst_QContactManager::constituentOfSelf()
     presence.setPresenceState(QContactPresence::PresenceOffline);
     QVERIFY(constituent.saveDetail(&presence));
 
-    QVERIFY(m.saveContact(&constituent));
-    QVERIFY(m.error() == QContactManager::NoError);
+    QVERIFY(m->saveContact(&constituent));
+    QVERIFY(m->error() == QContactManager::NoError);
 
-    self = m.contact(m.selfContactId());
+    self = m->contact(m->selfContactId());
     QCOMPARE(self.detail<QContactGlobalPresence>().presenceState(), presence.presenceState());
 
     flags = self.detail<QContactStatusFlags>();
@@ -4675,8 +4681,8 @@ void tst_QContactManager::constituentOfSelf()
     n.setLastName("lastname");
     self.saveDetail(&n);
 
-    QVERIFY(m.saveContact(&self));
-    QVERIFY(m.error() == QContactManager::NoError);
+    QVERIFY(m->saveContact(&self));
+    QVERIFY(m->error() == QContactManager::NoError);
 
     // Create a new contact with a matching name
     QContact newContact;
@@ -4686,18 +4692,18 @@ void tst_QContactManager::constituentOfSelf()
     n.setLastName("lastname");
     newContact.saveDetail(&n);
 
-    QVERIFY(m.saveContact(&newContact));
-    QVERIFY(m.error() == QContactManager::NoError);
+    QVERIFY(m->saveContact(&newContact));
+    QVERIFY(m->error() == QContactManager::NoError);
 
     // Verify that the new contact was not aggregated into the self contact
-    newContact = m.contact(retrievalId(newContact));
-    QVERIFY(!relatedContactIds(newContact.relatedContacts()).contains(m.selfContactId()));
+    newContact = m->contact(retrievalId(newContact));
+    QVERIFY(!relatedContactIds(newContact.relatedContacts()).contains(m->selfContactId()));
 }
 #endif
 
 void tst_QContactManager::searchSensitivity()
 {
-    QContactManager m(DEFAULT_MANAGER);
+    QScopedPointer<QContactManager> m(newContactManager());
 
     QContactDetailFilter exactMatch;
     setFilterDetail<QContactName>(exactMatch, QContactName::FieldFirstName);
@@ -4730,32 +4736,32 @@ void tst_QContactManager::searchSensitivity()
     sensitiveMismatch.setValue("adA");
 
     int originalCount[6];
-    originalCount[0] = m.contactIds(exactMatch).count();
-    originalCount[1] = m.contactIds(exactMismatch).count();
-    originalCount[2] = m.contactIds(insensitiveMatch).count();
-    originalCount[3] = m.contactIds(insensitiveMismatch).count();
-    originalCount[4] = m.contactIds(sensitiveMatch).count();
-    originalCount[5] = m.contactIds(sensitiveMismatch).count();
+    originalCount[0] = m->contactIds(exactMatch).count();
+    originalCount[1] = m->contactIds(exactMismatch).count();
+    originalCount[2] = m->contactIds(insensitiveMatch).count();
+    originalCount[3] = m->contactIds(insensitiveMismatch).count();
+    originalCount[4] = m->contactIds(sensitiveMatch).count();
+    originalCount[5] = m->contactIds(sensitiveMismatch).count();
 
 #ifndef DETAIL_DEFINITION_SUPPORTED
     QContact ada = createContact("Ada", "Lovelace", "9876543");
 #else
-    QContactDetailDefinition nameDef = m.detailDefinition(QContactName::DefinitionName, QContactType::TypeContact);
+    QContactDetailDefinition nameDef = m->detailDefinition(QContactName::DefinitionName, QContactType::TypeContact);
     QContact ada = createContact(nameDef, "Ada", "Lovelace", "9876543");
 #endif
-    int currCount = m.contactIds().count();
-    QVERIFY(m.saveContact(&ada));
-    QVERIFY(m.error() == QContactManager::NoError);
+    int currCount = m->contactIds().count();
+    QVERIFY(m->saveContact(&ada));
+    QVERIFY(m->error() == QContactManager::NoError);
     QVERIFY(!ada.id().managerUri().isEmpty());
     QVERIFY(ContactId::isValid(ada));
-    QCOMPARE(m.contactIds().count(), currCount+1);
+    QCOMPARE(m->contactIds().count(), currCount+1);
 
-    QCOMPARE(m.contactIds(exactMatch).count(), originalCount[0] + 1);
-    QCOMPARE(m.contactIds(exactMismatch).count(), originalCount[1]);
-    QCOMPARE(m.contactIds(insensitiveMatch).count(), originalCount[2] + 1);
-    QCOMPARE(m.contactIds(insensitiveMismatch).count(), originalCount[3] + 1);
-    QCOMPARE(m.contactIds(sensitiveMatch).count(), originalCount[4] + 1);
-    QCOMPARE(m.contactIds(sensitiveMismatch).count(), originalCount[5]);
+    QCOMPARE(m->contactIds(exactMatch).count(), originalCount[0] + 1);
+    QCOMPARE(m->contactIds(exactMismatch).count(), originalCount[1]);
+    QCOMPARE(m->contactIds(insensitiveMatch).count(), originalCount[2] + 1);
+    QCOMPARE(m->contactIds(insensitiveMismatch).count(), originalCount[3] + 1);
+    QCOMPARE(m->contactIds(sensitiveMatch).count(), originalCount[4] + 1);
+    QCOMPARE(m->contactIds(sensitiveMismatch).count(), originalCount[5]);
 }
 
 QTEST_MAIN(tst_QContactManager)

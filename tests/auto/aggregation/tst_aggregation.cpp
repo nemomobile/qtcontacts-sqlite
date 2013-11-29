@@ -137,8 +137,12 @@ private:
 };
 
 tst_Aggregation::tst_Aggregation()
-    : m_cm(new QContactManager(QLatin1String("org.nemomobile.contacts.sqlite")))
+    : m_cm(0)
 {
+    QMap<QString, QString> parameters;
+    parameters.insert(QString::fromLatin1("mergePresenceChanges"), QString::fromLatin1("true"));
+    m_cm = new QContactManager(QString::fromLatin1("org.nemomobile.contacts.sqlite"), parameters);
+
     QTest::qWait(250); // creating self contact etc will cause some signals to be emitted.  ignore them.
     connect(m_cm, contactsAddedSignal, this, addedAccumulationSlot);
     connect(m_cm, contactsChangedSignal, this, changedAccumulationSlot);

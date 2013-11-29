@@ -816,10 +816,12 @@ ContactsEngine::ContactsEngine(const QString &name, const QMap<QString, QString>
     Q_UNUSED(registered)
 #endif
 
-    QString separatePresenceChanges = m_parameters.value(QString::fromLatin1("separatePresenceChanges"));
-    if (separatePresenceChanges.toLower() == QLatin1String("true") ||
-        separatePresenceChanges.toInt() == 1) {
-        setSeparatePresenceChanges(true);
+    QString mergePresenceChanges = m_parameters.value(QString::fromLatin1("mergePresenceChanges"));
+    if (mergePresenceChanges.isEmpty()) {
+        qWarning("The 'mergePresenceChanges' option has not been configured - presence changes will only be reported via ContactManagerEngine::contactsPresenceChanged()");
+    } else if (mergePresenceChanges.toLower() == QLatin1String("true") ||
+               mergePresenceChanges.toInt() == 1) {
+        setMergePresenceChanges(true);
     }
 }
 
@@ -1427,10 +1429,10 @@ void ContactsEngine::_q_contactsChanged(const QVector<quint32> &contactIds)
 
 void ContactsEngine::_q_contactsPresenceChanged(const QVector<quint32> &contactIds)
 {
-    if (m_separatePresenceChanges) {
-        emit contactsPresenceChanged(idList(contactIds));
-    } else {
+    if (m_mergePresenceChanges) {
         emit contactsChanged(idList(contactIds));
+    } else {
+        emit contactsPresenceChanged(idList(contactIds));
     }
 }
 
