@@ -16,6 +16,9 @@ DEFINES += 'QTCONTACTS_SQLITE_DATABASE_DIR=\'\"Contacts/qtcontacts-sqlite/\"\''
 DEFINES += 'QTCONTACTS_SQLITE_DATABASE_NAME=\'\"contacts.db\"\''
 # we build a path like: /home/nemo/.local/share/system/Contacts/qtcontacts-sqlite/contacts.db
 
+# Use the option to sort presence state by availability
+DEFINES += SORT_PRESENCE_BY_AVAILABILITY
+
 INCLUDEPATH += \
         ../extensions
 
