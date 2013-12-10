@@ -1332,12 +1332,33 @@ static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins)
             if (sortField(order) != field.field)
                 continue;
 
-            QString collate = (order.caseSensitivity() == Qt::CaseSensitive)
-                    ? QLatin1String("COLLATE RTRIM")
-                    : QLatin1String("COLLATE NOCASE");
             QString direction = (order.direction() == Qt::AscendingOrder)
                     ? QLatin1String("ASC")
                     : QLatin1String("DESC");
+
+#ifdef SORT_PRESENCE_BY_AVAILABILITY
+            if (detail.detail == detailIdentifier<QContactGlobalPresence>() &&
+                field.field == QContactGlobalPresence::FieldPresenceState) {
+                // Special case handling for presence ordering
+                QString join = QString::fromLatin1("LEFT JOIN GlobalPresences ON Contacts.contactId = GlobalPresences.contactId");
+                if (!joins->contains(join))
+                    joins->append(join);
+
+                // The order we want is Available(1),Away(4),ExtendedAway(5),Busy(3),Hidden(2),Offline(6),Unknown(0)
+                return QString::fromLatin1("CASE GlobalPresences.presenceState "
+                                           "WHEN 1 THEN 0 "
+                                           "WHEN 4 THEN 1 "
+                                           "WHEN 5 THEN 2 "
+                                           "WHEN 3 THEN 3 "
+                                           "WHEN 2 THEN 4 "
+                                           "WHEN 6 THEN 5 "
+                                           "ELSE 6 END %1").arg(direction);
+            }
+#endif
+
+            QString collate = (order.caseSensitivity() == Qt::CaseSensitive)
+                    ? QLatin1String("COLLATE RTRIM")
+                    : QLatin1String("COLLATE NOCASE");
             QString blanksLocation = (order.blankPolicy() == QContactSortOrder::BlanksLast)
                     ? QLatin1String("CASE WHEN %2.%3 IS NULL OR %2.%3 = '' THEN 1 ELSE 0 END,")
                     : QLatin1String("CASE WHEN %2.%3 IS NULL OR %2.%3 = '' THEN 0 ELSE 1 END,");

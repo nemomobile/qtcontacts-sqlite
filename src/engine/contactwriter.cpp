@@ -1809,6 +1809,28 @@ template <typename T> bool ContactWriter::writeDetails(
     return true;
 }
 
+static int presenceOrder(QContactPresence::PresenceState state)
+{
+#ifdef SORT_PRESENCE_BY_AVAILABILITY
+    if (state == QContactPresence::PresenceAvailable) {
+        return 0;
+    } else if (state == QContactPresence::PresenceAway) {
+        return 1;
+    } else if (state == QContactPresence::PresenceExtendedAway) {
+        return 2;
+    } else if (state == QContactPresence::PresenceBusy) {
+        return 3;
+    } else if (state == QContactPresence::PresenceHidden) {
+        return 4;
+    } else if (state == QContactPresence::PresenceOffline) {
+        return 5;
+    }
+    return 6;
+#else
+    return static_cast<int>(state);
+#endif
+}
+
 static bool betterPresence(const QContactPresence &detail, const QContactPresence &best)
 {
     if (best.isEmpty())
@@ -1818,7 +1840,8 @@ static bool betterPresence(const QContactPresence &detail, const QContactPresenc
     if (detailState == QContactPresence::PresenceUnknown)
         return false;
 
-    return (detailState < best.presenceState() || best.presenceState() == QContactPresence::PresenceUnknown);
+    return ((presenceOrder(detailState) < presenceOrder(best.presenceState())) ||
+            best.presenceState() == QContactPresence::PresenceUnknown);
 }
 
 QContactManager::Error ContactWriter::save(
