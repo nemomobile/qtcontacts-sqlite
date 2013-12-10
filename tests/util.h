@@ -56,6 +56,7 @@
 #include "contactid_p.h"
 
 #include "qtcontacts-extensions.h"
+#include "contactmanagerengine.h"
 
 #include "qcontactoriginmetadata.h"
 #include "qcontactoriginmetadata_impl.h"
@@ -176,6 +177,7 @@ void registerIdType()
 #ifdef USING_QTPIM
 const char *contactsAddedSignal = SIGNAL(contactsAdded(QList<QContactId>));
 const char *contactsChangedSignal = SIGNAL(contactsChanged(QList<QContactId>));
+const char *contactsPresenceChangedSignal = SIGNAL(contactsPresenceChanged(QList<QContactId>));
 const char *contactsRemovedSignal = SIGNAL(contactsRemoved(QList<QContactId>));
 const char *relationshipsAddedSignal = SIGNAL(relationshipsAdded(QList<QContactId>));
 const char *relationshipsRemovedSignal = SIGNAL(relationshipsRemoved(QList<QContactId>));
@@ -183,6 +185,7 @@ const char *selfContactIdChangedSignal = SIGNAL(selfContactIdChanged(QContactId,
 #else
 const char *contactsAddedSignal = SIGNAL(contactsAdded(QList<QContactLocalId>));
 const char *contactsChangedSignal = SIGNAL(contactsChanged(QList<QContactLocalId>));
+const char *contactsPresenceChangedSignal = SIGNAL(contactsPresenceChanged(QList<QContactLocalId>));
 const char *contactsRemovedSignal = SIGNAL(contactsRemoved(QList<QContactLocalId>));
 const char *relationshipsAddedSignal = SIGNAL(relationshipsAdded(QList<QContactLocalId>));
 const char *relationshipsRemovedSignal = SIGNAL(relationshipsRemoved(QList<QContactLocalId>));

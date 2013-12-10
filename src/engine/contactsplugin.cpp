@@ -72,9 +72,7 @@ ContactsFactory::ContactsFactory()
 QContactManagerEngine *ContactsFactory::engine(
         const QMap<QString, QString> &parameters, QContactManager::Error* error)
 {
-    Q_UNUSED(parameters);
-
-    ContactsEngine *engine = new ContactsEngine(managerName());
+    ContactsEngine *engine = new ContactsEngine(managerName(), parameters);
     QContactManager::Error err = engine->open();
     if (error)
         *error = err;

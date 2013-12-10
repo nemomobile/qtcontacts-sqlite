@@ -238,6 +238,7 @@ private:
     QSet<QContactIdType> m_addedIds;
     QSet<QContactIdType> m_removedIds;
     QSet<QContactIdType> m_changedIds;
+    QSet<QContactIdType> m_presenceChangedIds;
 };
 
 
