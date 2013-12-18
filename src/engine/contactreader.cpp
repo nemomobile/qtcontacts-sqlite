@@ -1446,7 +1446,7 @@ struct Table
 namespace {
 
 // The selfId is fixed - DB ID 1 is the 'self' local contact, and DB ID 2 is the aggregate
-static const QContactIdType selfId(ContactId::apiId(2));
+const quint32 selfId(2);
 
 bool includesSelfId(const QContactFilter &filter);
 
@@ -1474,7 +1474,11 @@ bool includesSelfId(const QContactIdFilter &filter)
 bool includesSelfId(const QContactLocalIdFilter &filter)
 #endif
 {
-    return filter.ids().contains(selfId);
+    foreach (const QContactIdType &id, filter.ids()) {
+        if (ContactId::databaseId(id) == selfId)
+            return true;
+    }
+    return false;
 }
 bool includesSelfId(const QContactFilter &filter)
 {
@@ -1996,7 +2000,7 @@ QContactManager::Error ContactReader::getIdentity(
 
     if (identity == ContactsDatabase::SelfContactId) {
         // we don't allow setting the self contact id, it's always static
-        *contactId = selfId;
+        *contactId = ContactId::apiId(selfId);
     } else {
         QSqlQuery query(m_database);
         query.setForwardOnly(true);
