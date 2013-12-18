@@ -576,6 +576,16 @@ static bool rollbackTransaction(QSqlDatabase &database)
     return execute(database, QString::fromLatin1("ROLLBACK TRANSACTION"));
 }
 
+static bool finalizeTransaction(QSqlDatabase &database, bool success)
+{
+    if (success) {
+        return commitTransaction(database);
+    }
+
+    rollbackTransaction(database);
+    return false;
+}
+
 static bool setContactsHasDetail(QSqlDatabase &database, const QString &column, const QString &table)
 {
     QString statement = QString::fromLatin1(
@@ -772,12 +782,7 @@ static bool upgradeDatabase(QSqlDatabase &database)
         }
     }
 
-    if (error) {
-        rollbackTransaction(database);
-        return false;
-    } else {
-        return commitTransaction(database);
-    }
+    return finalizeTransaction(database, !error);
 }
 
 static bool configureDatabase(QSqlDatabase &database)
@@ -815,12 +820,8 @@ static bool prepareDatabase(QSqlDatabase &database)
             break;
         }
     }
-    if (error) {
-        rollbackTransaction(database);
-        return false;
-    } else {
-        return commitTransaction(database);
-    }
+
+    return finalizeTransaction(database, !error);
 }
 
 template<typename ValueContainer>
@@ -856,7 +857,7 @@ bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool
 
     static const QString createStatement(QString::fromLatin1("CREATE TABLE IF NOT EXISTS temp.%1 (contactId INTEGER)"));
     static const QString deleteRecordsStatement(QString::fromLatin1("DELETE FROM temp.%1"));
-    static const QString insertFilterStatement(QString::fromLatin1("INSERT INTO temp.%1 (contactId) SELECT Contacts.contactId FROM Contacts %2 %3 ORDER BY %4"));
+    static const QString insertFilterStatement(QString::fromLatin1("INSERT INTO temp.%1 (contactId) SELECT Contacts.contactId FROM Contacts %2 %3"));
     static const QString insertIdsStatement(QString::fromLatin1("INSERT INTO temp.%1 (contactId) VALUES(:contactId)"));
 
     // Create the temporary table (if we haven't already).
@@ -896,7 +897,10 @@ bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool
     QSqlQuery insertQuery(db);
     if (filter) {
         // specified by filter
-        const QString insertStatement = insertFilterStatement.arg(table).arg(join).arg(where).arg(orderBy);
+        QString insertStatement = insertFilterStatement.arg(table).arg(join).arg(where);
+        if (!orderBy.isEmpty()) {
+            insertStatement.append(QString::fromLatin1(" ORDER BY ") + orderBy);
+        }
         if (!insertQuery.prepare(insertStatement)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary contact ids: %1\n%2")
                     .arg(insertQuery.lastError().text())

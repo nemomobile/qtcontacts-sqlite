@@ -1403,6 +1403,9 @@ static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins)
 
 static QString buildOrderBy(const QList<QContactSortOrder> &order, QString *join)
 {
+    if (order.isEmpty())
+        return QString();
+
     QStringList joins;
     QStringList fragments;
     foreach (const QContactSortOrder &sort, order) {
@@ -1956,11 +1959,13 @@ QContactManager::Error ContactReader::readContactIds(
 
     where = expandWhere(where, filter);
 
-    const QString queryString = QString(QLatin1String(
+    QString queryString = QString(QLatin1String(
                 "\n SELECT DISTINCT Contacts.contactId"
                 "\n FROM Contacts %1"
-                "\n %2"
-                "\n ORDER BY %3;")).arg(join).arg(where).arg(orderBy);
+                "\n %2")).arg(join).arg(where);
+    if (!orderBy.isEmpty()) {
+        queryString.append(QString::fromLatin1(" ORDER BY ") + orderBy);
+    }
 
     QSqlQuery query(m_database);
     query.setForwardOnly(true);
