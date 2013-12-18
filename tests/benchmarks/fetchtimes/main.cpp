@@ -51,6 +51,16 @@
 
 USE_CONTACTS_NAMESPACE
 
+#ifdef USING_QTPIM
+#include <QContactIdFilter>
+typedef QContactId ContactIdType;
+static QContactId retrievalId(const QContact &contact) { return contact.id(); }
+#else
+#include <QContactLocalIdFilter>
+typedef QContactLocalId ContactIdType;
+static QContactLocalId retrievalId(const QContact &contact) { return contact.localId(); }
+#endif
+
 static QStringList generateNonOverlappingFirstNamesList()
 {
     QStringList retn;
@@ -266,10 +276,17 @@ int main(int argc, char  *argv[])
 {
     QCoreApplication application(argc, argv);
 
-    QContactManager manager(QLatin1String("org.nemomobile.contacts.sqlite"));
+    QMap<QString, QString> parameters;
+    parameters.insert(QString::fromLatin1("mergePresenceChanges"), QString::fromLatin1("false"));
+
+    QContactManager manager(QString::fromLatin1("org.nemomobile.contacts.sqlite"), parameters);
 
     QContactFetchRequest request;
     request.setManager(&manager);
+
+    // Perform an initial request to ensure the database has been created before we start timing
+    request.start();
+    request.waitForFinished();
 
     qint64 elapsedTimeTotal = 0;
 
@@ -354,7 +371,8 @@ int main(int argc, char  *argv[])
         newTestData.reserve(howMany);
 
         for (int j = 0; j < howMany; ++j) {
-            newTestData.append(generateContact());
+            // Use testing sync target, so 'local' won't be modified into 'was_local' via aggregation
+            newTestData.append(generateContact(QString::fromLatin1("testing")));
         }
 
         testData.append(newTestData);
@@ -374,10 +392,21 @@ int main(int argc, char  *argv[])
         qDebug() << "    saving took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
         elapsedTimeTotal += ste;
 
+        QContactDetailFilter testingFilter;
+#ifdef USING_QTPIM
+        testingFilter.setDetailType(QContactSyncTarget::Type, QContactSyncTarget::FieldSyncTarget);
+#else
+        testingFilter.setDetailDefinitionName(QContactSyncTarget::DefinitionName, QContactSyncTarget::FieldSyncTarget);
+#endif
+        testingFilter.setValue(QString::fromLatin1("testing"));
+
         QContactFetchHint fh;
         syncTimer.start();
-        QList<QContact> readContacts = manager.contacts(QContactFilter(), QList<QContactSortOrder>(), fh);
+        QList<QContact> readContacts = manager.contacts(testingFilter, QList<QContactSortOrder>(), fh);
         ste = syncTimer.elapsed();
+        if (readContacts.size() != td.size()) {
+            qWarning() << "Invalid retrieval count:" << readContacts.size() << "expecting:" << td.size();
+        }
         qDebug() << "    reading all (" << readContacts.size() << "), all details, took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
         elapsedTimeTotal += ste;
 
@@ -391,8 +420,11 @@ int main(int argc, char  *argv[])
                 << QContactPhoneNumber::DefinitionName << QContactEmailAddress::DefinitionName);
 #endif
         syncTimer.start();
-        readContacts = manager.contacts(QContactFilter(), QList<QContactSortOrder>(), fh);
+        readContacts = manager.contacts(testingFilter, QList<QContactSortOrder>(), fh);
         ste = syncTimer.elapsed();
+        if (readContacts.size() != td.size()) {
+            qWarning() << "Invalid retrieval count:" << readContacts.size() << "expecting:" << td.size();
+        }
         qDebug() << "    reading all, common details, took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
         elapsedTimeTotal += ste;
 
@@ -403,8 +435,11 @@ int main(int argc, char  *argv[])
         fh.setDetailDefinitionsHint(QStringList());
 #endif
         syncTimer.start();
-        readContacts = manager.contacts(QContactFilter(), QList<QContactSortOrder>(), fh);
+        readContacts = manager.contacts(testingFilter, QList<QContactSortOrder>(), fh);
         ste = syncTimer.elapsed();
+        if (readContacts.size() != td.size()) {
+            qWarning() << "Invalid retrieval count:" << readContacts.size() << "expecting:" << td.size();
+        }
         qDebug() << "    reading all, no relationships, took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
         elapsedTimeTotal += ste;
 
@@ -416,9 +451,62 @@ int main(int argc, char  *argv[])
                 << QContactName::DefinitionName << QContactAvatar::DefinitionName);
 #endif
         syncTimer.start();
-        readContacts = manager.contacts(QContactFilter(), QList<QContactSortOrder>(), fh);
+        readContacts = manager.contacts(testingFilter, QList<QContactSortOrder>(), fh);
         ste = syncTimer.elapsed();
+        if (readContacts.size() != td.size()) {
+            qWarning() << "Invalid retrieval count:" << readContacts.size() << "expecting:" << td.size();
+        }
         qDebug() << "    reading all, display details + no rels, took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
+        elapsedTimeTotal += ste;
+
+        // Read the contacts, selected by ID
+        QList<QContactId> idsToRetrieve;
+        for (int j = 0; j < td.size(); ++j) {
+            idsToRetrieve.append(retrievalId(td.at(j)));
+        }
+
+        syncTimer.start();
+        readContacts = manager.contacts(idsToRetrieve, fh, 0);
+        ste = syncTimer.elapsed();
+        if (readContacts.size() != td.size()) {
+            qWarning() << "Invalid retrieval count:" << readContacts.size() << "expecting:" << td.size();
+        }
+        qDebug() << "    reading all by IDs, display details + no rels, took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
+        elapsedTimeTotal += ste;
+
+        // Read the same set using ID filtering
+#ifdef USING_QTPIM
+        QContactIdFilter idFilter;
+#else
+        QContactLocalIdFilter idFilter;
+#endif
+        idFilter.setIds(idsToRetrieve);
+
+        syncTimer.start();
+        readContacts = manager.contacts(idFilter, QList<QContactSortOrder>(), fh);
+        ste = syncTimer.elapsed();
+        if (readContacts.size() != td.size()) {
+            qWarning() << "Invalid retrieval count:" << readContacts.size() << "expecting:" << td.size();
+        }
+        qDebug() << "    reading all by ID filter, display details + no rels, took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
+        elapsedTimeTotal += ste;
+
+        // Read the same set, but filter everything out using syncTarget
+        QContactDetailFilter aggregateFilter;
+#ifdef USING_QTPIM
+        aggregateFilter.setDetailType(QContactSyncTarget::Type, QContactSyncTarget::FieldSyncTarget);
+#else
+        aggregateFilter.setDetailDefinitionName(QContactSyncTarget::DefinitionName, QContactSyncTarget::FieldSyncTarget);
+#endif
+        aggregateFilter.setValue(QString::fromLatin1("aggregate"));
+
+        syncTimer.start();
+        readContacts = manager.contacts(idFilter & aggregateFilter, QList<QContactSortOrder>(), fh);
+        ste = syncTimer.elapsed();
+        if (readContacts.size() != 0) {
+            qWarning() << "Invalid retrieval count:" << readContacts.size() << "expecting:" << 0;
+        }
+        qDebug() << "    reading all by ID filter & aggregate, display details + no rels, took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
         elapsedTimeTotal += ste;
 
         QContactDetailFilter firstNameStartsA;
@@ -440,17 +528,11 @@ int main(int argc, char  *argv[])
         qDebug() << "    reading filtered (" << readContacts.size() << "), no relationships, took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
         elapsedTimeTotal += ste;
 
-#ifdef USING_QTPIM
-        QList<QContactId> idsToRemove;
+        QList<ContactIdType> idsToRemove;
         for (int j = 0; j < td.size(); ++j) {
-            idsToRemove.append(td.at(j).id());
+            idsToRemove.append(retrievalId(td.at(j)));
         }
-#else
-        QList<QContactLocalId> idsToRemove;
-        for (int j = 0; j < td.size(); ++j) {
-            idsToRemove.append(td.at(j).localId());
-        }
-#endif
+
         syncTimer.start();
         manager.removeContacts(idsToRemove);
         ste = syncTimer.elapsed();
@@ -561,24 +643,17 @@ int main(int argc, char  *argv[])
         qDebug() << "    reading filtered (" << readContacts.size() << "), no relationships, took" << ste << "milliseconds";
         elapsedTimeTotal += ste;
 
-#ifdef USING_QTPIM
-        QList<QContactId> idsToRemove;
+        QList<ContactIdType> idsToRemove;
         for (int j = 0; j < td.size(); ++j) {
-            idsToRemove.append(td.at(j).id());
+            idsToRemove.append(retrievalId(td.at(j)));
         }
-#else
-        QList<QContactLocalId> idsToRemove;
-        for (int j = 0; j < td.size(); ++j) {
-            idsToRemove.append(td.at(j).localId());
-        }
-#endif
+
         syncTimer.start();
         manager.removeContacts(idsToRemove);
         ste = syncTimer.elapsed();
         qDebug() << "    removing test data took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
         elapsedTimeTotal += ste;
     }
-
 
     // The next test is about saving contacts which should get aggregated into others.
     // Aggregation is an expensive operation, so we expect these save operations to take longer.
@@ -706,7 +781,7 @@ int main(int argc, char  *argv[])
     qDebug() << "    Adding more prefill data, please wait...";
     QList<QContact> morePrefillData;
     for (int i = 0; i < 1000; ++i) {
-        morePrefillData.append(generateContact());
+        morePrefillData.append(generateContact(QString::fromLatin1("testing")));
     }
     manager.saveContacts(&morePrefillData);
 
@@ -759,17 +834,11 @@ int main(int argc, char  *argv[])
 
     // clean up the "more prefill data"
     qDebug() << "    cleaning up extra prefill data, please wait...";
-#ifdef USING_QTPIM
-    QList<QContactId> morePrefillIds;
+    QList<ContactIdType> morePrefillIds;
     for (int j = 0; j < morePrefillData.size(); ++j) {
-        morePrefillIds.append(morePrefillData.at(j).id());
+        morePrefillIds.append(retrievalId(morePrefillData.at(j)));
     }
-#else
-    QList<QContactLocalId> morePrefillIds;
-    for (int j = 0; j < morePrefillData.size(); ++j) {
-        morePrefillIds.append(morePrefillData.at(j).localId());
-    }
-#endif
+
     manager.removeContacts(morePrefillIds);
 
     // the fourth presence update test checks update time for non-overlapping sets of data.
