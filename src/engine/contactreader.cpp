@@ -1126,7 +1126,12 @@ static QString buildWhere(const QContactLocalIdFilter &filter, QVariantList *bin
 #endif
 {
     QList<quint32> dbIds;
-    foreach (const QContactIdType &id, filter.ids()) {
+
+    const QList<QContactIdType> &filterIds(filter.ids());
+    dbIds.reserve(filterIds.count());
+    bindings->reserve(filterIds.count());
+
+    foreach (const QContactIdType &id, filterIds) {
         dbIds.append(ContactId::databaseId(id));
     }
 
@@ -1499,6 +1504,54 @@ bool includesSelfId(const QContactFilter &filter)
     }
 }
 
+bool includesIdFilter(const QContactFilter &filter);
+
+// Returns true if this filter includes a filter for specific IDs
+bool includesIdFilter(const QList<QContactFilter> &filters)
+{
+    foreach (const QContactFilter &filter, filters) {
+        if (includesIdFilter(filter)) {
+            return true;
+        }
+    }
+    return false;
+}
+bool includesIdFilter(const QContactIntersectionFilter &filter)
+{
+    return includesIdFilter(filter.filters());
+}
+bool includesIdFilter(const QContactUnionFilter &filter)
+{
+    return includesIdFilter(filter.filters());
+}
+bool includesIdFilter(const QContactFilter &filter)
+{
+    switch (filter.type()) {
+    case QContactFilter::DefaultFilter:
+    case QContactFilter::ContactDetailFilter:
+    case QContactFilter::ContactDetailRangeFilter:
+    case QContactFilter::ChangeLogFilter:
+    case QContactFilter::RelationshipFilter:
+        return false;
+
+    case QContactFilter::IntersectionFilter:
+        return includesIdFilter(static_cast<const QContactIntersectionFilter &>(filter));
+    case QContactFilter::UnionFilter:
+        return includesIdFilter(static_cast<const QContactUnionFilter &>(filter));
+#ifdef USING_QTPIM
+    case QContactFilter::IdFilter:
+        return true;
+#else
+    case QContactFilter::LocalIdFilter:
+        return true;
+#endif
+
+    default:
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot includesIdFilter with unknown filter type %1").arg(filter.type()));
+        return false;
+    }
+}
+
 QString expandWhere(const QString &where, const QContactFilter &filter)
 {
     QString preamble(QLatin1String("WHERE "));
@@ -1519,9 +1572,9 @@ QString expandWhere(const QString &where, const QContactFilter &filter)
     // by default, we only return "aggregate" contacts, and we don't return the self contact (2)
     if (strippedWhere.isEmpty()) {
         return preamble + QLatin1String("Contacts.syncTarget = 'aggregate'");
-    } else if (!where.contains("syncTarget")) {
+    } else if (!where.contains("syncTarget") && !includesIdFilter(filter)) {
         return preamble + QLatin1String("Contacts.syncTarget = 'aggregate' AND ") + where;
-    } else { // Unless they explicitly specify a syncTarget criterium
+    } else { // Unless they explicitly specify a syncTarget criterium, or specific IDs
         return preamble + where;
     }
 #else
