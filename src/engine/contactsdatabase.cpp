@@ -858,7 +858,6 @@ bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool
     static const QString createStatement(QString::fromLatin1("CREATE TABLE IF NOT EXISTS temp.%1 (contactId INTEGER)"));
     static const QString deleteRecordsStatement(QString::fromLatin1("DELETE FROM temp.%1"));
     static const QString insertFilterStatement(QString::fromLatin1("INSERT INTO temp.%1 (contactId) SELECT Contacts.contactId FROM Contacts %2 %3"));
-    static const QString insertIdsStatement(QString::fromLatin1("INSERT INTO temp.%1 (contactId) VALUES(:contactId)"));
 
     // Create the temporary table (if we haven't already).
     QSqlQuery tableQuery(db);
@@ -916,28 +915,48 @@ bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool
         } else {
             debugFilterExpansion("Contacts selection:", insertStatement, boundValues);
         }
+        insertQuery.finish();
     } else {
         // specified by id list
         // NOTE: we must preserve the order of the bound ids being
         // inserted (to match the order of the input list), so that
         // the result of queryContacts() is ordered according to the
         // order of input ids.
-        const QString insertStatement = insertIdsStatement.arg(table);
-        if (!insertQuery.prepare(insertStatement)) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary contact ids: %1\n%2")
-                    .arg(insertQuery.lastError().text())
-                    .arg(insertStatement));
-            return false;
-        }
-        insertQuery.bindValue(0, boundIds);
-        if (!insertQuery.execBatch()) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to insert temporary contact ids: %1\n%2")
-                    .arg(insertQuery.lastError().text())
-                    .arg(insertStatement));
-            return false;
+        if (!boundIds.isEmpty()) {
+            QVariantList::const_iterator it = boundIds.constBegin(), end = boundIds.constEnd();
+            while (it != end) {
+                // SQLite allows up to 500 rows per insert
+                quint32 remainder = (end - it);
+                QVariantList::const_iterator batchEnd = it + std::min<quint32>(remainder, 500);
+
+                QString insertStatement = QString::fromLatin1("INSERT INTO temp.%1 (contactId) VALUES ").arg(table);
+                while (true) {
+                    const QVariant &v(*it);
+                    const quint32 dbId(v.value<quint32>());
+                    insertStatement.append(QString::fromLatin1("(%1)").arg(dbId));
+                    if (++it == batchEnd) {
+                        break;
+                    } else {
+                        insertStatement.append(QString::fromLatin1(","));
+                    }
+                }
+
+                if (!insertQuery.prepare(insertStatement)) {
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary contact ids: %1\n%2")
+                            .arg(insertQuery.lastError().text())
+                            .arg(insertStatement));
+                    return false;
+                }
+                if (!insertQuery.exec()) {
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to insert temporary contact ids: %1\n%2")
+                            .arg(insertQuery.lastError().text())
+                            .arg(insertStatement));
+                    return false;
+                }
+                insertQuery.finish();
+            }
         }
     }
-    insertQuery.finish();
 
     return true;
 }
