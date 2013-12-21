@@ -85,7 +85,9 @@ public:
         bool exec() { return m_query.exec(); }
         bool execBatch() { return m_query.execBatch(); }
         bool next() { return m_query.next(); }
+        bool isValid() { return m_query.isValid(); }
         void finish() { return m_query.finish(); }
+        void setForwardOnly(bool forwardOnly) { m_query.setForwardOnly(forwardOnly); }
 
         QVariant lastInsertId() const { return m_query.lastInsertId(); }
 
@@ -93,6 +95,9 @@ public:
 
         template<typename T>
         T value(int index) { return m_query.value(index).value<T>(); }
+
+        operator QSqlQuery &() { return m_query; }
+        operator QSqlQuery const &() const { return m_query; }
 
         void reportError(const QString &text) const;
         void reportError(const char *text) const;

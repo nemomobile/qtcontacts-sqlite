@@ -518,24 +518,24 @@ static int contextType(const QString &type)
 }
 
 template <typename T>
-static void readDetail(QContact *contact, QSqlQuery *query, quint32 contactId, quint32 detailId, bool syncable, const QString &syncTarget, bool relaxConstraints, int offset)
+static void readDetail(QContact *contact, QSqlQuery &query, quint32 contactId, quint32 detailId, bool syncable, const QString &syncTarget, bool relaxConstraints, int offset)
 {
     const bool aggregateContact(syncTarget == aggregateSyncTarget);
 
     T detail;
 
     /*
-    const quint32 detailId = query->value(0).toUInt();
-    const quint32 contactId = query->value(1).toUInt();
-    const QString detailName = query->value(2).toString();
+    const quint32 detailId = query.value(0).toUInt();
+    const quint32 contactId = query.value(1).toUInt();
+    const QString detailName = query.value(2).toString();
     */
-    const QString detailUriValue = query->value(3).toString();
-    const QString linkedDetailUrisValue = query->value(4).toString();
-    const QString contextValue = query->value(5).toString();
-    const int accessConstraints = query->value(6).toInt();
-    QString provenance = query->value(7).toString();
-    const bool modifiable = query->value(8).toBool();
-    const bool nonexportable = query->value(9).toBool();
+    const QString detailUriValue = query.value(3).toString();
+    const QString linkedDetailUrisValue = query.value(4).toString();
+    const QString contextValue = query.value(5).toString();
+    const int accessConstraints = query.value(6).toInt();
+    QString provenance = query.value(7).toString();
+    const bool modifiable = query.value(8).toBool();
+    const bool nonexportable = query.value(9).toBool();
 
     if (!detailUriValue.isEmpty()) {
         setValue(&detail,
@@ -582,7 +582,7 @@ static void readDetail(QContact *contact, QSqlQuery *query, quint32 contactId, q
         QContactManagerEngine::setDetailAccessConstraints(&detail, static_cast<QContactDetail::AccessConstraints>(accessConstraints));
     }
 
-    setValues(&detail, query, offset);
+    setValues(&detail, &query, offset);
 
     contact->saveDetail(&detail);
 }
@@ -601,7 +601,7 @@ static QContactRelationship makeRelationship(const QString &type, quint32 firstI
     return relationship;
 }
 
-typedef void (*ReadDetail)(QContact *contact, QSqlQuery *query, quint32 contactId, quint32 detailId, bool syncable, const QString &syncTarget, bool relaxConstraints, int offset);
+typedef void (*ReadDetail)(QContact *contact, QSqlQuery &query, quint32 contactId, quint32 detailId, bool syncable, const QString &syncTarget, bool relaxConstraints, int offset);
 
 struct DetailInfo
 {
@@ -1809,19 +1809,32 @@ QContactManager::Error ContactReader::readContacts(
 QContactManager::Error ContactReader::queryContacts(
         const QString &tableName, QList<QContact> *contacts, const QContactFetchHint &fetchHint, bool relaxConstraints)
 {
+    QContactManager::Error err = QContactManager::NoError;
+
+    const QString idsQueryStatement(QString::fromLatin1(
+        "SELECT Contacts.* "
+        "FROM temp.%1 "
+        "JOIN Contacts ON temp.%1.contactId = Contacts.contactId "
+        "ORDER BY temp.%1.rowId ASC"));
+
     QSqlQuery query(m_database);
-    query.setForwardOnly(true);
-    if (!query.exec(QString(QLatin1String(
-            "\n SELECT Contacts.*"
-            "\n FROM temp.%1 INNER JOIN Contacts ON temp.%1.contactId = Contacts.contactId"
-            "\n ORDER BY temp.%1.rowId ASC;")).arg(tableName))) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to query from %1: %2").arg(tableName).arg(query.lastError().text()));
-        return QContactManager::UnspecifiedError;
+    if (!query.prepare(idsQueryStatement.arg(tableName))) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for contact details:\n%1\nQuery:\n%2")
+                .arg(query.lastError().text())
+                .arg(idsQueryStatement));
+        err = QContactManager::UnspecifiedError;
+    } else {
+        query.setForwardOnly(true);
+        if (!query.exec()) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to execute query for contact details:\n%1\nQuery:\n%2")
+                    .arg(query.lastError().text())
+                    .arg(idsQueryStatement));
+            err = QContactManager::UnspecifiedError;
+        } else {
+            err = queryContacts(tableName, contacts, fetchHint, relaxConstraints, query);
+            query.finish();
+        }
     }
-
-    QContactManager::Error err = queryContacts(tableName, contacts, fetchHint, relaxConstraints, query);
-
-    query.finish();
 
     return err;
 }
@@ -1843,10 +1856,10 @@ QContactManager::Error ContactReader::queryContacts(
             "COALESCE(Details.modifiable, 0),"
             "COALESCE(Details.nonexportable, 0),"
             "%1 "
-        "FROM %3 "
-        "JOIN Details ON Details.contactId = %3.contactId "
-        "%2"
-        ));
+        "FROM temp.%2 "
+        "JOIN Details ON Details.contactId = temp.%2.contactId "
+        "%3 "
+        "ORDER BY temp.%2.rowId ASC"));
 
     const QString selectTemplate(QString::fromLatin1(
         "%1.*"));
@@ -1857,7 +1870,9 @@ QContactManager::Error ContactReader::queryContacts(
     QStringList joinSpec;
 
     QHash<QString, QPair<ReadDetail, int> > readProperties;
-    int offset = 10 + 2; // Details columns + ID columns of the joined table preceding the first data column
+
+    // Skip the Details table fields, and the indexing fields of the first join table
+    int offset = 10 + 2;
 
     const ContactWriter::DetailList &definitionMask = fetchHint.detailTypesHint();
 
@@ -1879,8 +1894,30 @@ QContactManager::Error ContactReader::queryContacts(
         }
     }
 
-    QString detailQuery(detailQueryTemplate.arg(selectSpec.join(QChar::fromLatin1(',')))
-                                           .arg(joinSpec.join(QChar::fromLatin1(' '))));
+    // Formulate the query string we need
+    QString detailQueryStatement(detailQueryTemplate.arg(selectSpec.join(QChar::fromLatin1(','))));
+    detailQueryStatement = detailQueryStatement.arg(tableName);
+    detailQueryStatement = detailQueryStatement.arg(joinSpec.join(QChar::fromLatin1(' ')));
+
+    QSqlQuery detailQuery(m_database);
+    if (!detailQuery.prepare(detailQueryStatement)) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for joined details:\n%1\nQuery:\n%2")
+                .arg(detailQuery.lastError().text())
+                .arg(detailQueryStatement));
+        return QContactManager::UnspecifiedError;
+    }
+
+    // Read the details for these contacts
+    detailQuery.setForwardOnly(true);
+    if (!detailQuery.exec()) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for joined details:\n%1\nQuery:\n%2")
+                .arg(detailQuery.lastError().text())
+                .arg(detailQueryStatement));
+        return QContactManager::UnspecifiedError;
+    } else {
+        // Move to the first row
+        detailQuery.next();
+    }
 
     QContactFetchHint::OptimizationHints optimizationHints(fetchHint.optimizationHints());
 
@@ -1890,22 +1927,25 @@ QContactManager::Error ContactReader::queryContacts(
 
     do {
         int contactCount = contacts->count();
+        quint32 maxBatchId = 0;
         QList<bool> syncableContact;
         QStringList contactSyncTarget;
         QStringList iidList;
-        QVariantList varIds;
         QMap<quint32, int> contactIdIndex;
         QMap<quint32, QSet<QContactDetail::DetailType> > transientContactDetails;
 
         for (int i = 0; i < batchSize && query.next(); ++i) {
             quint32 dbId = query.value(0).toUInt();
+            if (dbId > maxBatchId) {
+                maxBatchId = dbId;
+            }
+
             QContact contact;
 
             QContactId id(ContactId::contactId(ContactId::apiId(dbId)));
             contact.setId(id);
 
             iidList.append(QString::number(dbId));
-            varIds.append(QVariant(dbId));
             contactIdIndex.insert(dbId, contactCount + i);
 
             QString persistedDL = query.value(1).toString();
@@ -2051,65 +2091,44 @@ QContactManager::Error ContactReader::queryContacts(
             contacts->append(contact);
         }
 
-        if (!detailQuery.isEmpty()) {
-            // Store the IDs of the contacts in this batch in a temporary table
-            QString transientTable;
-            if (!m_database.createTransientContactIdsTable(tableName, varIds, &transientTable)) {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create transient contacts table for query!"));
-                return QContactManager::UnspecifiedError;
-            }
+        if (!selectSpec.isEmpty()) {
+            if (detailQuery.isValid()) {
+                do {
+                    const quint32 detailId = detailQuery.value(0).toUInt();
+                    const quint32 contactId = detailQuery.value(1).toUInt();
+                    const QString detailName = detailQuery.value(2).toString();
 
-            QString queryStatement(detailQuery.arg(transientTable));
+                    if (contactId > maxBatchId) {
+                        break;
+                    }
 
-            // Read the details for these contacts
-            QSqlQuery detailQuery(m_database);
-            detailQuery.setForwardOnly(true);
-            if (!detailQuery.prepare(queryStatement)) {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for contact details:\n%1\nQuery:\n%2")
-                        .arg(detailQuery.lastError().text())
-                        .arg(queryStatement));
-                return QContactManager::UnspecifiedError;
-            }
-            if (!detailQuery.exec()) {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to query contact details\n%1\nQuery:\n%2")
-                        .arg(detailQuery.lastError().text())
-                        .arg(queryStatement));
-                return QContactManager::UnspecifiedError;
-            }
+                    // Are we reporting this detail type?
+                    const QPair<ReadDetail, int> properties(readProperties[detailName]);
+                    if (properties.first && properties.second) {
+                        // Are there transient details of this type for this contact?
+                        QMap<quint32, QSet<QContactDetail::DetailType> >::const_iterator tit = transientContactDetails.constFind(contactId);
+                        if (tit != transientContactDetails.constEnd()) {
+                            const QContactDetail::DetailType detailType(detailIdentifier(detailName));
+                            if ((*tit).contains(detailType)) {
+                                // This contact has transient details of this type; skip the extraction
+                                continue;
+                            }
+                        }
 
-            while (detailQuery.next()) {
-                const quint32 detailId = detailQuery.value(0).toUInt();
-                const quint32 contactId = detailQuery.value(1).toUInt();
-                const QString detailName = detailQuery.value(2).toString();
+                        QMap<quint32, int>::iterator iit = contactIdIndex.find(contactId);
+                        if (iit != contactIdIndex.end()) {
+                            int contactIndex = *iit;
+                            QContact &contact(*(contacts->begin() + contactIndex));
 
-                // Are we reporting this detail type?
-                const QPair<ReadDetail, int> properties(readProperties[detailName]);
-                if (properties.first && properties.second) {
-                    // Are there transient details of this type for this contact?
-                    QMap<quint32, QSet<QContactDetail::DetailType> >::const_iterator tit = transientContactDetails.constFind(contactId);
-                    if (tit != transientContactDetails.constEnd()) {
-                        const QContactDetail::DetailType detailType(detailIdentifier(detailName));
-                        if ((*tit).contains(detailType)) {
-                            // This contact has transient details of this type; skip the extraction
-                            continue;
+                            bool syncable = *(syncableContact.constBegin() + (contactIndex - contactCount));
+                            const QString &syncTarget = *(contactSyncTarget.constBegin() + (contactIndex - contactCount));
+
+                            // Extract the values from the result row
+                            properties.first(&contact, detailQuery, contactId, detailId, syncable, syncTarget, relaxConstraints, properties.second);
                         }
                     }
-
-                    QMap<quint32, int>::iterator iit = contactIdIndex.find(contactId);
-                    if (iit != contactIdIndex.end()) {
-                        int contactIndex = *iit;
-                        QContact &contact(*(contacts->begin() + contactIndex));
-
-                        bool syncable = *(syncableContact.constBegin() + (contactIndex - contactCount));
-                        const QString &syncTarget = *(contactSyncTarget.constBegin() + (contactIndex - contactCount));
-
-                        // Extract the values from the result row
-                        properties.first(&contact, &detailQuery, contactId, detailId, syncable, syncTarget, relaxConstraints, properties.second);
-                    }
-                }
+                } while (detailQuery.next());
             }
-
-            detailQuery.finish();
         }
 
         if ((optimizationHints & QContactFetchHint::NoRelationships) == 0) {
@@ -2173,6 +2192,8 @@ QContactManager::Error ContactReader::queryContacts(
 
         contactsAvailable(*contacts);
     } while (query.isValid() && (maximumCount < 0));
+
+    detailQuery.finish();
 
     return QContactManager::NoError;
 }
