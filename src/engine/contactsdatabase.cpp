@@ -961,12 +961,11 @@ void clearTemporaryContactIdsTable(QSqlDatabase &db, const QString &table)
     }
 }
 
-// QDir::isReadable() doesn't support group permissions, only user permissions.
+// There is no QDir::isWritable()/isExecutable(). Only isReadable() is part of QDir.
 bool directoryIsRW(const QString &dirPath)
 {
-  QFileInfo databaseDirInfo(dirPath);
-  return (databaseDirInfo.permission(QFile::ReadGroup | QFile::WriteGroup)
-       || databaseDirInfo.permission(QFile::ReadUser  | QFile::WriteUser));
+  QFileInfo dirInfo(dirPath);
+  return dirInfo.isReadable() && dirInfo.isWritable() && dirInfo.isExecutable();
 }
 
 QSqlDatabase ContactsDatabase::open(const QString &databaseName)
