@@ -40,9 +40,13 @@
 
 QTCONTACTS_USE_NAMESPACE
 
-namespace ContactNotifier
+class ContactNotifier
 {
-    void initialize();
+    bool m_nonprivileged;
+
+public:
+    ContactNotifier(bool nonprivileged);
+
     void contactsAdded(const QList<QContactId> &contactIds);
     void contactsChanged(const QList<QContactId> &contactIds);
     void contactsPresenceChanged(const QList<QContactId> &contactIds);
@@ -53,6 +57,6 @@ namespace ContactNotifier
     void relationshipsRemoved(const QSet<QContactId> &contactIds);
 
     bool connect(const char *name, const char *signature, QObject *receiver, const char *slot);
-}
+};
 
 #endif

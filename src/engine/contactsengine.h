@@ -36,6 +36,7 @@
 
 #include <QSqlDatabase>
 
+#include "contactnotifier.h"
 #include "contactreader.h"
 #include "contactwriter.h"
 #include "contactid_p.h"
@@ -179,6 +180,7 @@ private:
     QSqlDatabase m_database;
     mutable ContactReader *m_synchronousReader;
     ContactWriter *m_synchronousWriter;
+    ContactNotifier *m_notifier;
     JobThread *m_jobThread;
 };
 

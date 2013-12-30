@@ -33,7 +33,6 @@
 
 #include "contactsengine.h"
 #include "contactreader.h"
-#include "contactnotifier.h"
 #include "conversion_p.h"
 #include "semaphore_p.h"
 #include "trace_p.h"
@@ -675,9 +674,11 @@ public:
 };
 
 
-ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &database, ContactReader *reader)
+ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &database, ContactNotifier *notifier, ContactReader *reader)
     : m_engine(engine)
     , m_database(database)
+    , m_notifier(notifier)
+    , m_reader(reader)
     , m_databaseMutex(new ProcessMutex(database.databaseName()))
     , m_findConstituentsForAggregate(prepare(findConstituentsForAggregate, database))
     , m_findLocalForAggregate(prepare(findLocalForAggregate, database))
@@ -740,8 +741,10 @@ ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &d
     , m_removeExtendedDetail(prepare("DELETE FROM ExtendedDetails WHERE contactId = :contactId;", database))
     , m_removeDetail(prepare("DELETE FROM Details WHERE contactId = :contactId AND detail = :detail;", database))
     , m_removeIdentity(prepare("DELETE FROM Identities WHERE identity = :identity;", database))
-    , m_reader(reader)
 {
+    Q_ASSERT(notifier);
+    Q_ASSERT(reader);
+
     // These queries need the 'temp.aggregationIds' to exist to prepare
     if (ContactsDatabase::createTemporaryContactIdsTable(m_database, aggregationIdsTable, QVariantList())) {
         m_findConstituentsForAggregateIds = prepare(findConstituentsForAggregateIds, database);
@@ -839,23 +842,23 @@ bool ContactWriter::commitTransaction()
     }
 
     if (!m_addedIds.isEmpty()) {
-        ContactNotifier::contactsAdded(m_addedIds.toList());
+        m_notifier->contactsAdded(m_addedIds.toList());
         m_addedIds.clear();
     }
     if (!m_changedIds.isEmpty()) {
-        ContactNotifier::contactsChanged(m_changedIds.toList());
+        m_notifier->contactsChanged(m_changedIds.toList());
         m_changedIds.clear();
     }
     if (!m_presenceChangedIds.isEmpty()) {
-        ContactNotifier::contactsPresenceChanged(m_presenceChangedIds.toList());
+        m_notifier->contactsPresenceChanged(m_presenceChangedIds.toList());
         m_presenceChangedIds.clear();
     }
     if (!m_changedSyncTargets.isEmpty()) {
-        ContactNotifier::syncContactsChanged(m_changedSyncTargets.toList());
+        m_notifier->syncContactsChanged(m_changedSyncTargets.toList());
         m_changedSyncTargets.clear();
     }
     if (!m_removedIds.isEmpty()) {
-        ContactNotifier::contactsRemoved(m_removedIds.toList());
+        m_notifier->contactsRemoved(m_removedIds.toList());
         m_removedIds.clear();
     }
     return true;

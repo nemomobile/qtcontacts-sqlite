@@ -38,6 +38,17 @@ QTCONTACTS_USE_NAMESPACE
 
 namespace QtContactsSqliteExtensions {
 
+/*
+ * Parameters recognized by the qtcontact-sqlite engine include:
+ *  'mergePresenceChanges' - if true, contact presence changes will be merged with other changes,
+ *                           and reported via the contactsChanged signal. Otherwise presence
+ *                           changes will be reported separately, via the contactsPresenceChanged
+ *                           signal of the QContactManager's engine object.
+ * 'nonprivileged'         - if true, the engine will not attempt to use the privileged database
+ *                           of contact details, which is not accessible to normal processes. Otherwise
+ *                           the privileged database will be preferred if accessible.
+ */
+
 class Q_DECL_EXPORT ContactManagerEngine
     : public QContactManagerEngine
 {
@@ -49,8 +60,9 @@ public:
         PreserveRemoteChanges
     };
 
-    ContactManagerEngine() : m_mergePresenceChanges(false) {}
+    ContactManagerEngine() : m_nonprivileged(false), m_mergePresenceChanges(false) {}
 
+    void setNonprivileged(bool b) { m_nonprivileged = b; }
     void setMergePresenceChanges(bool b) { m_mergePresenceChanges = b; }
 
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
@@ -78,6 +90,7 @@ Q_SIGNALS:
     void syncContactsChanged(const QStringList &syncTargets);
 
 protected:
+    bool m_nonprivileged;
     bool m_mergePresenceChanges;
 };
 

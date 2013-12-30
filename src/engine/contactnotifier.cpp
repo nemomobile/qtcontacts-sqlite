@@ -44,12 +44,30 @@
 
 Q_DECLARE_METATYPE(QVector<quint32>)
 
-namespace ContactNotifier
-{
+namespace {
 
+bool initialized = false;
 void initialize()
 {
-    qDBusRegisterMetaType<QVector<quint32> >();
+    if (!initialized) {
+        initialized = true;
+        qDBusRegisterMetaType<QVector<quint32> >();
+    }
+}
+
+QString pathName()
+{
+    return QString::fromLatin1(NOTIFIER_PATH);
+}
+
+QString interfaceName(bool nonprivileged)
+{
+    return QString::fromLatin1(NOTIFIER_INTERFACE) + QString::fromLatin1(nonprivileged ? ".np" : "");
+}
+
+QDBusMessage createSignal(const char *name, bool nonprivileged)
+{
+    return QDBusMessage::createSignal(pathName(), interfaceName(nonprivileged), QString::fromLatin1(name));
 }
 
 QVector<quint32> idVector(const QList<QContactId> &contactIds)
@@ -62,103 +80,87 @@ QVector<quint32> idVector(const QList<QContactId> &contactIds)
     return ids;
 }
 
-void contactsAdded(const QList<QContactId> &contactIds)
+}
+
+ContactNotifier::ContactNotifier(bool nonprivileged)
+    : m_nonprivileged(nonprivileged)
+{
+    initialize();
+}
+
+void ContactNotifier::contactsAdded(const QList<QContactId> &contactIds)
 {
     if (!contactIds.isEmpty()) {
-        QDBusMessage message = QDBusMessage::createSignal(
-                    QLatin1String(NOTIFIER_PATH),
-                    QLatin1String(NOTIFIER_INTERFACE),
-                    QLatin1String("contactsAdded"));
+        QDBusMessage message = createSignal("contactsAdded", m_nonprivileged);
         message.setArguments(QVariantList() << QVariant::fromValue(idVector(contactIds)));
         QDBusConnection::sessionBus().send(message);
     }
 }
 
-void contactsChanged(const QList<QContactId> &contactIds)
+void ContactNotifier::contactsChanged(const QList<QContactId> &contactIds)
 {
     if (!contactIds.isEmpty()) {
-        QDBusMessage message = QDBusMessage::createSignal(
-                    QLatin1String(NOTIFIER_PATH),
-                    QLatin1String(NOTIFIER_INTERFACE),
-                    QLatin1String("contactsChanged"));
+        QDBusMessage message = createSignal("contactsChanged", m_nonprivileged);
         message.setArguments(QVariantList() << QVariant::fromValue(idVector(contactIds)));
         QDBusConnection::sessionBus().send(message);
     }
 }
 
-void contactsPresenceChanged(const QList<QContactId> &contactIds)
+void ContactNotifier::contactsPresenceChanged(const QList<QContactId> &contactIds)
 {
     if (!contactIds.isEmpty()) {
-        QDBusMessage message = QDBusMessage::createSignal(
-                    QLatin1String(NOTIFIER_PATH),
-                    QLatin1String(NOTIFIER_INTERFACE),
-                    QLatin1String("contactsPresenceChanged"));
+        QDBusMessage message = createSignal("contactsPresenceChanged", m_nonprivileged);
         message.setArguments(QVariantList() << QVariant::fromValue(idVector(contactIds)));
         QDBusConnection::sessionBus().send(message);
     }
 }
 
-void syncContactsChanged(const QStringList &syncTargets)
+void ContactNotifier::syncContactsChanged(const QStringList &syncTargets)
 {
     if (!syncTargets.isEmpty()) {
-        QDBusMessage message = QDBusMessage::createSignal(
-                    QLatin1String(NOTIFIER_PATH),
-                    QLatin1String(NOTIFIER_INTERFACE),
-                    QLatin1String("syncContactsChanged"));
+        QDBusMessage message = createSignal("syncContactsChanged", m_nonprivileged);
         message.setArguments(QVariantList() << syncTargets);
         QDBusConnection::sessionBus().send(message);
     }
 }
 
-void contactsRemoved(const QList<QContactId> &contactIds)
+void ContactNotifier::contactsRemoved(const QList<QContactId> &contactIds)
 {
     if (!contactIds.isEmpty()) {
-        QDBusMessage message = QDBusMessage::createSignal(
-                    QLatin1String(NOTIFIER_PATH),
-                    QLatin1String(NOTIFIER_INTERFACE),
-                    QLatin1String("contactsRemoved"));
+        QDBusMessage message = createSignal("contactsRemoved", m_nonprivileged);
         message.setArguments(QVariantList() << QVariant::fromValue(idVector(contactIds)));
         QDBusConnection::sessionBus().send(message);
     }
 }
 
-void selfContactIdChanged(QContactId oldId, QContactId newId)
+void ContactNotifier::selfContactIdChanged(QContactId oldId, QContactId newId)
 {
     if (oldId != newId) {
-        QDBusMessage message = QDBusMessage::createSignal(
-                    QLatin1String(NOTIFIER_PATH),
-                    QLatin1String(NOTIFIER_INTERFACE),
-                    QLatin1String("selfContactIdChanged"));
+        QDBusMessage message = createSignal("selfContactIdChanged", m_nonprivileged);
         message.setArguments(QVariantList() << QVariant::fromValue(ContactId::databaseId(oldId)) << QVariant::fromValue(ContactId::databaseId(newId)));
         QDBusConnection::sessionBus().send(message);
     }
 }
 
-void relationshipsAdded(const QSet<QContactId> &contactIds)
+void ContactNotifier::relationshipsAdded(const QSet<QContactId> &contactIds)
 {
     if (!contactIds.isEmpty()) {
-        QDBusMessage message = QDBusMessage::createSignal(
-                    QLatin1String(NOTIFIER_PATH),
-                    QLatin1String(NOTIFIER_INTERFACE),
-                    QLatin1String("relationshipsAdded"));
+        QDBusMessage message = createSignal("relationshipsAdded", m_nonprivileged);
         message.setArguments(QVariantList() << QVariant::fromValue(idVector(contactIds.toList())));
         QDBusConnection::sessionBus().send(message);
     }
 }
 
-void relationshipsRemoved(const QSet<QContactId> &contactIds)
+void ContactNotifier::relationshipsRemoved(const QSet<QContactId> &contactIds)
 {
     if (!contactIds.isEmpty()) {
-        QDBusMessage message = QDBusMessage::createSignal(
-                    QLatin1String(NOTIFIER_PATH),
-                    QLatin1String(NOTIFIER_INTERFACE),
-                    QLatin1String("relationshipsRemoved"));
+        QDBusMessage message = createSignal("relationshipsRemoved", m_nonprivileged);
         message.setArguments(QVariantList() << QVariant::fromValue(idVector(contactIds.toList())));
         QDBusConnection::sessionBus().send(message);
     }
 }
 
-bool connect(const char *name, const char *signature, QObject *receiver, const char *slot)
+bool ContactNotifier::connect(const char *name, const char *signature, QObject *receiver, const char *slot)
 {
     static QDBusConnection connection(QDBusConnection::sessionBus());
 
@@ -168,8 +170,8 @@ bool connect(const char *name, const char *signature, QObject *receiver, const c
     }
 
     if (!connection.connect(QString(),
-                            QLatin1String(NOTIFIER_PATH),
-                            QLatin1String(NOTIFIER_INTERFACE),
+                            pathName(),
+                            interfaceName(m_nonprivileged),
                             QLatin1String(name),
                             QLatin1String(signature),
                             receiver,
@@ -179,6 +181,4 @@ bool connect(const char *name, const char *signature, QObject *receiver, const c
     }
 
     return true;
-}
-
 }

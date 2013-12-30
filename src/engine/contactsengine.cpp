@@ -68,14 +68,19 @@ public:
     struct WriterProxy {
         const ContactsEngine &engine;
         QSqlDatabase &database;
+        ContactNotifier &notifier;
         ContactReader &reader;
         mutable ContactWriter *writer;
 
-        WriterProxy(const ContactsEngine &e, QSqlDatabase &db, ContactReader &r) : engine(e), database(db), reader(r), writer(0) {}
+        WriterProxy(const ContactsEngine &e, QSqlDatabase &db, ContactNotifier &n, ContactReader &r)
+            : engine(e), database(db), notifier(n), reader(r), writer(0)
+        {
+        }
 
-        ContactWriter *operator->() const {
+        ContactWriter *operator->() const
+        {
             if (!writer) {
-                writer = new ContactWriter(engine, database, &reader);
+                writer = new ContactWriter(engine, database, &notifier, &reader);
             }
             return writer;
         }
@@ -494,12 +499,13 @@ private:
 class JobThread : public QThread
 {
 public:
-    JobThread(ContactsEngine *engine, const QString &databaseUuid)
+    JobThread(ContactsEngine *engine, const QString &databaseUuid, bool nonprivileged)
         : m_currentJob(0)
         , m_engine(engine)
         , m_updatePending(false)
         , m_running(true)
         , m_databaseUuid(databaseUuid)
+        , m_nonprivileged(nonprivileged)
     {
         start(QThread::IdlePriority);
     }
@@ -703,6 +709,7 @@ private:
     bool m_updatePending;
     bool m_running;
     QString m_databaseUuid;
+    bool m_nonprivileged;
 };
 
 class JobContactReader : public ContactReader
@@ -730,7 +737,7 @@ private:
 
 void JobThread::run()
 {
-    QSqlDatabase database = ContactsDatabase::open(QString(QLatin1String("qtcontacts-sqlite-job-%1")).arg(m_databaseUuid));
+    QSqlDatabase database = ContactsDatabase::open(QString(QLatin1String("qtcontacts-sqlite-job-%1")).arg(m_databaseUuid), m_nonprivileged);
     if (!database.isOpen()) {
         while (m_running) {
             if (m_pendingJobs.isEmpty()) {
@@ -748,8 +755,9 @@ void JobThread::run()
         return;
     }
 
+    ContactNotifier notifier(m_nonprivileged);
     JobContactReader reader(database, this);
-    Job::WriterProxy writer(*m_engine, database, reader);
+    Job::WriterProxy writer(*m_engine, database, notifier, reader);
 
     QMutexLocker locker(&m_mutex);
 
@@ -783,10 +791,17 @@ ContactsEngine::ContactsEngine(const QString &name, const QMap<QString, QString>
     , m_parameters(parameters)
     , m_synchronousReader(0)
     , m_synchronousWriter(0)
+    , m_notifier(0)
     , m_jobThread(0)
 {
     static bool registered = qRegisterMetaType<QList<int> >("QList<int>");
     Q_UNUSED(registered)
+
+    QString nonprivileged = m_parameters.value(QString::fromLatin1("nonprivileged"));
+    if (nonprivileged.toLower() == QLatin1String("true") ||
+        nonprivileged.toInt() == 1) {
+        setNonprivileged(true);
+    }
 
     QString mergePresenceChanges = m_parameters.value(QString::fromLatin1("mergePresenceChanges"));
     if (mergePresenceChanges.isEmpty()) {
@@ -802,6 +817,7 @@ ContactsEngine::~ContactsEngine()
     m_database.close();
     delete m_synchronousWriter;
     delete m_synchronousReader;
+    delete m_notifier;
     delete m_jobThread;
 }
 
@@ -816,17 +832,17 @@ QString ContactsEngine::databaseUuid()
 
 QContactManager::Error ContactsEngine::open()
 {
-    m_database = ContactsDatabase::open(QString(QLatin1String("qtcontacts-sqlite-%1")).arg(databaseUuid()));
+    m_database = ContactsDatabase::open(QString(QLatin1String("qtcontacts-sqlite-%1")).arg(databaseUuid()), m_nonprivileged);
     if (m_database.isOpen()) {
-        ContactNotifier::initialize();
-        ContactNotifier::connect("contactsAdded", "au", this, SLOT(_q_contactsAdded(QVector<quint32>)));
-        ContactNotifier::connect("contactsChanged", "au", this, SLOT(_q_contactsChanged(QVector<quint32>)));
-        ContactNotifier::connect("contactsPresenceChanged", "au", this, SLOT(_q_contactsPresenceChanged(QVector<quint32>)));
-        ContactNotifier::connect("syncContactsChanged", "as", this, SLOT(_q_syncContactsChanged(QStringList)));
-        ContactNotifier::connect("contactsRemoved", "au", this, SLOT(_q_contactsRemoved(QVector<quint32>)));
-        ContactNotifier::connect("selfContactIdChanged", "uu", this, SLOT(_q_selfContactIdChanged(quint32,quint32)));
-        ContactNotifier::connect("relationshipsAdded", "au", this, SLOT(_q_relationshipsAdded(QVector<quint32>)));
-        ContactNotifier::connect("relationshipsRemoved", "au", this, SLOT(_q_relationshipsRemoved(QVector<quint32>)));
+        m_notifier = new ContactNotifier(m_nonprivileged);
+        m_notifier->connect("contactsAdded", "au", this, SLOT(_q_contactsAdded(QVector<quint32>)));
+        m_notifier->connect("contactsChanged", "au", this, SLOT(_q_contactsChanged(QVector<quint32>)));
+        m_notifier->connect("contactsPresenceChanged", "au", this, SLOT(_q_contactsPresenceChanged(QVector<quint32>)));
+        m_notifier->connect("syncContactsChanged", "as", this, SLOT(_q_syncContactsChanged(QStringList)));
+        m_notifier->connect("contactsRemoved", "au", this, SLOT(_q_contactsRemoved(QVector<quint32>)));
+        m_notifier->connect("selfContactIdChanged", "uu", this, SLOT(_q_selfContactIdChanged(quint32,quint32)));
+        m_notifier->connect("relationshipsAdded", "au", this, SLOT(_q_relationshipsAdded(QVector<quint32>)));
+        m_notifier->connect("relationshipsRemoved", "au", this, SLOT(_q_relationshipsRemoved(QVector<quint32>)));
         return QContactManager::NoError;
     } else {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to open engine database"));
@@ -1070,7 +1086,7 @@ bool ContactsEngine::startRequest(QContactAbstractRequest* request)
     }
 
     if (!m_jobThread)
-        m_jobThread = new JobThread(this, databaseUuid());
+        m_jobThread = new JobThread(this, databaseUuid(), m_nonprivileged);
     job->updateState(QContactAbstractRequest::ActiveState);
     m_jobThread->enqueue(job);
 
@@ -1324,7 +1340,7 @@ ContactReader *ContactsEngine::reader() const
 ContactWriter *ContactsEngine::writer()
 {
     if (!m_synchronousWriter) {
-        m_synchronousWriter = new ContactWriter(*this, m_database, reader());
+        m_synchronousWriter = new ContactWriter(*this, m_database, m_notifier, reader());
     }
     return m_synchronousWriter;
 }

@@ -127,6 +127,9 @@ private slots:
     void presenceReporting();
     void presenceReporting_data();
 
+    /* Nonprivileged DB variant */
+    void nonprivileged();
+
     /* Tests that are run on all managers */
     void metadata();
     void nullIdOperations();
@@ -1573,6 +1576,73 @@ void tst_QContactManager::presenceReporting_data()
 
     params.insert(QString::fromLatin1("mergePresenceChanges"), QString::fromLatin1("false"));
     QTest::newRow("mergePresenceChanges=false") << false << QContactManager::buildUri(managerName, params);
+}
+
+void tst_QContactManager::nonprivileged()
+{
+    const QString managerName(QString::fromLatin1(DEFAULT_MANAGER));
+    QMap<QString, QString> params;
+
+    QScopedPointer<QContactManager> privilegedCm(QContactManager::fromUri(QContactManager::buildUri(managerName, params)));
+    QVERIFY(privilegedCm);
+    QVERIFY(!privilegedCm->managerUri().isEmpty());
+
+    params.insert(QString::fromLatin1("nonprivileged"), QString::fromLatin1("true"));
+    QScopedPointer<QContactManager> nonprivilegedCm(QContactManager::fromUri(QContactManager::buildUri(managerName, params)));
+    QVERIFY(nonprivilegedCm);
+    QVERIFY(!nonprivilegedCm->managerUri().isEmpty());
+    QVERIFY(nonprivilegedCm->managerUri() != privilegedCm->managerUri());
+
+    QSignalSpy privilegedAddedSpy(privilegedCm.data(), contactsAddedSignal);
+    QSignalSpy nonprivilegedAddedSpy(nonprivilegedCm.data(), contactsAddedSignal);
+
+    QContact a;
+
+    QContactName n;
+    n.setFirstName("A");
+    n.setMiddleName("Test");
+    n.setLastName("Nonprivileged");
+    a.saveDetail(&n);
+
+    QVERIFY(privilegedCm->saveContact(&a));
+    a = privilegedCm->contact(retrievalId(a));
+
+    QVERIFY(a.id() != QContactId());
+    QCOMPARE(a.detail<QContactName>().firstName(), n.firstName());
+    QCOMPARE(a.detail<QContactName>().middleName(), n.middleName());
+    QCOMPARE(a.detail<QContactName>().lastName(), n.lastName());
+
+    QTest::qWait(500); // wait for signal coalescing.
+    QTRY_VERIFY(privilegedAddedSpy.count() > 0);
+    privilegedAddedSpy.clear();
+    QTRY_VERIFY(nonprivilegedAddedSpy.count() == 0);
+
+    // The contact should not be present in the other DB (or should be a different contact)
+    QContact b = nonprivilegedCm->contact(retrievalId(a));
+    QVERIFY(b.id() == QContactId() ||
+            b.detail<QContactName>().firstName() != n.firstName() ||
+            b.detail<QContactName>().middleName() != n.middleName() ||
+            b.detail<QContactName>().lastName() != n.lastName());
+
+    // Add a contact to the nonprivileged DB
+    n.setFirstName("B");
+    b.saveDetail(&n);
+
+    QVERIFY(nonprivilegedCm->saveContact(&b));
+    b = nonprivilegedCm->contact(retrievalId(b));
+    QVERIFY(b.id() != QContactId());
+
+    QTest::qWait(500);
+    QTRY_VERIFY(nonprivilegedAddedSpy.count() > 0);
+    nonprivilegedAddedSpy.clear();
+    QTRY_VERIFY(privilegedAddedSpy.count() == 0);
+
+    // This contact should not be present in the privileged DB
+    QContact c = privilegedCm->contact(retrievalId(b));
+    QVERIFY(c.id() == QContactId() ||
+            c.detail<QContactName>().firstName() != n.firstName() ||
+            c.detail<QContactName>().middleName() != n.middleName() ||
+            c.detail<QContactName>().lastName() != n.lastName());
 }
 
 void tst_QContactManager::nameSynthesis_data()
