@@ -56,6 +56,10 @@ public:
 
     static void clearTemporaryContactIdsTable(QSqlDatabase &db, const QString &table);
 
+    static bool createTransientContactIdsTable(QSqlDatabase &db, const QString &table, const QVariantList &ids, QString *transientTableName);
+
+    static void clearTransientContactIdsTable(QSqlDatabase &db, const QString &table);
+
     static QString expandQuery(const QString &queryString, const QVariantList &bindings);
     static QString expandQuery(const QString &queryString, const QMap<QString, QVariant> &bindings);
     static QString expandQuery(const QSqlQuery &query);
