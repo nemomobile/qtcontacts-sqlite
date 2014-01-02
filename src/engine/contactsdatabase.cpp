@@ -1098,11 +1098,12 @@ static bool createTransientContactIdsTable(QSqlDatabase &db, const QString &tabl
     return true;
 }
 
-// There is no QDir::isWritable()/isExecutable(). Only isReadable() is part of QDir.
+// QDir::isReadable() doesn't support group permissions, only user permissions.
 bool directoryIsRW(const QString &dirPath)
 {
-  QFileInfo dirInfo(dirPath);
-  return dirInfo.isReadable() && dirInfo.isWritable() && dirInfo.isExecutable();
+  QFileInfo databaseDirInfo(dirPath);
+  return (databaseDirInfo.permission(QFile::ReadGroup | QFile::WriteGroup)
+       || databaseDirInfo.permission(QFile::ReadUser  | QFile::WriteUser));
 }
 
 QSqlDatabase ContactsDatabase::open(const QString &databaseName)
