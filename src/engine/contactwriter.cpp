@@ -117,7 +117,7 @@ static const char *findAggregateForContactIds =
 */
 static const char *possibleAggregatesWhere = /* SELECT contactId FROM Contacts ... */
         "\n WHERE Contacts.syncTarget = 'aggregate'"
-        "\n AND (Contacts.lowerLastName = '' OR :lastName = '' OR Contacts.lowerLastName = :lastName)"
+        "\n AND (COALESCE(Contacts.lowerLastName, '') = '' OR COALESCE(:lastName, '') = '' OR Contacts.lowerLastName = :lastName)"
         "\n AND COALESCE(Contacts.gender, '') != :excludeGender"
         "\n AND contactId > 2" // exclude self contact
         "\n AND contactId NOT IN ("
@@ -135,9 +135,18 @@ static const char *heuristicallyMatchData =
         "\n               (lowerFirstName LIKE ('%' || :firstName || '%') OR :firstName LIKE ('%' || lowerFirstName || '%'))) OR "
         "\n              lowerFirstName = :firstName)                                                                     "
         "\n     UNION                                                                                                     "
+        "\n     SELECT Contacts.contactId, 15 AS score FROM Contacts INNER JOIN temp.PossibleAggregates                   "
+        "\n     ON Contacts.contactId = temp.PossibleAggregates.contactId                                                 "
+        "\n         WHERE COALESCE(lowerFirstName, '') = '' AND COALESCE(:firstName,'') = ''                              "
+        "\n         AND COALESCE(lowerLastName, '') = '' AND COALESCE(:lastName,'') = ''                                  "
+        "\n         AND EXISTS (                                                                                          "
+        "\n             SELECT * FROM Nicknames                                                                           "
+        "\n             WHERE Nicknames.contactId = Contacts.contactId                                                    "
+        "\n             AND lowerNickName = :nickname)                                                                    "
+        "\n     UNION                                                                                                     "
         "\n     SELECT Contacts.contactId, 12 AS score FROM Contacts INNER JOIN temp.PossibleAggregates                   "
         "\n     On Contacts.contactId = temp.PossibleAggregates.contactId                                                 "
-        "\n         WHERE (LowerLastName = '' OR :lastName = '')                                                          "
+        "\n         WHERE (COALESCE(lowerLastName, '') = '' OR COALESCE(:lastName, '') = '')                              "
         "\n         AND lowerFirstName != ''                                                                              "
         "\n         AND ((lowerFirstName NOT LIKE '%-%' AND :firstName NOT LIKE '%-%' AND                                 "
         "\n               (lowerFirstName LIKE ('%' || :firstName || '%') OR :firstName LIKE ('%' || lowerFirstName || '%'))) OR "
@@ -146,7 +155,7 @@ static const char *heuristicallyMatchData =
         "\n     SELECT Contacts.contactId, 12 AS score FROM Contacts INNER JOIN temp.PossibleAggregates                   "
         "\n     On Contacts.contactId = temp.PossibleAggregates.contactId                                                 "
         "\n         WHERE lowerLastName != '' AND lowerLastName = :lastName                                               "
-        "\n         AND (lowerFirstName = '' OR :firstName = '')                                                          "
+        "\n         AND (COALESCE(lowerFirstName, '') = '' OR COALESCE(:firstName, '') = '')                              "
         "\n     UNION                                                                                                     "
         "\n     SELECT EmailAddresses.contactId, 3 AS score FROM EmailAddresses INNER JOIN temp.PossibleAggregates        "
         "\n     ON EmailAddresses.contactId = temp.PossibleAggregates.contactId                                           "
@@ -2300,9 +2309,27 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
             lst.setSyncTarget(localSyncTarget);
             localContact.saveDetail(&lst);
 
+            // Copy some identifying detail to the local
             QContactName lcn = contact->detail<QContactName>();
-            adjustDetailUrisForLocal(lcn);
-            localContact.saveDetail(&lcn);
+            bool copyName = (lcn.firstName().isEmpty() && lcn.lastName().isEmpty());
+            if (!copyName) {
+                // This name fails to adequately identify the contact - copy a nickname instead, if available
+                copyName = (!lcn.prefix().isEmpty() || !lcn.middleName().isEmpty() || !lcn.suffix().isEmpty());
+                foreach (QContactNickname nick, contact->details<QContactNickname>()) {
+                    if (!nick.nickname().isEmpty()) {
+                        adjustDetailUrisForLocal(nick);
+                        localContact.saveDetail(&nick);
+
+                        // We have found a usable nickname - ignore the name detail
+                        copyName = false;
+                        break;
+                    }
+                }
+            }
+            if (copyName) {
+                adjustDetailUrisForLocal(lcn);
+                localContact.saveDetail(&lcn);
+            }
         }
 
         // promote delta to local contact
