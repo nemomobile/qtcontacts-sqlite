@@ -2677,6 +2677,20 @@ void tst_Aggregation::aggregationHeuristic_data()
     QTest::newRow("gender mismatch") << false
         << "Sam" << "" << "Gumboots" << "Freddy" << "Male" << "" << "" << ""
         << "Sam" << "" << "Gumboots" << "Freddy" << "Female" << "" << "" << "";
+
+    // Nicknames should cause aggregation in the absence of real names
+    QTest::newRow("nickname match") << true
+        << "" << "" << "" << "Freddy" << "unspecified" << "" << "" << ""
+        << "" << "" << "" << "Freddy" << "unspecified" << "" << "" << "";
+    QTest::newRow("nickname mismatch") << false
+        << "" << "" << "" << "Freddy" << "unspecified" << "" << "" << ""
+        << "" << "" << "" << "Buster" << "unspecified" << "" << "" << "";
+    QTest::newRow("nickname match with firstname") << false
+        << "Frederick" << "" << "" << "Freddy" << "unspecified" << "" << "" << ""
+        << "" << "" << "" << "Freddy" << "unspecified" << "" << "" << "";
+    QTest::newRow("nickname match with lastname") << false
+        << "" << "" << "Gumboots" << "Freddy" << "unspecified" << "" << "" << ""
+        << "" << "" << "" << "Freddy" << "unspecified" << "" << "" << "";
 }
 
 void tst_Aggregation::aggregationHeuristic()
@@ -2714,10 +2728,10 @@ void tst_Aggregation::aggregationHeuristic()
         async.setSyncTarget("aggregation-heuristic-a");
         a.saveDetail(&async);
 
-        aname.setFirstName(aFirstName);
-        aname.setMiddleName(aMiddleName);
-        aname.setLastName(aLastName);
         if (!aFirstName.isEmpty() || !aMiddleName.isEmpty() || !aLastName.isEmpty()) {
+            aname.setFirstName(aFirstName);
+            aname.setMiddleName(aMiddleName);
+            aname.setLastName(aLastName);
             a.saveDetail(&aname);
         }
 
@@ -2750,10 +2764,10 @@ void tst_Aggregation::aggregationHeuristic()
         bsync.setSyncTarget("aggregation-heuristic-b");
         b.saveDetail(&bsync);
 
-        bname.setFirstName(bFirstName);
-        bname.setMiddleName(bMiddleName);
-        bname.setLastName(bLastName);
         if (!bFirstName.isEmpty() || !bMiddleName.isEmpty() || !bLastName.isEmpty()) {
+            bname.setFirstName(bFirstName);
+            bname.setMiddleName(bMiddleName);
+            bname.setLastName(bLastName);
             b.saveDetail(&bname);
         }
 
