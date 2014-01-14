@@ -444,6 +444,24 @@ static const char *createContactsFirstNameIndex =
 static const char *createContactsLastNameIndex =
         "\n CREATE INDEX ContactsLastNameIndex ON Contacts(lowerLastName);";
 
+static const char *createContactsModifiedIndex =
+        "\n CREATE INDEX ContactsModifiedIndex ON Contacts(modified);";
+
+static const char *createContactsIsFavoriteIndex =
+        "\n CREATE INDEX ContactsIsFavoriteIndex ON Contacts(isFavorite);";
+
+static const char *createContactsHasPhoneNumberIndex =
+        "\n CREATE INDEX ContactsHasPhoneNumberIndex ON Contacts(hasPhoneNumber);";
+
+static const char *createContactsHasEmailAddressIndex =
+        "\n CREATE INDEX ContactsHasEmailAddressIndex ON Contacts(hasEmailAddress);";
+
+static const char *createContactsHasOnlineAccountIndex =
+        "\n CREATE INDEX ContactsHasOnlineAccountIndex ON Contacts(hasOnlineAccount);";
+
+static const char *createContactsIsOnlineIndex =
+        "\n CREATE INDEX ContactsIsOnlineIndex ON Contacts(isOnline);";
+
 static const char *createRelationshipsFirstIdIndex =
         "\n CREATE INDEX RelationshipsFirstIdIndex ON Relationships(firstId);";
 
@@ -531,10 +549,23 @@ static const char *createStatements[] =
     createNicknamesIndex,
     createTpMetadataTelepathyIdIndex,
     createTpMetadataAccountIdIndex,
+    createContactsModifiedIndex,
+    createContactsIsFavoriteIndex,
+    createContactsHasPhoneNumberIndex,
+    createContactsHasEmailAddressIndex,
+    createContactsHasOnlineAccountIndex,
+    createContactsIsOnlineIndex,
 };
 
 // Upgrade statement indexed by old version
 static const char *upgradeVersion0[] = {
+    createContactsModifiedIndex,
+    createContactsIsFavoriteIndex,
+    createContactsHasPhoneNumberIndex,
+    createContactsHasEmailAddressIndex,
+    createContactsHasOnlineAccountIndex,
+    createContactsIsOnlineIndex,
+    "PRAGMA user_version=1",
     0 // NULL-terminated
 };
 
@@ -542,7 +573,7 @@ static const char **upgradeVersions[] = {
     upgradeVersion0
 };
 
-static const int currentSchemaVersion = 0;
+static const int currentSchemaVersion = 1;
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {
@@ -590,7 +621,7 @@ template <typename T, int N> static int lengthOf(const T(&)[N]) { return N; }
 static bool executeUpgradeStatements(QSqlDatabase &database)
 {
     // Check that the defined schema matches the array of upgrade scripts
-    if (currentSchemaVersion != (lengthOf(upgradeVersions) - 1)) {
+    if (currentSchemaVersion != lengthOf(upgradeVersions)) {
         qWarning() << "Invalid schema version:" << currentSchemaVersion;
         return false;
     }
