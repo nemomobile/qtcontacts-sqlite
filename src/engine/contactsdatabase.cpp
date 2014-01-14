@@ -444,6 +444,24 @@ static const char *createContactsFirstNameIndex =
 static const char *createContactsLastNameIndex =
         "\n CREATE INDEX ContactsLastNameIndex ON Contacts(lowerLastName);";
 
+static const char *createContactsModifiedIndex =
+        "\n CREATE INDEX ContactsModifiedIndex ON Contacts(modified);";
+
+static const char *createContactsIsFavoriteIndex =
+        "\n CREATE INDEX ContactsIsFavoriteIndex ON Contacts(isFavorite);";
+
+static const char *createContactsHasPhoneNumberIndex =
+        "\n CREATE INDEX ContactsHasPhoneNumberIndex ON Contacts(hasPhoneNumber);";
+
+static const char *createContactsHasEmailAddressIndex =
+        "\n CREATE INDEX ContactsHasEmailAddressIndex ON Contacts(hasEmailAddress);";
+
+static const char *createContactsHasOnlineAccountIndex =
+        "\n CREATE INDEX ContactsHasOnlineAccountIndex ON Contacts(hasOnlineAccount);";
+
+static const char *createContactsIsOnlineIndex =
+        "\n CREATE INDEX ContactsIsOnlineIndex ON Contacts(isOnline);";
+
 static const char *createRelationshipsFirstIdIndex =
         "\n CREATE INDEX RelationshipsFirstIdIndex ON Relationships(firstId);";
 
@@ -468,7 +486,7 @@ static const char *createTpMetadataTelepathyIdIndex =
 static const char *createTpMetadataAccountIdIndex =
         "\n CREATE INDEX TpMetadataAccountIdIndex ON TpMetadata(accountId);";
 
-static const char *createTables[] =
+static const char *createStatements[] =
 {
     createContactsTable,
     createAddressesTable,
@@ -530,21 +548,32 @@ static const char *createTables[] =
     createOnlineAccountsIndex,
     createNicknamesIndex,
     createTpMetadataTelepathyIdIndex,
-    createTpMetadataAccountIdIndex
+    createTpMetadataAccountIdIndex,
+    createContactsModifiedIndex,
+    createContactsIsFavoriteIndex,
+    createContactsHasPhoneNumberIndex,
+    createContactsHasEmailAddressIndex,
+    createContactsHasOnlineAccountIndex,
+    createContactsIsOnlineIndex,
 };
 
-struct ExtraTable {
-    const char *name;
-    const char *sql;
-    bool (*postInstall)(QSqlDatabase &);
+// Upgrade statement indexed by old version
+static const char *upgradeVersion0[] = {
+    createContactsModifiedIndex,
+    createContactsIsFavoriteIndex,
+    createContactsHasPhoneNumberIndex,
+    createContactsHasEmailAddressIndex,
+    createContactsHasOnlineAccountIndex,
+    createContactsIsOnlineIndex,
+    "PRAGMA user_version=1",
+    0 // NULL-terminated
 };
 
-struct ExtraColumn {
-    const char *table;
-    const char *name;
-    const char *definition;
-    bool (*postInstall)(QSqlDatabase &);
+static const char **upgradeVersions[] = {
+    upgradeVersion0
 };
+
+static const int currentSchemaVersion = 1;
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {
@@ -586,203 +615,66 @@ static bool finalizeTransaction(QSqlDatabase &database, bool success)
     return false;
 }
 
-static bool setContactsHasDetail(QSqlDatabase &database, const QString &column, const QString &table)
+template <typename T> static int lengthOf(T) { return 0; }
+template <typename T, int N> static int lengthOf(const T(&)[N]) { return N; }
+
+static bool executeUpgradeStatements(QSqlDatabase &database)
 {
-    QString statement = QString::fromLatin1(
-        "UPDATE Contacts "
-        "SET %1 = 1 "
-        "WHERE contactId in (SELECT DISTINCT contactId FROM %2);");
-
-    return execute(database, statement.arg(column).arg(table));
-}
-
-static bool setContactsHasPhoneNumber(QSqlDatabase &database)
-{
-    return setContactsHasDetail(database, QString::fromLatin1("hasPhoneNumber"), QString::fromLatin1("PhoneNumbers"));
-}
-
-static const ExtraTable extendedDetailsTable = { "ExtendedDetails", createExtendedDetailsTable, 0 };
-
-static const ExtraTable *extraTables[] =
-{
-    &extendedDetailsTable
-};
-
-static const ExtraColumn contactsHasPhoneNumber = { "Contacts", "hasPhoneNumber", "BOOL", &setContactsHasPhoneNumber };
-
-static bool setContactsHasEmailAddress(QSqlDatabase &database)
-{
-    return setContactsHasDetail(database, QString::fromLatin1("hasEmailAddress"), QString::fromLatin1("EmailAddresses"));
-}
-
-static const ExtraColumn contactsHasEmailAddress = { "Contacts", "hasEmailAddress", "BOOL", &setContactsHasEmailAddress };
-
-static bool setContactsHasOnlineAccount(QSqlDatabase &database)
-{
-    return setContactsHasDetail(database, QString::fromLatin1("hasOnlineAccount"), QString::fromLatin1("OnlineAccounts"));
-}
-
-static const ExtraColumn contactsHasOnlineAccount = { "Contacts", "hasOnlineAccount", "BOOL", &setContactsHasOnlineAccount };
-
-static bool setContactsIsOnline(QSqlDatabase &database)
-{
-    QString statement = QString::fromLatin1(
-        "UPDATE Contacts "
-        "SET isOnline = 1 "
-        "WHERE contactId in ("
-            "SELECT DISTINCT contactId "
-            "FROM GlobalPresences "
-            "WHERE presenceState >= 1 "
-            "AND presenceState <= 5);");
-
-    return execute(database, statement);
-}
-
-static const ExtraColumn contactsIsOnline = { "Contacts", "isOnline", "BOOL", &setContactsIsOnline };
-
-static const ExtraColumn detailsProvenance = { "Details", "provenance", "TEXT", 0 };
-
-static const ExtraColumn detailsModifiable = { "Details", "modifiable", "BOOL", 0 };
-
-static const ExtraColumn addressesSubTypes = { "Addresses", "subTypes", "TEXT", 0 };
-
-static const ExtraColumn onlineAccountsAccountDisplayName = { "OnlineAccounts", "accountDisplayName", "TEXT", 0 };
-
-static const ExtraColumn onlineAccountsServiceProviderDisplayName = { "OnlineAccounts", "serviceProviderDisplayName", "TEXT", 0 };
-
-static const ExtraColumn *extraColumns[] =
-{
-    &contactsHasPhoneNumber,
-    &contactsHasEmailAddress,
-    &contactsHasOnlineAccount,
-    &contactsIsOnline,
-    &detailsProvenance,
-    &detailsModifiable,
-    &addressesSubTypes,
-    &onlineAccountsAccountDisplayName,
-    &onlineAccountsServiceProviderDisplayName
-};
-
-static bool addTable(const ExtraTable *tableDef, QSqlDatabase &database)
-{
-    QString statement(tableDef->sql);
-    return execute(database, statement);
-}
-
-static QStringList findExistingTables(QSqlDatabase &database)
-{
-    static const QString sql(QString::fromLatin1("SELECT name FROM sqlite_master WHERE type = 'table'"));
-
-    QStringList rv;
-
-    QSqlQuery query(database);
-    if (!query.exec(sql)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to query tables"));
-    } else while (query.next()) {
-        rv.append(query.value(0).toString());
+    // Check that the defined schema matches the array of upgrade scripts
+    if (currentSchemaVersion != lengthOf(upgradeVersions)) {
+        qWarning() << "Invalid schema version:" << currentSchemaVersion;
+        return false;
     }
 
-    return rv;
-}
+    QSqlQuery versionQuery(database);
+    versionQuery.prepare("PRAGMA user_version");
+    if (!versionQuery.exec() || !versionQuery.next()) {
+        qWarning() << "User version query failed:" << versionQuery.lastError();
+        return false;
+    }
 
-static bool addColumn(const ExtraColumn *columnDef, QSqlDatabase &database)
-{
-    static const QLatin1String sql("ALTER TABLE %1 ADD COLUMN %2 %3");
+    int schemaVersion = versionQuery.value(0).toInt();
+    versionQuery.finish();
 
-    QString statement(QString(sql).arg(QString::fromLatin1(columnDef->table), QString::fromLatin1(columnDef->name), QString::fromLatin1(columnDef->definition)));
-    return execute(database, statement);
-}
+    while (schemaVersion < currentSchemaVersion) {
+        qWarning() << "Upgrading contacts database from schema version" << schemaVersion;
 
-static QStringList findExistingColumns(const char *table, QSqlDatabase &database)
-{
-    static const QLatin1String sql("SELECT sql FROM sqlite_master WHERE type = 'table' and name = '%1'");
+        for (unsigned i = 0; upgradeVersions[schemaVersion][i]; i++) {
+            if (!execute(database, QLatin1String(upgradeVersions[schemaVersion][i])))
+                return false;
+        }
 
-    QString statement(QString(sql).arg(QString::fromLatin1(table)));
+        if (!versionQuery.exec() || !versionQuery.next()) {
+            qWarning() << "User version query failed:" << versionQuery.lastError();
+            return false;
+        }
 
-    QSqlQuery query(database);
-    if (!query.exec(statement)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to query columns for: %1").arg(table));
-    } else if (query.next()) {
-        QString tableDef = query.value(0).toString();
+        int version = versionQuery.value(0).toInt();
+        versionQuery.finish();
 
-        int index = tableDef.indexOf(QChar::fromLatin1('('));
-        int lastIndex = tableDef.lastIndexOf(QChar::fromLatin1(')'));
-        if (index != -1 && lastIndex != -1) {
-            QStringList columnDefs = tableDef.mid(index + 1, lastIndex - index - 1).split(QChar::fromLatin1(','));
-
-            QStringList names;
-            foreach (const QString &col, columnDefs) {
-                QString columnDef = col.trimmed();
-
-                index = columnDef.indexOf(QChar::fromLatin1(' '));
-                names.append(index == -1 ? columnDef : columnDef.left(index));
-            }
-
-            return names;
+        if (version <= schemaVersion) {
+            qWarning() << "Contacts database schema upgrade cycle detected - aborting";
+            return false;
+        } else {
+            schemaVersion = version;
         }
     }
 
-    return QStringList();
-}
+    if (schemaVersion > currentSchemaVersion) {
+        qWarning() << "Contacts database schema is newer than expected - this may result in failures or corruption";
+    }
 
-template <typename T> static int lengthOf(T) { return 0; }
-template <typename T, int N> static int lengthOf(const T(&)[N]) { return N; }
+    return true;
+}
 
 static bool upgradeDatabase(QSqlDatabase &database)
 {
     if (!beginTransaction(database))
         return false;
 
-    bool error = false;
-    for (int i = 0; i < lengthOf(extraTables); ++i) {
-        const ExtraTable *table = extraTables[i];
+    bool success = executeUpgradeStatements(database);
 
-        QStringList existingTables = findExistingTables(database);
-        if (!existingTables.contains(table->name)) {
-            if (!addTable(table, database)) {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to add table: %1").arg(table->name));
-                error = true;
-            } else if (table->postInstall) {
-                if (!(*table->postInstall)(database)) {
-                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to run post install function for table: %1").arg(table->name));
-                    error = true;
-                }
-            }
-
-            if (error) {
-                break;
-            } else {
-                QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Added table: %1").arg(table->name));
-            }
-        }
-    }
-
-    if (!error) {
-        for (int i = 0; i < lengthOf(extraColumns); ++i) {
-            const ExtraColumn *column = extraColumns[i];
-
-            QStringList existingColumns = findExistingColumns(column->table, database);
-            if (!existingColumns.contains(column->name)) {
-                if (!addColumn(column, database)) {
-                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to add column: %1 to table: %2").arg(column->name).arg(column->table));
-                    error = true;
-                } else if (column->postInstall) {
-                    if (!(*column->postInstall)(database)) {
-                        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to run post install function for column: %1 in table: %2").arg(column->name).arg(column->table));
-                        error = true;
-                    }
-                }
-
-                if (error) {
-                    break;
-                } else {
-                    QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Added column: %1 to table: %2").arg(column->name).arg(column->table));
-                }
-            }
-        }
-    }
-
-    return finalizeTransaction(database, !error);
+    return finalizeTransaction(database, success);
 }
 
 static bool configureDatabase(QSqlDatabase &database)
@@ -799,29 +691,37 @@ static bool configureDatabase(QSqlDatabase &database)
     return true;
 }
 
-static bool prepareDatabase(QSqlDatabase &database)
+static bool executeCreationStatements(QSqlDatabase &database)
 {
-    if (!configureDatabase(database)) {
+    for (int i = 0; i < lengthOf(createStatements); ++i) {
+        QSqlQuery query(database);
+
+        if (!query.exec(QLatin1String(createStatements[i]))) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Database creation failed: %1\n%2")
+                    .arg(query.lastError().text())
+                    .arg(createStatements[i]));
+            return false;
+        }
+    }
+
+    if (!execute(database, QString::fromLatin1("PRAGMA user_version=%1").arg(currentSchemaVersion))) {
         return false;
     }
+
+    return true;
+}
+
+static bool prepareDatabase(QSqlDatabase &database)
+{
+    if (!configureDatabase(database))
+        return false;
 
     if (!beginTransaction(database))
         return false;
 
-    bool error = false;
-    for (int i = 0; i < lengthOf(createTables); ++i) {
-        QSqlQuery query(database);
+    bool success = executeCreationStatements(database);
 
-        if (!query.exec(QLatin1String(createTables[i]))) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Table creation failed: %1\n%2")
-                    .arg(query.lastError().text())
-                    .arg(createTables[i]));
-            error = true;
-            break;
-        }
-    }
-
-    return finalizeTransaction(database, !error);
+    return finalizeTransaction(database, success);
 }
 
 template<typename ValueContainer>
