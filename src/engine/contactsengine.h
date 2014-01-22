@@ -64,17 +64,17 @@ public:
     QMap<QString, QString> managerParameters() const;
     int managerVersion() const;
 
-    QList<QContactIdType> contactIds(
+    QList<QContactId> contactIds(
                 const QContactFilter &filter,
                 const QList<QContactSortOrder> &sortOrders,
                 QContactManager::Error* error) const;
     QList<QContact> contacts(
-                const QList<QContactIdType> &localIds,
+                const QList<QContactId> &localIds,
                 const QContactFetchHint &fetchHint,
                 QMap<int, QContactManager::Error> *errorMap,
                 QContactManager::Error *error) const;
     QContact contact(
-            const QContactIdType &contactId,
+            const QContactId &contactId,
             const QContactFetchHint &fetchHint,
             QContactManager::Error* error) const;
 
@@ -98,14 +98,14 @@ public:
                 const ContactWriter::DetailList &definitionMask,
                 QMap<int, QContactManager::Error> *errorMap,
                 QContactManager::Error *error);
-    bool removeContact(const QContactIdType& contactId, QContactManager::Error* error);
+    bool removeContact(const QContactId& contactId, QContactManager::Error* error);
     bool removeContacts(
-                const QList<QContactIdType> &contactIds,
+                const QList<QContactId> &contactIds,
                 QMap<int, QContactManager::Error> *errorMap,
                 QContactManager::Error* error);
 
-    QContactIdType selfContactId(QContactManager::Error* error) const;
-    bool setSelfContactId(const QContactIdType& contactId, QContactManager::Error* error);
+    QContactId selfContactId(QContactManager::Error* error) const;
+    bool setSelfContactId(const QContactId& contactId, QContactManager::Error* error);
 
     QList<QContactRelationship> relationships(
             const QString &relationshipType,

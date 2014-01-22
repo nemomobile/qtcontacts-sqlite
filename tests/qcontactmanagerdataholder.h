@@ -86,7 +86,7 @@ public:
                 qDebug() << "Saving contacts for" << mgrUri;
                 QList<QContact> contacts = cm->contacts();
                 savedContacts.insert(cm->managerName(),contacts);
-                QList<QContactIdType> ids;
+                QList<QContactId> ids;
                 foreach(const QContact& contact, contacts)
                     ids.append(retrievalId(contact));
                 cm->removeContacts(ids, 0);

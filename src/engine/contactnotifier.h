@@ -43,13 +43,13 @@ QTCONTACTS_USE_NAMESPACE
 namespace ContactNotifier
 {
     void initialize();
-    void contactsAdded(const QList<QContactIdType> &contactIds);
-    void contactsChanged(const QList<QContactIdType> &contactIds);
-    void contactsPresenceChanged(const QList<QContactIdType> &contactIds);
-    void contactsRemoved(const QList<QContactIdType> &contactIds);
-    void selfContactIdChanged(QContactIdType oldId, QContactIdType newId);
-    void relationshipsAdded(const QList<QContactIdType> &contactIds);
-    void relationshipsRemoved(const QList<QContactIdType> &contactIds);
+    void contactsAdded(const QList<QContactId> &contactIds);
+    void contactsChanged(const QList<QContactId> &contactIds);
+    void contactsPresenceChanged(const QList<QContactId> &contactIds);
+    void contactsRemoved(const QList<QContactId> &contactIds);
+    void selfContactIdChanged(QContactId oldId, QContactId newId);
+    void relationshipsAdded(const QList<QContactId> &contactIds);
+    void relationshipsRemoved(const QList<QContactId> &contactIds);
 
     bool connect(const char *name, const char *signature, QObject *receiver, const char *slot);
 }

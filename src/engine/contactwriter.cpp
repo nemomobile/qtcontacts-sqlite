@@ -736,7 +736,7 @@ void ContactWriter::rollbackTransaction()
 }
 
 QContactManager::Error ContactWriter::setIdentity(
-        ContactsDatabase::Identity identity, QContactIdType contactId)
+        ContactsDatabase::Identity identity, QContactId contactId)
 {
     QMutexLocker locker(ContactsDatabase::accessMutex());
 
@@ -1119,12 +1119,12 @@ QContactManager::Error ContactWriter::removeRelationships(
 
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     // remove any aggregates that no longer aggregate any contacts.
-    QList<QContactIdType> removedIds;
+    QList<QContactId> removedIds;
     QContactManager::Error removeError = removeChildlessAggregates(&removedIds);
     if (removeError != QContactManager::NoError)
         return removeError;
 
-    foreach (const QContactIdType &id, removedIds) {
+    foreach (const QContactId &id, removedIds) {
         m_removedIds.insert(id);
         aggregatesAffected.remove(ContactId::databaseId(id));
     }
@@ -1142,7 +1142,7 @@ QContactManager::Error ContactWriter::removeRelationships(
     return QContactManager::NoError;
 }
 
-QContactManager::Error ContactWriter::remove(const QList<QContactIdType> &contactIds, QMap<int, QContactManager::Error> *errorMap, bool withinTransaction)
+QContactManager::Error ContactWriter::remove(const QList<QContactId> &contactIds, QMap<int, QContactManager::Error> *errorMap, bool withinTransaction)
 {
     QMutexLocker locker(ContactsDatabase::accessMutex());
 
@@ -1178,10 +1178,10 @@ QContactManager::Error ContactWriter::remove(const QList<QContactIdType> &contac
 
     // determine which contacts we actually need to remove
     QContactManager::Error error = QContactManager::NoError;
-    QList<QContactIdType> realRemoveIds;
+    QList<QContactId> realRemoveIds;
     QVariantList boundRealRemoveIds;
     for (int i = 0; i < contactIds.size(); ++i) {
-        QContactIdType currId = contactIds.at(i);
+        QContactId currId = contactIds.at(i);
         quint32 dbId = ContactId::databaseId(currId);
         if (selfContactId > 0 && dbId == selfContactId) {
             if (errorMap)
@@ -1217,7 +1217,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactIdType> &contac
             return QContactManager::UnspecifiedError;
         }
         m_removeContact.finish();
-        foreach (const QContactIdType &rrid, realRemoveIds) {
+        foreach (const QContactId &rrid, realRemoveIds) {
             m_removedIds.insert(rrid);
         }
         if (!withinTransaction && !commitTransaction()) {
@@ -1264,7 +1264,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactIdType> &contac
 
     QVariantList boundNonAggregatesToRemove;
     QVariantList boundAggregatesToRemove;
-    foreach (const QContactIdType &rrid, realRemoveIds) {
+    foreach (const QContactId &rrid, realRemoveIds) {
         quint32 dbId = ContactId::databaseId(rrid);
         if (!aggregatesToRemove.contains(dbId)) {
             // this is a non-aggregate contact which we need to remove
@@ -1349,13 +1349,13 @@ QContactManager::Error ContactWriter::remove(const QList<QContactIdType> &contac
         return removeError;
     }
 
-    foreach (const QContactIdType &id, realRemoveIds)
+    foreach (const QContactId &id, realRemoveIds)
         m_removedIds.insert(id);
 
     // And notify of any removals.
     if (realRemoveIds.size() > 0) {
         // update our "regenerate list" by purging removed contacts
-        foreach (const QContactIdType &removedId, realRemoveIds) {
+        foreach (const QContactId &removedId, realRemoveIds) {
             aggregatesOfRemoved.removeAll(ContactId::databaseId(removedId));
         }
     }
@@ -1859,7 +1859,7 @@ QContactManager::Error ContactWriter::save(
     QContactManager::Error err = QContactManager::NoError;
     for (int i = 0; i < contacts->count(); ++i) {
         QContact &contact = (*contacts)[i];
-        const QContactIdType contactId = ContactId::apiId(contact);
+        const QContactId contactId = ContactId::apiId(contact);
         bool aggregateUpdated = false;
         if (ContactId::databaseId(contactId) == 0) {
             err = create(&contact, definitionMask, true, withinAggregateUpdate);
@@ -1900,7 +1900,7 @@ QContactManager::Error ContactWriter::save(
             // Any contacts we 'added' are not actually added - clear their IDs
             for (int i = 0; i < contacts->count(); ++i) {
                 QContact &contact = (*contacts)[i];
-                const QContactIdType contactId = ContactId::apiId(contact);
+                const QContactId contactId = ContactId::apiId(contact);
                 if (m_addedIds.contains(contactId)) {
                     contact.setId(QContactId());
                     if (errorMap) {
@@ -2182,7 +2182,7 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
 
         if (m_findLocalForAggregate.next()) {
             // found the existing local contact aggregated by this aggregate.
-            QList<QContactIdType> whichList;
+            QList<QContactId> whichList;
             whichList.append(ContactId::apiId(m_findLocalForAggregate.value(0).toUInt()));
 
             m_findLocalForAggregate.finish();
@@ -2273,7 +2273,7 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
         if (writeError != QContactManager::NoError) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to update modified aggregate"));
             if (createdNewLocal) {
-                QList<QContactIdType> removeList;
+                QList<QContactId> removeList;
                 removeList.append(ContactId::apiId(localContact));
                 QContactManager::Error removeError = remove(removeList, &errorMap, withinTransaction);
                 if (removeError != QContactManager::NoError) {
@@ -2492,7 +2492,7 @@ QContactManager::Error ContactWriter::calculateDelta(QContact *contact, const Co
     hint.setDetailTypesHint(definitionMask);
     hint.setOptimizationHints(QContactFetchHint::NoRelationships);
 
-    QList<QContactIdType> whichList;
+    QList<QContactId> whichList;
     whichList.append(ContactId::apiId(*contact));
 
     // Load the existing state of the aggregate from DB
@@ -2634,7 +2634,7 @@ QContactManager::Error ContactWriter::calculateDelta(QContact *contact, const Co
     if (!contactModifications.isEmpty() || !contactRemovals.isEmpty()) {
         whichList.clear();
         foreach (quint32 contactId, contactModifications.keys() + contactRemovals.keys()) {
-            QContactIdType retrievalId(ContactId::apiId(contactId));
+            QContactId retrievalId(ContactId::apiId(contactId));
             if (!whichList.contains(retrievalId)) {
                 whichList.append(retrievalId);
             }
@@ -2795,13 +2795,13 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
         return QContactManager::UnspecifiedError;
     }
     if (findMatchForContact.next()) {
-        QContactIdType aggregateId = ContactId::apiId(findMatchForContact.value(0).toUInt());
+        QContactId aggregateId = ContactId::apiId(findMatchForContact.value(0).toUInt());
         quint32 score = findMatchForContact.value(1).toUInt();
         findMatchForContact.finish();
 
         static const quint32 MinimumMatchScore = 15;
         if (score >= MinimumMatchScore) {
-            QList<QContactIdType> readIds;
+            QList<QContactId> readIds;
             readIds.append(aggregateId);
 
             QContactFetchHint hint;
@@ -2866,7 +2866,7 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
 
         if (!found) {
             // clean up the newly created contact.
-            QList<QContactIdType> removeList;
+            QList<QContactId> removeList;
             removeList.append(ContactId::apiId(matchingAggregate));
             QContactManager::Error cleanupErr = remove(removeList, &errorMap, withinTransaction);
             if (cleanupErr != QContactManager::NoError) {
@@ -2900,14 +2900,14 @@ void ContactWriter::regenerateAggregates(const QList<quint32> &aggregateIds, con
     // In all cases, we "prefer" the 'local' contact's data (if it exists)
 
     QList<QContact> aggregatesToSave;
-    QSet<QContactIdType> aggregatesToSaveIds;
+    QSet<QContactId> aggregatesToSaveIds;
     foreach (quint32 aggId, aggregateIds) {
-        QContactIdType apiId(ContactId::apiId(aggId));
+        QContactId apiId(ContactId::apiId(aggId));
         if (aggregatesToSaveIds.contains(apiId)) {
             continue;
         }
 
-        QList<QContactIdType> readIds;
+        QList<QContactId> readIds;
         readIds.append(apiId);
 
         m_findConstituentsForAggregate.bindValue(":aggregateId", aggId);
@@ -2998,7 +2998,7 @@ void ContactWriter::regenerateAggregates(const QList<quint32> &aggregateIds, con
     }
 }
 
-QContactManager::Error ContactWriter::removeChildlessAggregates(QList<QContactIdType> *removedIds)
+QContactManager::Error ContactWriter::removeChildlessAggregates(QList<QContactId> *removedIds)
 {
     QVariantList aggregateIds;
     if (!m_childlessAggregateIds.exec()) {
@@ -3028,7 +3028,7 @@ QContactManager::Error ContactWriter::removeChildlessAggregates(QList<QContactId
 
 QContactManager::Error ContactWriter::aggregateOrphanedContacts(bool withinTransaction)
 {
-    QList<QContactIdType> contactIds;
+    QList<QContactId> contactIds;
     if (!m_orphanContactIds.exec()) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to fetch orphan aggregate contact ids during remove:\n%1")
                 .arg(m_orphanContactIds.lastError().text()));

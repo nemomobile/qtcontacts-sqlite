@@ -141,7 +141,7 @@ QString normalize(const QString &input, int flags, int maxCharacters)
 
 namespace QtContactsSqliteExtensions {
 
-ApiContactIdType apiContactId(quint32 iid)
+QContactId apiContactId(quint32 iid)
 {
     QContactId contactId;
     if (iid != 0) {
@@ -154,7 +154,7 @@ ApiContactIdType apiContactId(quint32 iid)
     return contactId;
 }
 
-quint32 internalContactId(const ApiContactIdType &id)
+quint32 internalContactId(const QContactId &id)
 {
     if (!id.isNull()) {
         QStringList components = id.toString().split(QChar::fromLatin1(':'));

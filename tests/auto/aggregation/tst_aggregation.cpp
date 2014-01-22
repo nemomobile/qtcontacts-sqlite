@@ -74,9 +74,9 @@ public slots:
     void cleanup();
 
 public slots:
-    void addAccumulationSlot(const QList<QContactIdType> &ids);
-    void chgAccumulationSlot(const QList<QContactIdType> &ids);
-    void remAccumulationSlot(const QList<QContactIdType> &ids);
+    void addAccumulationSlot(const QList<QContactId> &ids);
+    void chgAccumulationSlot(const QList<QContactId> &ids);
+    void remAccumulationSlot(const QList<QContactId> &ids);
 
 private slots:
     void createSingleLocal();
@@ -118,10 +118,10 @@ private:
     void waitForSignalPropagation();
 
     QContactManager *m_cm;
-    QSet<QContactIdType> m_addAccumulatedIds;
-    QSet<QContactIdType> m_chgAccumulatedIds;
-    QSet<QContactIdType> m_remAccumulatedIds;
-    QSet<QContactIdType> m_createdIds;
+    QSet<QContactId> m_addAccumulatedIds;
+    QSet<QContactId> m_chgAccumulatedIds;
+    QSet<QContactId> m_remAccumulatedIds;
+    QSet<QContactId> m_createdIds;
 };
 
 tst_Aggregation::tst_Aggregation()
@@ -174,24 +174,24 @@ void tst_Aggregation::waitForSignalPropagation()
     QTest::qWait(50);
 }
 
-void tst_Aggregation::addAccumulationSlot(const QList<QContactIdType> &ids)
+void tst_Aggregation::addAccumulationSlot(const QList<QContactId> &ids)
 {
-    foreach (const QContactIdType &id, ids) {
+    foreach (const QContactId &id, ids) {
         m_addAccumulatedIds.insert(id);
         m_createdIds.insert(id);
     }
 }
 
-void tst_Aggregation::chgAccumulationSlot(const QList<QContactIdType> &ids)
+void tst_Aggregation::chgAccumulationSlot(const QList<QContactId> &ids)
 {
-    foreach (const QContactIdType &id, ids) {
+    foreach (const QContactId &id, ids) {
         m_chgAccumulatedIds.insert(id);
     }
 }
 
-void tst_Aggregation::remAccumulationSlot(const QList<QContactIdType> &ids)
+void tst_Aggregation::remAccumulationSlot(const QList<QContactId> &ids)
 {
-    foreach (const QContactIdType &id, ids) {
+    foreach (const QContactId &id, ids) {
         m_remAccumulatedIds.insert(id);
     }
 }
@@ -3393,7 +3393,7 @@ void tst_Aggregation::changeLogFiltering()
     clf.setEventType(QContactChangeLogFilter::EventAdded);
     clf.setSince(beforeBCreated); // should contain b, but not a as a's creation time was days-5
     cif.clear(); cif << stf << clf;
-    QList<QContactIdType> filtered = m_cm->contactIds(cif);
+    QList<QContactId> filtered = m_cm->contactIds(cif);
     QVERIFY(!filtered.contains(retrievalId(a)));
     QVERIFY(filtered.contains(retrievalId(b)));
 

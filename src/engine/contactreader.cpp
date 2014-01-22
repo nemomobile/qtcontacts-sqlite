@@ -1005,7 +1005,7 @@ static QString buildWhere(const QContactDetailRangeFilter &filter, QVariantList 
 
 static QString buildWhere(const QContactIdFilter &filter, QSqlDatabase &db, const QString &table, QVariantList *bindings, bool *failed)
 {
-    const QList<QContactIdType> &filterIds(filter.ids());
+    const QList<QContactId> &filterIds(filter.ids());
     if (filterIds.isEmpty()) {
         *failed = true;
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with empty contact ID list"));
@@ -1016,7 +1016,7 @@ static QString buildWhere(const QContactIdFilter &filter, QSqlDatabase &db, cons
     dbIds.reserve(filterIds.count());
     bindings->reserve(filterIds.count());
 
-    foreach (const QContactIdType &id, filterIds) {
+    foreach (const QContactId &id, filterIds) {
         dbIds.append(ContactId::databaseId(id));
     }
 
@@ -1025,7 +1025,7 @@ static QString buildWhere(const QContactIdFilter &filter, QSqlDatabase &db, cons
     const int maxInlineIdsCount = 800;
     if (filterIds.count() > maxInlineIdsCount) {
         QVariantList varIds;
-        foreach (const QContactIdType &id, filterIds) {
+        foreach (const QContactId &id, filterIds) {
             varIds.append(QVariant(ContactId::databaseId(id)));
         }
 
@@ -1350,7 +1350,7 @@ bool includesSelfId(const QContactUnionFilter &filter)
 }
 bool includesSelfId(const QContactIdFilter &filter)
 {
-    foreach (const QContactIdType &id, filter.ids()) {
+    foreach (const QContactId &id, filter.ids()) {
         if (ContactId::databaseId(id) == selfId)
             return true;
     }
@@ -1498,7 +1498,7 @@ QContactManager::Error ContactReader::readContacts(
 QContactManager::Error ContactReader::readContacts(
         const QString &table,
         QList<QContact> *contacts,
-        const QList<QContactIdType> &contactIds,
+        const QList<QContactId> &contactIds,
         const QContactFetchHint &fetchHint)
 {
     QMutexLocker locker(ContactsDatabase::accessMutex());
@@ -1783,7 +1783,7 @@ QContactManager::Error ContactReader::queryContacts(
 }
 
 QContactManager::Error ContactReader::readContactIds(
-        QList<QContactIdType> *contactIds,
+        QList<QContactId> *contactIds,
         const QContactFilter &filter,
         const QList<QContactSortOrder> &order)
 {
@@ -1847,7 +1847,7 @@ QContactManager::Error ContactReader::readContactIds(
 }
 
 QContactManager::Error ContactReader::getIdentity(
-        ContactsDatabase::Identity identity, QContactIdType *contactId)
+        ContactsDatabase::Identity identity, QContactId *contactId)
 {
     QMutexLocker locker(ContactsDatabase::accessMutex());
 
@@ -1866,7 +1866,7 @@ QContactManager::Error ContactReader::getIdentity(
         if (query.exec() && query.next()) {
             *contactId = ContactId::apiId(query.value(0).toUInt());
         } else {
-            *contactId = QContactIdType();
+            *contactId = QContactId();
             return QContactManager::UnspecifiedError;
         }
     }
@@ -1943,6 +1943,6 @@ void ContactReader::contactsAvailable(const QList<QContact> &)
 {
 }
 
-void ContactReader::contactIdsAvailable(const QList<QContactIdType> &)
+void ContactReader::contactIdsAvailable(const QList<QContactId> &)
 {
 }

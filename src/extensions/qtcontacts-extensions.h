@@ -83,10 +83,8 @@ namespace QtContactsSqliteExtensions {
 
 QTCONTACTS_USE_NAMESPACE
 
-typedef QContactId ApiContactIdType;
-
-ApiContactIdType apiContactId(quint32);
-quint32 internalContactId(const ApiContactIdType &);
+QContactId apiContactId(quint32);
+quint32 internalContactId(const QContactId &);
 
 enum NormalizePhoneNumberFlag {
     KeepPhoneNumberPunctuation = (1 << 0),

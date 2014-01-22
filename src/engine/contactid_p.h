@@ -38,8 +38,6 @@
 
 #include <QContactEngineId>
 
-#define QContactIdType QContactId
-
 QTCONTACTS_USE_NAMESPACE
 
 class ContactId : public QContactEngineId
@@ -57,10 +55,10 @@ public:
     static bool isValid(const QContactId &apiId);
     static bool isValid(quint32 dbId);
 
-    static QString toString(const QContactIdType &apiId);
+    static QString toString(const QContactId &apiId);
     static QString toString(const QContact &c);
 
-    static QContactIdType fromString(const QString &id);
+    static QContactId fromString(const QString &id);
 
     ContactId(quint32 databaseId);
     ContactId(const QString &s);

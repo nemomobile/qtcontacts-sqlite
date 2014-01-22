@@ -122,7 +122,7 @@
             __spiedSigCount = 0; \
             const QList<QList<QVariant> > __spiedSignals = __signalSpy; \
             foreach (const QList<QVariant> &__arguments, __spiedSignals) { \
-                foreach (QContactIdType __apiId, __arguments.first().value<QList<QContactIdType> >()) { \
+                foreach (QContactId __apiId, __arguments.first().value<QList<QContactId> >()) { \
                     QVERIFY(ContactId::isValid(__apiId)); \
                     __spiedSigCount++; \
                 } \

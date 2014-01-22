@@ -52,7 +52,6 @@
 QTCONTACTS_USE_NAMESPACE
 
 #include <QContactIdFilter>
-typedef QContactId ContactIdType;
 static QContactId retrievalId(const QContact &contact) { return contact.id(); }
 
 static QStringList generateNonOverlappingFirstNamesList()
@@ -483,7 +482,7 @@ int main(int argc, char  *argv[])
         qDebug() << "    reading filtered (" << readContacts.size() << "), no relationships, took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
         elapsedTimeTotal += ste;
 
-        QList<ContactIdType> idsToRemove;
+        QList<QContactId> idsToRemove;
         for (int j = 0; j < td.size(); ++j) {
             idsToRemove.append(retrievalId(td.at(j)));
         }
@@ -575,7 +574,7 @@ int main(int argc, char  *argv[])
         qDebug() << "    reading filtered (" << readContacts.size() << "), no relationships, took" << ste << "milliseconds";
         elapsedTimeTotal += ste;
 
-        QList<ContactIdType> idsToRemove;
+        QList<QContactId> idsToRemove;
         for (int j = 0; j < td.size(); ++j) {
             idsToRemove.append(retrievalId(td.at(j)));
         }
@@ -766,7 +765,7 @@ int main(int argc, char  *argv[])
 
     // clean up the "more prefill data"
     qDebug() << "    cleaning up extra prefill data, please wait...";
-    QList<ContactIdType> morePrefillIds;
+    QList<QContactId> morePrefillIds;
     for (int j = 0; j < morePrefillData.size(); ++j) {
         morePrefillIds.append(retrievalId(morePrefillData.at(j)));
     }

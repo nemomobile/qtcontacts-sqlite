@@ -154,7 +154,7 @@ bool ContactId::isValid(quint32 dbId)
     return (dbId != 0);
 }
 
-QString ContactId::toString(const QContactIdType &apiId)
+QString ContactId::toString(const QContactId &apiId)
 {
     return dbIdToString(databaseId(apiId));
 }

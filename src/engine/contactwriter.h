@@ -81,11 +81,11 @@ public:
             QMap<int, QContactManager::Error> *errorMap,
             bool withinTransaction,
             bool withinAggregateUpdate);
-    QContactManager::Error remove(const QList<QContactIdType> &contactIds,
+    QContactManager::Error remove(const QList<QContactId> &contactIds,
                                   QMap<int, QContactManager::Error> *errorMap,
                                   bool withinTransaction);
 
-    QContactManager::Error setIdentity(ContactsDatabase::Identity identity, QContactIdType contactId);
+    QContactManager::Error setIdentity(ContactsDatabase::Identity identity, QContactId contactId);
 
     QContactManager::Error save(
             const QList<QContactRelationship> &relationships,
@@ -114,7 +114,7 @@ private:
     QContactManager::Error updateOrCreateAggregate(QContact *contact, const DetailList &definitionMask, bool withinTransaction, quint32 *aggregateContactId = 0);
     QContactManager::Error updateLocalAndAggregate(QContact *contact, const DetailList &definitionMask, bool withinTransaction);
     void regenerateAggregates(const QList<quint32> &aggregateIds, const DetailList &definitionMask, bool withinTransaction);
-    QContactManager::Error removeChildlessAggregates(QList<QContactIdType> *realRemoveIds);
+    QContactManager::Error removeChildlessAggregates(QList<QContactId> *realRemoveIds);
     QContactManager::Error aggregateOrphanedContacts(bool withinTransaction);
 #endif
 
@@ -227,10 +227,10 @@ private:
     QSqlQuery m_selectAggregateContactIds;
     ContactReader *m_reader;
 
-    QSet<QContactIdType> m_addedIds;
-    QSet<QContactIdType> m_removedIds;
-    QSet<QContactIdType> m_changedIds;
-    QSet<QContactIdType> m_presenceChangedIds;
+    QSet<QContactId> m_addedIds;
+    QSet<QContactId> m_removedIds;
+    QSet<QContactId> m_changedIds;
+    QSet<QContactId> m_presenceChangedIds;
 };
 
 
