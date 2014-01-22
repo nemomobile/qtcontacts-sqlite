@@ -43,9 +43,7 @@
 #include <QContactAvatar>
 #include <QContactBirthday>
 #include <QContactEmailAddress>
-#ifdef USING_QTPIM
 #include <QContactExtendedDetail>
-#endif
 #include <QContactGlobalPresence>
 #include <QContactGuid>
 #include <QContactHobby>
@@ -63,7 +61,7 @@
 #include <QSet>
 #include <QSqlQuery>
 
-USE_CONTACTS_NAMESPACE
+QTCONTACTS_USE_NAMESPACE
 
 class ProcessMutex;
 class ContactsEngine;
@@ -71,11 +69,7 @@ class ContactReader;
 class ContactWriter
 {
 public:
-#ifdef USING_QTPIM
     typedef QList<QContactDetail::DetailType> DetailList;
-#else
-    typedef QStringList DetailList;
-#endif
 
     ContactWriter(const ContactsEngine &engine, const QSqlDatabase &database, ContactReader *reader);
     ~ContactWriter();
@@ -164,9 +158,7 @@ private:
     QSqlQuery &bindDetail(quint32 contactId, const QContactTag &detail);
     QSqlQuery &bindDetail(quint32 contactId, const QContactUrl &detail);
     QSqlQuery &bindDetail(quint32 contactId, const QContactOriginMetadata &detail);
-#ifdef USING_QTPIM
     QSqlQuery &bindDetail(quint32 contactId, const QContactExtendedDetail &detail);
-#endif
 
     const ContactsEngine &m_engine;
     QSqlDatabase m_database;

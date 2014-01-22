@@ -35,11 +35,7 @@
 #include "qcontactoriginmetadata.h"
 #include "qtcontacts-extensions.h"
 
-#ifdef USING_QTPIM
 QTCONTACTS_USE_NAMESPACE
-#else
-QTM_USE_NAMESPACE
-#endif
 
 void QContactOriginMetadata::setId(const QString &s)
 {
@@ -74,11 +70,7 @@ bool QContactOriginMetadata::enabled() const
 QContactDetailFilter QContactOriginMetadata::matchId(const QString &s)
 {
     QContactDetailFilter filter;
-#ifdef USING_QTPIM
     filter.setDetailType(QContactOriginMetadata::Type, FieldId);
-#else
-    filter.setDetailDefinitionName(QContactOriginMetadata::DefinitionName, FieldId);
-#endif
     filter.setValue(s);
     filter.setMatchFlags(QContactFilter::MatchExactly);
     return filter;
@@ -87,23 +79,12 @@ QContactDetailFilter QContactOriginMetadata::matchId(const QString &s)
 QContactDetailFilter QContactOriginMetadata::matchGroupId(const QString &s)
 {
     QContactDetailFilter filter;
-#ifdef USING_QTPIM
     filter.setDetailType(QContactOriginMetadata::Type, FieldGroupId);
-#else
-    filter.setDetailDefinitionName(QContactOriginMetadata::DefinitionName, FieldGroupId);
-#endif
     filter.setValue(s);
     filter.setMatchFlags(QContactFilter::MatchExactly);
     return filter;
 }
 
-#ifdef USING_QTPIM
 const QContactDetail::DetailType QContactOriginMetadata::Type(static_cast<QContactDetail::DetailType>(QContactDetail__TypeOriginMetadata));
-#else
-Q_IMPLEMENT_CUSTOM_CONTACT_DETAIL(QContactOriginMetadata, "TpMetadata");
-Q_DEFINE_LATIN1_CONSTANT(QContactOriginMetadata::FieldId, "ContactId");
-Q_DEFINE_LATIN1_CONSTANT(QContactOriginMetadata::FieldGroupId, "AccountId");
-Q_DEFINE_LATIN1_CONSTANT(QContactOriginMetadata::FieldEnabled, "AccountEnabled");
-#endif
 
 #endif

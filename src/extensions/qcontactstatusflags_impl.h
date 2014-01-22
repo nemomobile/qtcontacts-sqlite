@@ -35,11 +35,7 @@
 #include "qcontactstatusflags.h"
 #include "qtcontacts-extensions.h"
 
-#ifdef USING_QTPIM
 QTCONTACTS_USE_NAMESPACE
-#else
-QTM_USE_NAMESPACE
-#endif
 
 void QContactStatusFlags::setFlag(Flag flag, bool b)
 {
@@ -85,21 +81,12 @@ QContactDetailFilter QContactStatusFlags::matchFlag(Flag flag, QContactFilter::M
 QContactDetailFilter QContactStatusFlags::matchFlags(Flags flags, QContactFilter::MatchFlags matchFlags)
 {
     QContactDetailFilter filter;
-#ifdef USING_QTPIM
     filter.setDetailType(QContactStatusFlags::Type, FieldFlags);
-#else
-    filter.setDetailDefinitionName(QContactStatusFlags::DefinitionName, FieldFlags);
-#endif
     filter.setValue(static_cast<quint64>(flags));
     filter.setMatchFlags(matchFlags);
     return filter;
 }
 
-#ifdef USING_QTPIM
 const QContactDetail::DetailType QContactStatusFlags::Type(static_cast<QContactDetail::DetailType>(QContactDetail__TypeStatusFlags));
-#else
-Q_IMPLEMENT_CUSTOM_CONTACT_DETAIL(QContactStatusFlags, "StatusFlags");
-Q_DEFINE_LATIN1_CONSTANT(QContactStatusFlags::FieldFlags, "flags");
-#endif
 
 #endif

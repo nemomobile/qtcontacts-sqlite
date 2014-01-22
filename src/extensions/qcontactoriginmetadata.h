@@ -32,23 +32,14 @@
 #ifndef QCONTACTORIGINMETADATA_H
 #define QCONTACTORIGINMETADATA_H
 
-#include "qtcontacts-extensions-config.h"
-
 #include <QContactDetail>
 #include <QContactDetailFilter>
 
-#ifdef USING_QTPIM
 QT_BEGIN_NAMESPACE_CONTACTS
-#elif defined(USING_QTMOBILITY)
-QTM_BEGIN_NAMESPACE
-#else
-#error "QtContacts variant in use is not specified"
-#endif
 
 class QContactOriginMetadata : public QContactDetail
 {
 public:
-#ifdef USING_QTPIM
     Q_DECLARE_CUSTOM_CONTACT_DETAIL(QContactOriginMetadata)
 
     enum {
@@ -56,13 +47,6 @@ public:
         FieldGroupId = 1,
         FieldEnabled = 2
     };
-#else
-    // Keep the existing string values to maintain DB compatibility
-    Q_DECLARE_CUSTOM_CONTACT_DETAIL(QContactOriginMetadata, "TpMetadata")
-    Q_DECLARE_LATIN1_CONSTANT(FieldId, "ContactId");
-    Q_DECLARE_LATIN1_CONSTANT(FieldGroupId, "AccountId");
-    Q_DECLARE_LATIN1_CONSTANT(FieldEnabled, "AccountEnabled");
-#endif
 
     void setId(const QString &s);
     QString id() const;
@@ -77,10 +61,6 @@ public:
     static QContactDetailFilter matchGroupId(const QString &s);
 };
 
-#ifdef USING_QTPIM
 QT_END_NAMESPACE_CONTACTS
-#else
-QTM_END_NAMESPACE
-#endif
 
 #endif

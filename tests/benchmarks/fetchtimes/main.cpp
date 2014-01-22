@@ -49,17 +49,11 @@
 #include <QElapsedTimer>
 #include <QtDebug>
 
-USE_CONTACTS_NAMESPACE
+QTCONTACTS_USE_NAMESPACE
 
-#ifdef USING_QTPIM
 #include <QContactIdFilter>
 typedef QContactId ContactIdType;
 static QContactId retrievalId(const QContact &contact) { return contact.id(); }
-#else
-#include <QContactLocalIdFilter>
-typedef QContactLocalId ContactIdType;
-static QContactLocalId retrievalId(const QContact &contact) { return contact.localId(); }
-#endif
 
 static QStringList generateNonOverlappingFirstNamesList()
 {
@@ -322,11 +316,7 @@ int main(int argc, char  *argv[])
     }
 
     // Reduce data access
-#ifdef USING_QTPIM
     hint.setDetailTypesHint(QList<QContactDetail::DetailType>() << QContactName::Type << QContactAddress::Type);
-#else
-    hint.setDetailDefinitionsHint(QStringList() << QContactName::DefinitionName << QContactAddress::DefinitionName);
-#endif
     request.setFetchHint(hint);
 
     for (int i = 0; i < 3; ++i) {
@@ -393,11 +383,7 @@ int main(int argc, char  *argv[])
         elapsedTimeTotal += ste;
 
         QContactDetailFilter testingFilter;
-#ifdef USING_QTPIM
         testingFilter.setDetailType(QContactSyncTarget::Type, QContactSyncTarget::FieldSyncTarget);
-#else
-        testingFilter.setDetailDefinitionName(QContactSyncTarget::DefinitionName, QContactSyncTarget::FieldSyncTarget);
-#endif
         testingFilter.setValue(QString::fromLatin1("testing"));
 
         QContactFetchHint fh;
@@ -410,15 +396,9 @@ int main(int argc, char  *argv[])
         qDebug() << "    reading all (" << readContacts.size() << "), all details, took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
         elapsedTimeTotal += ste;
 
-#ifdef USING_QTPIM
         fh.setDetailTypesHint(QList<QContactDetail::DetailType>() << QContactDisplayLabel::Type
                 << QContactName::Type << QContactAvatar::Type
                 << QContactPhoneNumber::Type << QContactEmailAddress::Type);
-#else
-        fh.setDetailDefinitionsHint(QStringList() << QContactDisplayLabel::DefinitionName
-                << QContactName::DefinitionName << QContactAvatar::DefinitionName
-                << QContactPhoneNumber::DefinitionName << QContactEmailAddress::DefinitionName);
-#endif
         syncTimer.start();
         readContacts = manager.contacts(testingFilter, QList<QContactSortOrder>(), fh);
         ste = syncTimer.elapsed();
@@ -429,11 +409,7 @@ int main(int argc, char  *argv[])
         elapsedTimeTotal += ste;
 
         fh.setOptimizationHints(QContactFetchHint::NoRelationships);
-#ifdef USING_QTPIM
         fh.setDetailTypesHint(QList<QContactDetail::DetailType>());
-#else
-        fh.setDetailDefinitionsHint(QStringList());
-#endif
         syncTimer.start();
         readContacts = manager.contacts(testingFilter, QList<QContactSortOrder>(), fh);
         ste = syncTimer.elapsed();
@@ -443,13 +419,8 @@ int main(int argc, char  *argv[])
         qDebug() << "    reading all, no relationships, took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
         elapsedTimeTotal += ste;
 
-#ifdef USING_QTPIM
         fh.setDetailTypesHint(QList<QContactDetail::DetailType>() << QContactDisplayLabel::Type
                 << QContactName::Type << QContactAvatar::Type);
-#else
-        fh.setDetailDefinitionsHint(QStringList() << QContactDisplayLabel::DefinitionName
-                << QContactName::DefinitionName << QContactAvatar::DefinitionName);
-#endif
         syncTimer.start();
         readContacts = manager.contacts(testingFilter, QList<QContactSortOrder>(), fh);
         ste = syncTimer.elapsed();
@@ -475,11 +446,7 @@ int main(int argc, char  *argv[])
         elapsedTimeTotal += ste;
 
         // Read the same set using ID filtering
-#ifdef USING_QTPIM
         QContactIdFilter idFilter;
-#else
-        QContactLocalIdFilter idFilter;
-#endif
         idFilter.setIds(idsToRetrieve);
 
         syncTimer.start();
@@ -493,11 +460,7 @@ int main(int argc, char  *argv[])
 
         // Read the same set, but filter everything out using syncTarget
         QContactDetailFilter aggregateFilter;
-#ifdef USING_QTPIM
         aggregateFilter.setDetailType(QContactSyncTarget::Type, QContactSyncTarget::FieldSyncTarget);
-#else
-        aggregateFilter.setDetailDefinitionName(QContactSyncTarget::DefinitionName, QContactSyncTarget::FieldSyncTarget);
-#endif
         aggregateFilter.setValue(QString::fromLatin1("aggregate"));
 
         syncTimer.start();
@@ -510,18 +473,10 @@ int main(int argc, char  *argv[])
         elapsedTimeTotal += ste;
 
         QContactDetailFilter firstNameStartsA;
-#ifdef USING_QTPIM
         firstNameStartsA.setDetailType(QContactName::Type, QContactName::FieldFirstName);
-#else
-        firstNameStartsA.setDetailDefinitionName(QContactName::DefinitionName, QContactName::FieldFirstName);
-#endif
         firstNameStartsA.setValue("A");
         firstNameStartsA.setMatchFlags(QContactDetailFilter::MatchStartsWith);
-#ifdef USING_QTPIM
         fh.setDetailTypesHint(QList<QContactDetail::DetailType>());
-#else
-        fh.setDetailDefinitionsHint(QStringList());
-#endif
         syncTimer.start();
         readContacts = manager.contacts(firstNameStartsA, QList<QContactSortOrder>(), fh);
         ste = syncTimer.elapsed();
@@ -584,15 +539,9 @@ int main(int argc, char  *argv[])
         qDebug() << "    reading all (" << readContacts.size() << "), all details, took" << ste << "milliseconds";
         elapsedTimeTotal += ste;
 
-#ifdef USING_QTPIM
         fh.setDetailTypesHint(QList<QContactDetail::DetailType>() << QContactDisplayLabel::Type
                 << QContactName::Type << QContactAvatar::Type
                 << QContactPhoneNumber::Type << QContactEmailAddress::Type);
-#else
-        fh.setDetailDefinitionsHint(QStringList() << QContactDisplayLabel::DefinitionName
-                << QContactName::DefinitionName << QContactAvatar::DefinitionName
-                << QContactPhoneNumber::DefinitionName << QContactEmailAddress::DefinitionName);
-#endif
         syncTimer.start();
         readContacts = manager.contacts(QContactFilter(), QList<QContactSortOrder>(), fh);
         ste = syncTimer.elapsed();
@@ -600,24 +549,15 @@ int main(int argc, char  *argv[])
         elapsedTimeTotal += ste;
 
         fh.setOptimizationHints(QContactFetchHint::NoRelationships);
-#ifdef USING_QTPIM
         fh.setDetailTypesHint(QList<QContactDetail::DetailType>());
-#else
-        fh.setDetailDefinitionsHint(QStringList());
-#endif
         syncTimer.start();
         readContacts = manager.contacts(QContactFilter(), QList<QContactSortOrder>(), fh);
         ste = syncTimer.elapsed();
         qDebug() << "    reading all, no relationships, took" << ste << "milliseconds";
         elapsedTimeTotal += ste;
 
-#ifdef USING_QTPIM
         fh.setDetailTypesHint(QList<QContactDetail::DetailType>() << QContactDisplayLabel::Type
                 << QContactName::Type << QContactAvatar::Type);
-#else
-        fh.setDetailDefinitionsHint(QStringList() << QContactDisplayLabel::DefinitionName
-                << QContactName::DefinitionName << QContactAvatar::DefinitionName);
-#endif
         syncTimer.start();
         readContacts = manager.contacts(QContactFilter(), QList<QContactSortOrder>(), fh);
         ste = syncTimer.elapsed();
@@ -625,18 +565,10 @@ int main(int argc, char  *argv[])
         elapsedTimeTotal += ste;
 
         QContactDetailFilter firstNameStartsA;
-#ifdef USING_QTPIM
         firstNameStartsA.setDetailType(QContactName::Type, QContactName::FieldFirstName);
-#else
-        firstNameStartsA.setDetailDefinitionName(QContactName::DefinitionName, QContactName::FieldFirstName);
-#endif
         firstNameStartsA.setValue("A");
         firstNameStartsA.setMatchFlags(QContactDetailFilter::MatchStartsWith);
-#ifdef USING_QTPIM
         fh.setDetailTypesHint(QList<QContactDetail::DetailType>());
-#else
-        fh.setDetailDefinitionsHint(QStringList());
-#endif
         syncTimer.start();
         readContacts = manager.contacts(firstNameStartsA, QList<QContactSortOrder>(), fh);
         ste = syncTimer.elapsed();
@@ -881,17 +813,10 @@ int main(int argc, char  *argv[])
 
     // clean up the "more prefill data"
     qDebug() << "    cleaning up extra prefill data, please wait...";
-#ifdef USING_QTPIM
     morePrefillIds.clear();
     for (int j = 0; j < morePrefillData.size(); ++j) {
         morePrefillIds.append(morePrefillData.at(j).id());
     }
-#else
-    morePrefillIds.clear();
-    for (int j = 0; j < morePrefillData.size(); ++j) {
-        morePrefillIds.append(morePrefillData.at(j).localId());
-    }
-#endif
     manager.removeContacts(morePrefillIds);
 
     // the fifth presence update test is similar to the above except that half of
@@ -977,13 +902,8 @@ int main(int argc, char  *argv[])
     }
 
     // perform a batch save.
-#ifdef USING_QTPIM
     QList<QContactDetail::DetailType> typeMask;
     typeMask << QContactDetail::TypePresence;
-#else
-    QStringList typeMask;
-    typeMask << QString(QLatin1String(QContactPresence::DefinitionName));
-#endif
     syncTimer.start();
     manager.saveContacts(&contactsToUpdate, typeMask);
     presenceElapsed = syncTimer.elapsed();
@@ -994,17 +914,10 @@ int main(int argc, char  *argv[])
 
     // clean up the "more prefill data"
     qDebug() << "    cleaning up extra prefill data, please wait...";
-#ifdef USING_QTPIM
     morePrefillIds.clear();
     for (int j = 0; j < morePrefillData.size(); ++j) {
         morePrefillIds.append(morePrefillData.at(j).id());
     }
-#else
-    morePrefillIds.clear();
-    for (int j = 0; j < morePrefillData.size(); ++j) {
-        morePrefillIds.append(morePrefillData.at(j).localId());
-    }
-#endif
     manager.removeContacts(morePrefillIds);
 
     qDebug() << "\n\nCumulative elapsed time:" << elapsedTimeTotal << "milliseconds";

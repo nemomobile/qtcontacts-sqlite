@@ -40,12 +40,10 @@
 #include "contactwriter.h"
 #include "contactid_p.h"
 
-#ifdef USING_QTPIM
 // QList<int> is widely used in qtpim
 Q_DECLARE_METATYPE(QList<int>)
-#endif
 
-USE_CONTACTS_NAMESPACE
+QTCONTACTS_USE_NAMESPACE
 
 // Force an ambiguity with QContactDetail::operator== so that we can't call it
 // It does not compare correctly if the values contains QList<int>
@@ -111,11 +109,7 @@ public:
 
     QList<QContactRelationship> relationships(
             const QString &relationshipType,
-#ifdef USING_QTPIM
             const QContact &participant,
-#else
-            const QContactId &participantId,
-#endif
             QContactRelationship::Role role,
             QContactManager::Error *error) const;
     bool saveRelationships(
@@ -132,30 +126,15 @@ public:
     bool cancelRequest(QContactAbstractRequest* req);
     bool waitForRequestFinished(QContactAbstractRequest* req, int msecs);
 
-#ifndef USING_QTPIM
-    QMap<QString, QContactDetailDefinition> detailDefinitions(const QString& contactType, QContactManager::Error* error) const;
-    bool hasFeature(QContactManager::ManagerFeature feature, const QString& contactType) const;
-#endif
-
-#ifdef USING_QTPIM
     bool isRelationshipTypeSupported(const QString &relationshipType, QContactType::TypeValues contactType) const;
     QList<QContactType::TypeValues> supportedContactTypes() const;
-#else
-    bool isRelationshipTypeSupported(const QString& relationshipType, const QString& contactType) const;
-    QStringList supportedContactTypes() const;
-#endif
 
     void regenerateDisplayLabel(QContact &contact) const;
 
-#ifdef USING_QTPIM
     static bool setContactDisplayLabel(QContact *contact, const QString &label);
-#endif
 
     static QString normalizedPhoneNumber(const QString &input);
 
-#ifndef USING_QTPIM
-    virtual
-#endif
     QString synthesizedDisplayLabel(const QContact &contact, QContactManager::Error *error) const;
 
 private slots:

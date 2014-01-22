@@ -41,7 +41,7 @@
 #include <QSqlDatabase>
 #include <QSqlQuery>
 
-USE_CONTACTS_NAMESPACE
+QTCONTACTS_USE_NAMESPACE
 
 class ContactReader
 {

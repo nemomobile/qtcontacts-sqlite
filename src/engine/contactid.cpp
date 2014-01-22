@@ -32,9 +32,7 @@
 #include "contactid_p.h"
 
 #include <QContact>
-#ifdef USING_QTPIM
 #include <QContactManager>
-#endif
 
 namespace {
 
@@ -54,8 +52,6 @@ quint32 dbIdFromString(const QString &s)
 }
 
 }
-
-#ifdef USING_QTPIM
 
 #include <QContactManagerEngine>
 
@@ -143,43 +139,6 @@ QDebug &ContactId::debugStreamOut(QDebug &dbg) const
 }
 #endif // QT_NO_DEBUG_STREAM
 
-#else // QT_VERSION
-
-QContactLocalId ContactId::apiId(const QContact &contact)
-{
-    return contact.localId();
-}
-
-QContactLocalId ContactId::apiId(quint32 dbId)
-{
-    return dbId ? (dbId + 1) : 0;
-}
-
-quint32 ContactId::databaseId(const QContact &contact)
-{
-    return databaseId(contact.localId());
-}
-
-quint32 ContactId::databaseId(const QContactId &contactId)
-{
-    return databaseId(contactId.localId());
-}
-
-quint32 ContactId::databaseId(QContactLocalId apiId)
-{
-    return apiId ? (apiId - 1) : 0;
-}
-
-QContactId ContactId::contactId(QContactLocalId apiId)
-{
-    QContactId id;
-    id.setManagerUri(default_uri);
-    id.setLocalId(apiId);
-    return id;
-}
-
-#endif
-
 bool ContactId::isValid(const QContact &contact)
 {
     return isValid(databaseId(contact));
@@ -202,10 +161,6 @@ QString ContactId::toString(const QContactIdType &apiId)
 
 QString ContactId::toString(const QContact &c)
 {
-#ifdef USING_QTPIM
     return toString(c.id());
-#else
-    return toString(c.localId());
-#endif
 }
 

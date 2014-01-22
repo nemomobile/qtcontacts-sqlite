@@ -48,8 +48,7 @@ SOURCES += \
 target.path = $$[QT_INSTALL_PLUGINS]/contacts
 INSTALLS += target
 
-equals(QT_MAJOR_VERSION, 4): PACKAGENAME=qtcontacts-sqlite-extensions
-equals(QT_MAJOR_VERSION, 5): PACKAGENAME=qtcontacts-sqlite-qt5-extensions
+PACKAGENAME=qtcontacts-sqlite-qt5-extensions
 
 headers.path = $${PREFIX}/include/$${PACKAGENAME}
 headers.files = ../extensions/*
@@ -57,10 +56,8 @@ headers.depends = ../extensions/*
 INSTALLS += headers
 
 pkgconfig.path = $${PREFIX}/lib/pkgconfig
-#equals(QT_MAJOR_VERSION, 4): pkgconfig.files = ../qtcontacts-sqlite-extensions.pc
-#equals(QT_MAJOR_VERSION, 5): pkgconfig.files = ../qtcontacts-sqlite-qt5-extensions.pc
 pkgconfig.files = ../$${PACKAGENAME}.pc
 INSTALLS += pkgconfig
 
-equals(QT_MAJOR_VERSION, 5): OTHER_FILES += plugin.json
+OTHER_FILES += plugin.json
 

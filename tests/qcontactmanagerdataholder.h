@@ -64,7 +64,7 @@
 // We mean it.
 //
 
-BEGIN_CONTACTS_NAMESPACE
+QT_BEGIN_NAMESPACE_CONTACTS
 
 class QContact;
 class QContactManagerDataHolder
@@ -112,7 +112,7 @@ private:
     QMap<QString, QList<QContact> > savedContacts;
 };
 
-END_CONTACTS_NAMESPACE
+QT_END_NAMESPACE_CONTACTS
 
 #endif
 

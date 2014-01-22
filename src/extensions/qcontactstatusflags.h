@@ -32,33 +32,19 @@
 #ifndef QCONTACTSTATUSFLAGS_H
 #define QCONTACTSTATUSFLAGS_H
 
-#include "qtcontacts-extensions-config.h"
-
 #include <QContactDetail>
 #include <QContactDetailFilter>
 
-#ifdef USING_QTPIM
 QT_BEGIN_NAMESPACE_CONTACTS
-#elif defined(USING_QTMOBILITY)
-QTM_BEGIN_NAMESPACE
-#else
-#error "QtContacts variant in use is not specified"
-#endif
 
 class QContactStatusFlags : public QContactDetail
 {
 public:
-#ifdef USING_QTPIM
     Q_DECLARE_CUSTOM_CONTACT_DETAIL(QContactStatusFlags)
 
     enum {
         FieldFlags = 0
     };
-#else
-    // Keep the existing string values to maintain DB compatibility
-    Q_DECLARE_CUSTOM_CONTACT_DETAIL(QContactStatusFlags, "StatusFlags")
-    Q_DECLARE_LATIN1_CONSTANT(FieldFlags, "Flags");
-#endif
 
     enum Flag {
         HasPhoneNumber = (1 << 0),
@@ -83,10 +69,6 @@ public:
 
 Q_DECLARE_OPERATORS_FOR_FLAGS(QContactStatusFlags::Flags)
 
-#ifdef USING_QTPIM
 QT_END_NAMESPACE_CONTACTS
-#else
-QTM_END_NAMESPACE
-#endif
 
 #endif

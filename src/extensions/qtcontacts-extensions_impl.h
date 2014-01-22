@@ -143,7 +143,6 @@ namespace QtContactsSqliteExtensions {
 
 ApiContactIdType apiContactId(quint32 iid)
 {
-#ifdef USING_QTPIM
     QContactId contactId;
     if (iid != 0) {
         static const QString idStr(QString::fromLatin1("qtcontacts:org.nemomobile.contacts.sqlite::sql-%1"));
@@ -153,14 +152,10 @@ ApiContactIdType apiContactId(quint32 iid)
         }
     }
     return contactId;
-#else
-    return static_cast<ApiContactIdType>(iid);
-#endif
 }
 
 quint32 internalContactId(const ApiContactIdType &id)
 {
-#ifdef USING_QTPIM
     if (!id.isNull()) {
         QStringList components = id.toString().split(QChar::fromLatin1(':'));
         const QString &idComponent = components.isEmpty() ? QString() : components.last();
@@ -169,17 +164,7 @@ quint32 internalContactId(const ApiContactIdType &id)
         }
     }
     return 0;
-#else
-    return static_cast<quint32>(id);
-#endif
 }
-
-#ifndef USING_QTPIM
-quint32 internalContactId(const QContactId &id)
-{
-    return static_cast<quint32>(id.localId());
-}
-#endif
 
 QString normalizePhoneNumber(const QString &input, NormalizePhoneNumberFlags flags)
 {

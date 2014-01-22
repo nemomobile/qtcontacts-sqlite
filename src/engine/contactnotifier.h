@@ -38,7 +38,7 @@
 #include <QObject>
 #include <QSet>
 
-USE_CONTACTS_NAMESPACE
+QTCONTACTS_USE_NAMESPACE
 
 namespace ContactNotifier
 {

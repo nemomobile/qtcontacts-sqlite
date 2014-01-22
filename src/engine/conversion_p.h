@@ -32,8 +32,6 @@
 #ifndef QTCONTACTSSQLITE_CONVERSION_P_H
 #define QTCONTACTSSQLITE_CONVERSION_P_H
 
-#ifdef USING_QTPIM
-
 #include <QMap>
 #include <QString>
 
@@ -91,7 +89,5 @@ QString gender(int value);
 }
 
 }
-
-#endif
 
 #endif
