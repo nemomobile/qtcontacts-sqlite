@@ -301,11 +301,18 @@ static const char *createRelationshipsTable =
         "\n type TEXT,"
         "\n PRIMARY KEY (firstId, secondId, type));";
 
+static const char *createDeletedContactsTable =
+        "\n CREATE TABLE DeletedContacts ("
+        "\n contactId INTEGER PRIMARY KEY,"
+        "\n syncTarget TEXT,"
+        "\n deleted DATETIME);";
+
 static const char *createRemoveTrigger =
         "\n CREATE TRIGGER RemoveContactDetails"
         "\n BEFORE DELETE"
         "\n ON Contacts"
         "\n BEGIN"
+        "\n  INSERT INTO DeletedContacts (contactId, syncTarget, deleted) VALUES (old.contactId, old.syncTarget, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'));"
         "\n  DELETE FROM Addresses WHERE contactId = old.contactId;"
         "\n  DELETE FROM Anniversaries WHERE contactId = old.contactId;"
         "\n  DELETE FROM Avatars WHERE contactId = old.contactId;"
@@ -468,6 +475,9 @@ static const char *createRelationshipsFirstIdIndex =
 static const char *createRelationshipsSecondIdIndex =
         "\n CREATE INDEX RelationshipsSecondIdIndex ON Relationships(secondId);";
 
+static const char *createDeletedContactsDeletedIndex =
+        "\n CREATE INDEX DeletedContactsDeletedIndex ON DeletedContacts(deleted);";
+
 static const char *createPhoneNumbersIndex =
         "\n CREATE INDEX PhoneNumbersIndex ON PhoneNumbers(normalizedNumber);";
 
@@ -532,6 +542,7 @@ static const char *createStatements[] =
     createExtendedDetailsContactIdIndex,
     createIdentitiesTable,
     createRelationshipsTable,
+    createDeletedContactsTable,
     createRemoveTrigger,
     createLocalSelfContact,
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
@@ -543,6 +554,7 @@ static const char *createStatements[] =
     createContactsLastNameIndex,
     createRelationshipsFirstIdIndex,
     createRelationshipsSecondIdIndex,
+    createDeletedContactsDeletedIndex,
     createPhoneNumbersIndex,
     createEmailAddressesIndex,
     createOnlineAccountsIndex,
@@ -568,12 +580,21 @@ static const char *upgradeVersion0[] = {
     "PRAGMA user_version=1",
     0 // NULL-terminated
 };
-
-static const char **upgradeVersions[] = {
-    upgradeVersion0
+static const char *upgradeVersion1[] = {
+    createDeletedContactsTable,
+    createDeletedContactsDeletedIndex,
+    "DROP TRIGGER RemoveContactDetails",
+    createRemoveTrigger,
+    "PRAGMA user_version=2",
+    0 // NULL-terminated
 };
 
-static const int currentSchemaVersion = 1;
+static const char **upgradeVersions[] = {
+    upgradeVersion0,
+    upgradeVersion1,
+};
+
+static const int currentSchemaVersion = 2;
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {
