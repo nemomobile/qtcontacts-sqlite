@@ -2938,7 +2938,7 @@ void tst_QContactManager::actionPreferences()
 
     // early out if the manager doesn't support action preference saving.
     if (!managerSupportsFeature(*cm, "ActionPreferences")) {
-        SKIP_TEST("Manager does not support action preferences", SkipSingle);
+        QSKIP("Manager does not support action preferences");
     }
 
     // create a sample contact
@@ -3100,7 +3100,7 @@ void tst_QContactManager::selfContactId()
         QVERIFY(cm->error() == QContactManager::DoesNotExistError);
         QVERIFY(!cm->setSelfContactId(ContactId::apiId(123)));
         QVERIFY(cm->error() == QContactManager::NotSupportedError);
-        SKIP_TEST("Manager does not support the concept of a self-contact", SkipSingle);
+        QSKIP("Manager does not support the concept of a self-contact");
     }
 
     // create a new "self" contact and retrieve its Id
@@ -3110,7 +3110,7 @@ void tst_QContactManager::selfContactId()
     selfPhn.setNumber("12345");
     self.saveDetail(&selfPhn);
     if (!cm->saveContact(&self)) {
-        SKIP_TEST("Unable to save the generated self contact", SkipSingle);
+        QSKIP("Unable to save the generated self contact");
     }
 
     QContactId newSelfContact = ContactId::apiId(self);
@@ -3160,7 +3160,7 @@ void tst_QContactManager::detailOrders()
     QScopedPointer<QContactManager> cm(QContactManager::fromUri(uri));
 
     if (!managerSupportsFeature(*cm, "DetailOrdering"))
-        SKIP_TEST("Skipping: This manager does not support detail ordering!", SkipSingle);
+        QSKIP("Skipping: This manager does not support detail ordering!");
 
     QContact a;
     QContactDetail::DetailContext contextOther(QContactDetail::ContextOther);
@@ -3708,7 +3708,7 @@ void tst_QContactManager::contactType()
     QScopedPointer<QContactManager> cm(QContactManager::fromUri(uri));
 
     if (!managerSupportsFeature(*cm, "Groups"))
-        SKIP_TEST("Skipping: This manager does not support group contacts!", SkipSingle);
+        QSKIP("Skipping: This manager does not support group contacts!");
 
     QContact g1, g2, c;
     g1.setType(QContactType::TypeGroup);

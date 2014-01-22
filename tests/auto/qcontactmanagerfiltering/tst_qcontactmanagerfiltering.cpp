@@ -565,7 +565,7 @@ void tst_QContactManagerFiltering::detailPhoneNumberFiltering()
     ids = cm->contactIds(df);
 
     QString output = convertIds(contacts, ids, 'a', 'k'); // don't include the convenience filtering contacts
-    //SKIP_TEST("TODO: fix default implementation of phone number matching!", SkipSingle);
+    //QSKIP("TODO: fix default implementation of phone number matching!");
     QCOMPARE_UNSORTED(output, expected);
 }
 
@@ -1722,7 +1722,7 @@ void tst_QContactManagerFiltering::relationshipFiltering()
 
     // 6. Verify the filtering result
     if (!relationshipsFeatureSupported) {
-        SKIP_TEST("Manager does not support relationships; skipping relationship filtering", SkipSingle);
+        QSKIP("Manager does not support relationships; skipping relationship filtering");
     } else if(relationshipType.isEmpty()
         || (cm->isRelationshipTypeSupported(relationshipType, contactA.type())
             && cm->isRelationshipTypeSupported(relationshipType, contactB.type()))) {
@@ -1730,7 +1730,7 @@ void tst_QContactManagerFiltering::relationshipFiltering()
         QCOMPARE_UNSORTED(output, expected);
     } else {
         QString msg = "Manager does not support relationship type " + relationshipType + " between " + contactA.type() + " and " + contactB.type() + " type contacts.";
-        SKIP_TEST(msg.toLatin1(), SkipSingle);
+        QSKIP(msg.toLatin1());
     }
 }
 
@@ -2457,7 +2457,7 @@ void tst_QContactManagerFiltering::fetchHint()
 
     // the next part of the test requires some contacts to be saved in the manager.
     if (allContacts.size() == 0) {
-        SKIP_TEST("No contacts in manager; skipping fetch hint limit test.", SkipSingle);
+        QSKIP("No contacts in manager; skipping fetch hint limit test.");
     }
 
     // test with a hint which sets a maximum count limit for retrieved contacts.
@@ -2585,7 +2585,7 @@ void tst_QContactManagerFiltering::changelogFiltering()
         QString output = convertIds(contacts, ids, 'a', 'k'); // don't include the convenience filtering contacts
         QCOMPARE(output, expected); // unsorted? or sorted?
     } else {
-        SKIP_TEST("Changelogs not supported by this manager.", SkipSingle);
+        QSKIP("Changelogs not supported by this manager.");
     }
 }
 #endif

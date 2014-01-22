@@ -135,8 +135,6 @@
         QCOMPARE(__spiedSigCount, __expectedCount); \
     } while(0)
 
-#define SKIP_TEST(x,y) QSKIP(x)
-
 QTCONTACTS_USE_NAMESPACE
 
 Q_DECLARE_METATYPE(QList<QContactId>)
