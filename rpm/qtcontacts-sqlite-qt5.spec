@@ -52,7 +52,7 @@ This package contains extension headers for the qtcontacts-sqlite-qt5 library.
 
 %build
 %qmake5
-make %{?jobs:-j%jobs}
+make %{?_smp_mflags}
 
 %install
 rm -rf %{buildroot}
