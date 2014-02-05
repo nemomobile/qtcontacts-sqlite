@@ -46,21 +46,17 @@
 #include <QContactName>
 #include <QContactSyncTarget>
 #include <QContactTimestamp>
-#ifdef USING_QTPIM
 #include <QContactExtendedDetail>
 #include <QContactFamily>
 #include <QContactGeoLocation>
 #include <QContactVersion>
-#endif
 
 #include <QSqlError>
 #include <QUuid>
 
 #include <QtDebug>
 
-#ifdef USING_QTPIM
 using namespace Conversion;
-#endif
 
 static const QString aggregateSyncTarget(QString::fromLatin1("aggregate"));
 static const QString localSyncTarget(QString::fromLatin1("local"));
@@ -740,7 +736,7 @@ void ContactWriter::rollbackTransaction()
 }
 
 QContactManager::Error ContactWriter::setIdentity(
-        ContactsDatabase::Identity identity, QContactIdType contactId)
+        ContactsDatabase::Identity identity, QContactId contactId)
 {
     QMutexLocker locker(ContactsDatabase::accessMutex());
 
@@ -868,21 +864,13 @@ QContactManager::Error ContactWriter::save(
 template<typename T>
 QString relationshipString(T type)
 {
-#ifdef USING_QTPIM
     return type();
-#else
-    return type;
-#endif
 }
 
 QContactManager::Error ContactWriter::saveRelationships(
         const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap)
 {
-#ifdef USING_QTPIM
     static const QString uri(QString::fromLatin1("qtcontacts:org.nemomobile.contacts.sqlite:"));
-#else
-    static const QString uri(QString::fromLatin1("org.nemomobile.contacts.sqlite"));
-#endif
 
     // in order to perform duplicate detection we build up the following datastructure.
     QMultiMap<quint32, QPair<QString, quint32> > bucketedRelationships; // first id to <type, second id>.
@@ -935,13 +923,8 @@ QContactManager::Error ContactWriter::saveRelationships(
     for (int i = 0; i < relationships.size(); ++i) {
         const QContactRelationship &relationship = relationships.at(i);
 
-#ifdef USING_QTPIM
         QContactId first(relationship.first().id());
         QContactId second(relationship.second().id());
-#else
-        QContactId first(relationship.first());
-        QContactId second(relationship.second());
-#endif
 
         const quint32 firstId = ContactId::databaseId(first);
         const quint32 secondId = ContactId::databaseId(second);
@@ -949,18 +932,10 @@ QContactManager::Error ContactWriter::saveRelationships(
 
         if ((firstId == secondId)
                 || (!first.managerUri().isEmpty() &&
-#ifdef USING_QTPIM
                     !first.managerUri().startsWith(uri)
-#else
-                    first.managerUri() != uri
-#endif
                    )
                 || (!second.managerUri().isEmpty() &&
-#ifdef USING_QTPIM
                     !second.managerUri().startsWith(uri)
-#else
-                    second.managerUri() != uri
-#endif
                    )
                 || (!validContactIds.contains(firstId) || !validContactIds.contains(secondId))) {
             // invalid contact specified in relationship, don't insert.
@@ -1144,12 +1119,12 @@ QContactManager::Error ContactWriter::removeRelationships(
 
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     // remove any aggregates that no longer aggregate any contacts.
-    QList<QContactIdType> removedIds;
+    QList<QContactId> removedIds;
     QContactManager::Error removeError = removeChildlessAggregates(&removedIds);
     if (removeError != QContactManager::NoError)
         return removeError;
 
-    foreach (const QContactIdType &id, removedIds) {
+    foreach (const QContactId &id, removedIds) {
         m_removedIds.insert(id);
         aggregatesAffected.remove(ContactId::databaseId(id));
     }
@@ -1167,7 +1142,7 @@ QContactManager::Error ContactWriter::removeRelationships(
     return QContactManager::NoError;
 }
 
-QContactManager::Error ContactWriter::remove(const QList<QContactIdType> &contactIds, QMap<int, QContactManager::Error> *errorMap, bool withinTransaction)
+QContactManager::Error ContactWriter::remove(const QList<QContactId> &contactIds, QMap<int, QContactManager::Error> *errorMap, bool withinTransaction)
 {
     QMutexLocker locker(ContactsDatabase::accessMutex());
 
@@ -1203,10 +1178,10 @@ QContactManager::Error ContactWriter::remove(const QList<QContactIdType> &contac
 
     // determine which contacts we actually need to remove
     QContactManager::Error error = QContactManager::NoError;
-    QList<QContactIdType> realRemoveIds;
+    QList<QContactId> realRemoveIds;
     QVariantList boundRealRemoveIds;
     for (int i = 0; i < contactIds.size(); ++i) {
-        QContactIdType currId = contactIds.at(i);
+        QContactId currId = contactIds.at(i);
         quint32 dbId = ContactId::databaseId(currId);
         if (selfContactId > 0 && dbId == selfContactId) {
             if (errorMap)
@@ -1242,7 +1217,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactIdType> &contac
             return QContactManager::UnspecifiedError;
         }
         m_removeContact.finish();
-        foreach (const QContactIdType &rrid, realRemoveIds) {
+        foreach (const QContactId &rrid, realRemoveIds) {
             m_removedIds.insert(rrid);
         }
         if (!withinTransaction && !commitTransaction()) {
@@ -1289,7 +1264,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactIdType> &contac
 
     QVariantList boundNonAggregatesToRemove;
     QVariantList boundAggregatesToRemove;
-    foreach (const QContactIdType &rrid, realRemoveIds) {
+    foreach (const QContactId &rrid, realRemoveIds) {
         quint32 dbId = ContactId::databaseId(rrid);
         if (!aggregatesToRemove.contains(dbId)) {
             // this is a non-aggregate contact which we need to remove
@@ -1374,13 +1349,13 @@ QContactManager::Error ContactWriter::remove(const QList<QContactIdType> &contac
         return removeError;
     }
 
-    foreach (const QContactIdType &id, realRemoveIds)
+    foreach (const QContactId &id, realRemoveIds)
         m_removedIds.insert(id);
 
     // And notify of any removals.
     if (realRemoveIds.size() > 0) {
         // update our "regenerate list" by purging removed contacts
-        foreach (const QContactIdType &removedId, realRemoveIds) {
+        foreach (const QContactId &removedId, realRemoveIds) {
             aggregatesOfRemoved.removeAll(ContactId::databaseId(removedId));
         }
     }
@@ -1401,33 +1376,16 @@ QContactManager::Error ContactWriter::remove(const QList<QContactIdType> &contac
 }
 
 template<typename T>
-#ifdef USING_QTPIM
 QContactDetail::DetailType detailType()
-#else
-const char *detailType()
-#endif
 {
-#ifdef USING_QTPIM
     return T::Type;
-#else
-    return T::DefinitionName.latin1();
-#endif
 }
 
-#ifdef USING_QTPIM
 QContactDetail::DetailType detailType(const QContactDetail &detail)
-#else
-QString detailType(const QContactDetail &detail)
-#endif
 {
-#ifdef USING_QTPIM
     return detail.type();
-#else
-    return detail.definitionName();
-#endif
 }
 
-#ifdef USING_QTPIM
 template<typename T>
 void insert(QMap<QContactDetail::DetailType, const char *> &map, const char *name)
 {
@@ -1448,9 +1406,7 @@ QMap<QContactDetail::DetailType, const char *> getDetailTypeNames()
     INSERT(rv, QContactBirthday);
     INSERT(rv, QContactDisplayLabel);
     INSERT(rv, QContactEmailAddress);
-#ifdef USING_QTPIM
     INSERT(rv, QContactExtendedDetail);
-#endif
     INSERT(rv, QContactFamily);
     INSERT(rv, QContactFavorite);
     INSERT(rv, QContactGender);
@@ -1495,30 +1451,15 @@ const char *detailTypeName(QContactDetail::DetailType type)
     return 0;
 }
 
-#else
-const QString &detailTypeName(const QString &type)
-{
-    return type;
-}
-#endif
-
 template<typename T>
 const char *detailTypeName()
 {
-#ifdef USING_QTPIM
     return detailTypeName(T::Type);
-#else
-    return T::DefinitionName.latin1();
-#endif
 }
 
 QString detailTypeName(const QContactDetail &detail)
 {
-#ifdef USING_QTPIM
     return QString::fromLatin1(detailTypeName(detail.type()));
-#else
-    return detail.definitionName();
-#endif
 }
 
 static ContactWriter::DetailList getIdentityDetailTypes()
@@ -1583,26 +1524,14 @@ template <typename T> bool ContactWriter::removeCommonDetails(
 template<typename T, typename F>
 QVariant detailValue(const T &detail, F field)
 {
-#ifdef USING_QTPIM
     return detail.value(field);
-#else
-    return detail.variantValue(field);
-#endif
 }
 
-#ifdef USING_QTPIM
 typedef QMap<int, QVariant> DetailMap;
-#else
-typedef QVariantMap DetailMap;
-#endif
 
 DetailMap detailValues(const QContactDetail &detail, bool includeProvenance = true)
 {
-#ifdef USING_QTPIM
     DetailMap rv(detail.values());
-#else
-    DetailMap rv(detail.variantValues());
-#endif
 
     if (!includeProvenance) {
         DetailMap::iterator it = rv.begin();
@@ -1620,7 +1549,6 @@ DetailMap detailValues(const QContactDetail &detail, bool includeProvenance = tr
 
 static bool variantEqual(const QVariant &lhs, const QVariant &rhs)
 {
-#ifdef USING_QTPIM
     // Work around incorrect result from QVariant::operator== when variants contain QList<int>
     static const int QListIntType = QMetaType::type("QList<int>");
 
@@ -1632,7 +1560,6 @@ static bool variantEqual(const QVariant &lhs, const QVariant &rhs)
     if (lhsType == QListIntType) {
         return (lhs.value<QList<int> >() == rhs.value<QList<int> >());
     }
-#endif
     return (lhs == rhs);
 }
 
@@ -1698,7 +1625,6 @@ QVariant detailLinkedUris(const QContactDetail &detail)
     return QVariant(detail.linkedDetailUris().join(separator));
 }
 
-#ifdef USING_QTPIM
 QMap<int, QString> contextTypes()
 {
     QMap<int, QString> rv;
@@ -1722,22 +1648,15 @@ QString contextString(int type)
     }
     return QString();
 }
-#endif
 
 QVariant detailContexts(const QContactDetail &detail)
 {
     static const QString separator = QString::fromLatin1(";");
 
     QStringList contexts;
-#ifdef USING_QTPIM
     foreach (int context, detail.contexts()) {
         contexts.append(contextString(context));
     }
-#else
-    foreach (const QString &context, detail.contexts()) {
-        contexts.append(context);
-    }
-#endif
     return QVariant(contexts.join(separator));
 }
 
@@ -1940,7 +1859,7 @@ QContactManager::Error ContactWriter::save(
     QContactManager::Error err = QContactManager::NoError;
     for (int i = 0; i < contacts->count(); ++i) {
         QContact &contact = (*contacts)[i];
-        const QContactIdType contactId = ContactId::apiId(contact);
+        const QContactId contactId = ContactId::apiId(contact);
         bool aggregateUpdated = false;
         if (ContactId::databaseId(contactId) == 0) {
             err = create(&contact, definitionMask, true, withinAggregateUpdate);
@@ -1981,7 +1900,7 @@ QContactManager::Error ContactWriter::save(
             // Any contacts we 'added' are not actually added - clear their IDs
             for (int i = 0; i < contacts->count(); ++i) {
                 QContact &contact = (*contacts)[i];
-                const QContactIdType contactId = ContactId::apiId(contact);
+                const QContactId contactId = ContactId::apiId(contact);
                 if (m_addedIds.contains(contactId)) {
                     contact.setId(QContactId());
                     if (errorMap) {
@@ -2005,11 +1924,7 @@ QContactManager::Error ContactWriter::save(
 
 template <typename T> void appendDetailType(ContactWriter::DetailList *list)
 {
-#ifdef USING_QTPIM
     list->append(T::Type);
-#else
-    list->append(T::DefinitionName);
-#endif
 }
 
 static ContactWriter::DetailList allSupportedDetails()
@@ -2042,9 +1957,7 @@ static ContactWriter::DetailList allSupportedDetails()
     appendDetailType<QContactOrganization>(&details);
     appendDetailType<QContactRingtone>(&details);
     appendDetailType<QContactStatusFlags>(&details);
-#ifdef USING_QTPIM
     appendDetailType<QContactExtendedDetail>(&details);
-#endif
 
     return details;
 }
@@ -2156,11 +2069,7 @@ static void promoteDetailsToLocal(const QList<QContactDetail> addDelta, const QL
             lcn.setMiddleName(original.value<QString>(QContactName::FieldMiddleName));
             lcn.setLastName(original.value<QString>(QContactName::FieldLastName));
             lcn.setSuffix(original.value<QString>(QContactName::FieldSuffix));
-#ifdef USING_QTPIM
             lcn.setValue(QContactName__FieldCustomLabel, original.value(QContactName__FieldCustomLabel));
-#else
-            lcn.setCustomLabel(original.value<QString>(QContactName::FieldCustomLabel));
-#endif
             localContact->saveDetail(&lcn);
         } else if (detailType(original) == detailType<QContactTimestamp>()) {
             QContactTimestamp lts = localContact->detail<QContactTimestamp>();
@@ -2169,7 +2078,6 @@ static void promoteDetailsToLocal(const QList<QContactDetail> addDelta, const QL
             localContact->saveDetail(&lts);
         } else if (detailType(original) == detailType<QContactGender>()) {
             QContactGender lg = localContact->detail<QContactGender>();
-#ifdef USING_QTPIM
             // Gender is a string in QtMobility
             QString gender(original.value<QString>(QContactGender::FieldGender));
             if (gender.startsWith(QChar::fromLatin1('f'), Qt::CaseInsensitive)) {
@@ -2179,9 +2087,6 @@ static void promoteDetailsToLocal(const QList<QContactDetail> addDelta, const QL
             } else {
                 lg.setGender(QContactGender::GenderUnspecified);
             }
-#else
-            lg.setGender(original.value<QString>(QContactGender::FieldGender));
-#endif
             localContact->saveDetail(&lg);
         } else if (detailType(original) == detailType<QContactFavorite>()) {
             QContactFavorite lf = localContact->detail<QContactFavorite>();
@@ -2226,16 +2131,11 @@ static QContactRelationship makeRelationship(const QString &type, const QContact
     QContactRelationship relationship;
     relationship.setRelationshipType(type);
 
-#ifdef USING_QTPIM
     QContact first, second;
     first.setId(firstId);
     second.setId(secondId);
     relationship.setFirst(first);
     relationship.setSecond(second);
-#else
-    relationship.setFirst(firstId);
-    relationship.setSecond(secondId);
-#endif
 
     return relationship;
 }
@@ -2282,7 +2182,7 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
 
         if (m_findLocalForAggregate.next()) {
             // found the existing local contact aggregated by this aggregate.
-            QList<QContactIdType> whichList;
+            QList<QContactId> whichList;
             whichList.append(ContactId::apiId(m_findLocalForAggregate.value(0).toUInt()));
 
             m_findLocalForAggregate.finish();
@@ -2373,7 +2273,7 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
         if (writeError != QContactManager::NoError) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to update modified aggregate"));
             if (createdNewLocal) {
-                QList<QContactIdType> removeList;
+                QList<QContactId> removeList;
                 removeList.append(ContactId::apiId(localContact));
                 QContactManager::Error removeError = remove(removeList, &errorMap, withinTransaction);
                 if (removeError != QContactManager::NoError) {
@@ -2451,14 +2351,9 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
                 aname.setLastName(cname.lastName());
             if (!cname.suffix().isEmpty() && aname.suffix().isEmpty())
                 aname.setSuffix(cname.suffix());
-#ifdef USING_QTPIM
             QString customLabel = cname.value<QString>(QContactName__FieldCustomLabel);
             if (!customLabel.isEmpty() && aname.value<QString>(QContactName__FieldCustomLabel).isEmpty())
                 aname.setValue(QContactName__FieldCustomLabel, cname.value(QContactName__FieldCustomLabel));
-#else
-            if (!cname.customLabel().isEmpty() && aname.customLabel().isEmpty())
-                aname.setCustomLabel(cname.customLabel());
-#endif
             aggregate->saveDetail(&aname);
         } else if (detailType(original) == detailType<QContactTimestamp>()) {
             // timestamp involves composition
@@ -2475,13 +2370,9 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
             // gender involves composition
             QContactGender cg(original);
             QContactGender ag(aggregate->detail<QContactGender>());
-#ifdef USING_QTPIM
             // In Qtpim, uninitialized gender() does not default to GenderUnspecified...
             if (cg.gender() != QContactGender::GenderUnspecified &&
                 (ag.gender() != QContactGender::GenderMale && ag.gender() != QContactGender::GenderFemale)) {
-#else
-            if (!cg.gender().isEmpty() && ag.gender().isEmpty()) {
-#endif
                 ag.setGender(cg.gender());
                 aggregate->saveDetail(&ag);
             }
@@ -2598,14 +2489,10 @@ QContactManager::Error ContactWriter::calculateDelta(QContact *contact, const Co
     static const ContactWriter::DetailList unpromotedDetailTypes(getUnpromotedDetailTypes());
 
     QContactFetchHint hint;
-#ifdef USING_QTPIM
     hint.setDetailTypesHint(definitionMask);
-#else
-    hint.setDetailDefinitionsHint(definitionMask);
-#endif
     hint.setOptimizationHints(QContactFetchHint::NoRelationships);
 
-    QList<QContactIdType> whichList;
+    QList<QContactId> whichList;
     whichList.append(ContactId::apiId(*contact));
 
     // Load the existing state of the aggregate from DB
@@ -2747,7 +2634,7 @@ QContactManager::Error ContactWriter::calculateDelta(QContact *contact, const Co
     if (!contactModifications.isEmpty() || !contactRemovals.isEmpty()) {
         whichList.clear();
         foreach (quint32 contactId, contactModifications.keys() + contactRemovals.keys()) {
-            QContactIdType retrievalId(ContactId::apiId(contactId));
+            QContactId retrievalId(ContactId::apiId(contactId));
             if (!whichList.contains(retrievalId)) {
                 whichList.append(retrievalId);
             }
@@ -2858,12 +2745,8 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
     }
 
     const QContactGender gender(contact->detail<QContactGender>());
-#ifdef USING_QTPIM
     const QString gv(gender.gender() == QContactGender::GenderFemale ? QString::fromLatin1("Female") :
                      gender.gender() == QContactGender::GenderMale ? QString::fromLatin1("Male") : QString());
-#else
-    const QString gv(gender.value<QString>(QContactGender::FieldGender).trimmed());
-#endif
     if (gv == QString::fromLatin1("Male")) {
         excludeGender = QString::fromLatin1("Female");
     } else if (gv == QString::fromLatin1("Female")) {
@@ -2912,13 +2795,13 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
         return QContactManager::UnspecifiedError;
     }
     if (findMatchForContact.next()) {
-        QContactIdType aggregateId = ContactId::apiId(findMatchForContact.value(0).toUInt());
+        QContactId aggregateId = ContactId::apiId(findMatchForContact.value(0).toUInt());
         quint32 score = findMatchForContact.value(1).toUInt();
         findMatchForContact.finish();
 
         static const quint32 MinimumMatchScore = 15;
         if (score >= MinimumMatchScore) {
-            QList<QContactIdType> readIds;
+            QList<QContactId> readIds;
             readIds.append(aggregateId);
 
             QContactFetchHint hint;
@@ -2983,7 +2866,7 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
 
         if (!found) {
             // clean up the newly created contact.
-            QList<QContactIdType> removeList;
+            QList<QContactId> removeList;
             removeList.append(ContactId::apiId(matchingAggregate));
             QContactManager::Error cleanupErr = remove(removeList, &errorMap, withinTransaction);
             if (cleanupErr != QContactManager::NoError) {
@@ -3017,14 +2900,14 @@ void ContactWriter::regenerateAggregates(const QList<quint32> &aggregateIds, con
     // In all cases, we "prefer" the 'local' contact's data (if it exists)
 
     QList<QContact> aggregatesToSave;
-    QSet<QContactIdType> aggregatesToSaveIds;
+    QSet<QContactId> aggregatesToSaveIds;
     foreach (quint32 aggId, aggregateIds) {
-        QContactIdType apiId(ContactId::apiId(aggId));
+        QContactId apiId(ContactId::apiId(aggId));
         if (aggregatesToSaveIds.contains(apiId)) {
             continue;
         }
 
-        QList<QContactIdType> readIds;
+        QList<QContactId> readIds;
         readIds.append(apiId);
 
         m_findConstituentsForAggregate.bindValue(":aggregateId", aggId);
@@ -3115,7 +2998,7 @@ void ContactWriter::regenerateAggregates(const QList<quint32> &aggregateIds, con
     }
 }
 
-QContactManager::Error ContactWriter::removeChildlessAggregates(QList<QContactIdType> *removedIds)
+QContactManager::Error ContactWriter::removeChildlessAggregates(QList<QContactId> *removedIds)
 {
     QVariantList aggregateIds;
     if (!m_childlessAggregateIds.exec()) {
@@ -3145,7 +3028,7 @@ QContactManager::Error ContactWriter::removeChildlessAggregates(QList<QContactId
 
 QContactManager::Error ContactWriter::aggregateOrphanedContacts(bool withinTransaction)
 {
-    QList<QContactIdType> contactIds;
+    QList<QContactId> contactIds;
     if (!m_orphanContactIds.exec()) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to fetch orphan aggregate contact ids during remove:\n%1")
                 .arg(m_orphanContactIds.lastError().text()));
@@ -3467,9 +3350,7 @@ QContactManager::Error ContactWriter::write(quint32 contactId, QContact *contact
             && writeDetails<QContactTag>(contactId, contact, m_removeTag, definitionMask, syncTarget, syncable, wasLocal, &error)
             && writeDetails<QContactUrl>(contactId, contact, m_removeUrl, definitionMask, syncTarget, syncable, wasLocal, &error)
             && writeDetails<QContactOriginMetadata>(contactId, contact, m_removeOriginMetadata, definitionMask, syncTarget, syncable, wasLocal, &error)
-#ifdef USING_QTPIM
             && writeDetails<QContactExtendedDetail>(contactId, contact, m_removeExtendedDetail, definitionMask, syncTarget, syncable, wasLocal, &error)
-#endif
             ) {
         return QContactManager::NoError;
     }
@@ -3478,14 +3359,10 @@ QContactManager::Error ContactWriter::write(quint32 contactId, QContact *contact
 
 void ContactWriter::bindContactDetails(const QContact &contact, QSqlQuery &query, const DetailList &definitionMask, bool update)
 {
-#ifdef USING_QTPIM
     QContactDisplayLabel label = contact.detail<QContactDisplayLabel>();
     if (!label.isEmpty()) {
         query.bindValue(0, label.label().trimmed());
     }
-#else
-    query.bindValue(0, contact.displayLabel().trimmed());
-#endif
 
     const QContactName name = contact.detail<QContactName>();
     const QString firstName(name.value<QString>(QContactName::FieldFirstName).trimmed());
@@ -3498,11 +3375,7 @@ void ContactWriter::bindContactDetails(const QContact &contact, QSqlQuery &query
     query.bindValue(5, name.value<QString>(QContactName::FieldMiddleName).trimmed());
     query.bindValue(6, name.value<QString>(QContactName::FieldPrefix).trimmed());
     query.bindValue(7, name.value<QString>(QContactName::FieldSuffix).trimmed());
-#ifdef USING_QTPIM
     query.bindValue(8, name.value<QString>(QContactName__FieldCustomLabel).trimmed());
-#else
-    query.bindValue(8, name.value<QString>(QContactName::FieldCustomLabel).trimmed());
-#endif
 
     query.bindValue(9, contact.detail<QContactSyncTarget>().syncTarget());
 
@@ -3511,12 +3384,8 @@ void ContactWriter::bindContactDetails(const QContact &contact, QSqlQuery &query
     query.bindValue(11, timestamp.value<QDateTime>(QContactTimestamp::FieldModificationTimestamp).toUTC());
 
     const QContactGender gender = contact.detail<QContactGender>();
-#ifdef USING_QTPIM
     const QString gv(gender.gender() == QContactGender::GenderFemale ? QString::fromLatin1("Female") :
                      gender.gender() == QContactGender::GenderMale ? QString::fromLatin1("Male") : QString());
-#else
-    const QString gv(gender.value<QString>(QContactGender::FieldGender).trimmed());
-#endif
     query.bindValue(12, gv);
 
     const QContactFavorite favorite = contact.detail<QContactFavorite>();
@@ -3578,11 +3447,7 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactAddress &d
     m_insertAddress.bindValue(4, detail.value<QString>(T::FieldLocality).trimmed());
     m_insertAddress.bindValue(5, detail.value<QString>(T::FieldPostcode).trimmed());
     m_insertAddress.bindValue(6, detail.value<QString>(T::FieldCountry).trimmed());
-#ifdef USING_QTPIM
     m_insertAddress.bindValue(7, Address::subTypeList(detail.subTypes()).join(QLatin1String(";")));
-#else
-    m_insertAddress.bindValue(7, detailValue(detail, T::FieldSubTypes));
-#endif
     return m_insertAddress;
 }
 
@@ -3592,11 +3457,7 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactAnniversar
     m_insertAnniversary.bindValue(0, contactId);
     m_insertAnniversary.bindValue(1, detailValue(detail, T::FieldOriginalDate));
     m_insertAnniversary.bindValue(2, detailValue(detail, T::FieldCalendarId));
-#ifdef USING_QTPIM
     m_insertAnniversary.bindValue(3, Anniversary::subType(detail.subType()));
-#else
-    m_insertAnniversary.bindValue(3, detailValue(detail, T::FieldSubType));
-#endif
     return m_insertAnniversary;
 }
 
@@ -3682,18 +3543,10 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactOnlineAcco
     m_insertOnlineAccount.bindValue(0, contactId);
     m_insertOnlineAccount.bindValue(1, uri);
     m_insertOnlineAccount.bindValue(2, uri.toLower());
-#ifdef USING_QTPIM
     m_insertOnlineAccount.bindValue(3, OnlineAccount::protocol(detail.protocol()));
-#else
-    m_insertOnlineAccount.bindValue(3, detailValue(detail, T::FieldProtocol));
-#endif
     m_insertOnlineAccount.bindValue(4, detailValue(detail, T::FieldServiceProvider));
     m_insertOnlineAccount.bindValue(5, detailValue(detail, T::FieldCapabilities).value<QStringList>().join(QLatin1String(";")));
-#ifdef USING_QTPIM
     m_insertOnlineAccount.bindValue(6, OnlineAccount::subTypeList(detail.subTypes()).join(QLatin1String(";")));
-#else
-    m_insertOnlineAccount.bindValue(6, detailValue(detail, T::FieldSubTypes));
-#endif
     m_insertOnlineAccount.bindValue(7, detailValue(detail, QContactOnlineAccount__FieldAccountPath));
     m_insertOnlineAccount.bindValue(8, detailValue(detail, QContactOnlineAccount__FieldAccountIconPath));
     m_insertOnlineAccount.bindValue(9, detailValue(detail, QContactOnlineAccount__FieldEnabled));
@@ -3720,11 +3573,7 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactPhoneNumbe
     typedef QContactPhoneNumber T;
     m_insertPhoneNumber.bindValue(0, contactId);
     m_insertPhoneNumber.bindValue(1, detail.value<QString>(T::FieldNumber).trimmed());
-#ifdef USING_QTPIM
     m_insertPhoneNumber.bindValue(2, PhoneNumber::subTypeList(detail.subTypes()).join(QLatin1String(";")));
-#else
-    m_insertPhoneNumber.bindValue(2, detailValue(detail, T::FieldSubTypes));
-#endif
     m_insertPhoneNumber.bindValue(3, QVariant(ContactsEngine::normalizedPhoneNumber(detail.number())));
     return m_insertPhoneNumber;
 }
@@ -3762,11 +3611,7 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactUrl &detai
     typedef QContactUrl T;
     m_insertUrl.bindValue(0, contactId);
     m_insertUrl.bindValue(1, detail.value<QString>(T::FieldUrl).trimmed());
-#ifdef USING_QTPIM
     m_insertUrl.bindValue(2, Url::subType(detail.subType()));
-#else
-    m_insertUrl.bindValue(2, detailValue(detail, T::FieldSubType));
-#endif
     return m_insertUrl;
 }
 
@@ -3779,7 +3624,6 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactOriginMeta
     return m_insertOriginMetadata;
 }
 
-#ifdef USING_QTPIM
 QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactExtendedDetail &detail)
 {
     m_insertExtendedDetail.bindValue(0, contactId);
@@ -3787,5 +3631,4 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactExtendedDe
     m_insertExtendedDetail.bindValue(2, detailValue(detail, QContactExtendedDetail::FieldData));
     return m_insertExtendedDetail;
 }
-#endif
 

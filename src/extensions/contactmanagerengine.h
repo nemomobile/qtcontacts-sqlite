@@ -32,24 +32,14 @@
 #ifndef CONTACTMANAGERENGINE_H
 #define CONTACTMANAGERENGINE_H
 
-#include "qtcontacts-extensions-config.h"
-
 #include <QContactManagerEngine>
 
-#ifdef USING_QTPIM
 QTCONTACTS_USE_NAMESPACE
-#else
-QTM_USE_NAMESPACE
-#endif
 
 namespace QtContactsSqliteExtensions {
 
 class Q_DECL_EXPORT ContactManagerEngine
-#ifdef USING_QTPIM
     : public QContactManagerEngine
-#else
-    : public QContactManagerEngineV2
-#endif
 {
     Q_OBJECT
 
@@ -59,11 +49,7 @@ public:
     void setMergePresenceChanges(bool b) { m_mergePresenceChanges = b; }
 
 Q_SIGNALS:
-#ifdef USING_QTPIM
     void contactsPresenceChanged(const QList<QContactId> &contactsIds);
-#else
-    void contactsPresenceChanged(const QList<QContactLocalId> &contactsIds);
-#endif
 
 protected:
     bool m_mergePresenceChanges;

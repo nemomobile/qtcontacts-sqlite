@@ -82,7 +82,7 @@ public:
     virtual void setError(QContactManager::Error) {}
 
     virtual void contactsAvailable(const QList<QContact> &) {}
-    virtual void contactIdsAvailable(const QList<QContactIdType> &) {}
+    virtual void contactIdsAvailable(const QList<QContactId> &) {}
 
     virtual QString description() const = 0;
     virtual QContactManager::Error error() const = 0;
@@ -129,11 +129,7 @@ public:
     ContactSaveJob(QContactSaveRequest *request)
         : TemplateJob(request)
         , m_contacts(request->contacts())
-#ifdef USING_QTPIM
         , m_definitionMask(request->typeMask())
-#else
-        , m_definitionMask(request->definitionMask())
-#endif
     {
     }
 
@@ -194,14 +190,14 @@ public:
     QString description() const
     {
         QString s(QLatin1String("Remove"));
-        foreach (const QContactIdType &id, m_contactIds) {
+        foreach (const QContactId &id, m_contactIds) {
             s.append(' ').append(ContactId::toString(id));
         }
         return s;
     }
 
 private:
-    QList<QContactIdType> m_contactIds;
+    QList<QContactId> m_contactIds;
     QMap<int, QContactManager::Error> m_errorMap;
 };
 
@@ -263,18 +259,10 @@ private:
     QList<QContact> m_contacts;
 };
 
-#ifdef USING_QTPIM
 class IdFetchJob : public TemplateJob<QContactIdFetchRequest>
-#else
-class IdFetchJob : public TemplateJob<QContactLocalIdFetchRequest>
-#endif
 {
 public:
-#ifdef USING_QTPIM
     IdFetchJob(QContactIdFetchRequest *request)
-#else
-    IdFetchJob(QContactLocalIdFetchRequest *request)
-#endif
         : TemplateJob(request)
         , m_filter(request->filter())
         , m_sorting(request->sorting())
@@ -283,22 +271,18 @@ public:
 
     void execute(const ContactsEngine &, QSqlDatabase &, ContactReader *reader, ContactWriter *&)
     {
-        QList<QContactIdType> contactIds;
+        QList<QContactId> contactIds;
         m_error = reader->readContactIds(&contactIds, m_filter, m_sorting);
     }
 
     void update(QMutex *mutex)
     {
-        QList<QContactIdType> contactIds;
+        QList<QContactId> contactIds;
         {
             QMutexLocker locker(mutex);
             contactIds = m_contactIds;
         }
-#ifdef USING_QTPIM
         QContactManagerEngine::updateContactIdFetchRequest(
-#else
-        QContactManagerEngine::updateContactLocalIdFetchRequest(
-#endif
                 m_request,
                 contactIds,
                 QContactManager::NoError,
@@ -307,15 +291,11 @@ public:
 
     void updateState(QContactAbstractRequest::State state)
     {
-#ifdef USING_QTPIM
         QContactManagerEngine::updateContactIdFetchRequest(
-#else
-        QContactManagerEngine::updateContactLocalIdFetchRequest(
-#endif
                 m_request, m_contactIds, m_error, state);
     }
 
-    void contactIdsAvailable(const QList<QContactIdType> &contactIds)
+    void contactIdsAvailable(const QList<QContactId> &contactIds)
     {
         m_contactIds = contactIds;
     }
@@ -329,7 +309,7 @@ public:
 private:
     QContactFilter m_filter;
     QList<QContactSortOrder> m_sorting;
-    QList<QContactIdType> m_contactIds;
+    QList<QContactId> m_contactIds;
 };
 
 class ContactFetchByIdJob : public TemplateJob<QContactFetchByIdRequest>
@@ -337,11 +317,7 @@ class ContactFetchByIdJob : public TemplateJob<QContactFetchByIdRequest>
 public:
     ContactFetchByIdJob(QContactFetchByIdRequest *request)
         : TemplateJob(request)
-#ifdef USING_QTPIM
         , m_contactIds(request->contactIds())
-#else
-        , m_contactIds(request->localIds())
-#endif
         , m_fetchHint(request->fetchHint())
     {
     }
@@ -363,11 +339,7 @@ public:
             QMutexLocker locker(mutex);
             contacts = m_contacts;
         }
-#ifdef USING_QTPIM
         QContactManagerEngine::updateContactFetchByIdRequest(
-#else
-        QContactManagerEngineV2::updateContactFetchByIdRequest(
-#endif
                 m_request,
                 contacts,
                 QContactManager::NoError,
@@ -377,11 +349,7 @@ public:
 
     void updateState(QContactAbstractRequest::State state)
     {
-#ifdef USING_QTPIM
         QContactManagerEngine::updateContactFetchByIdRequest(
-#else
-        QContactManagerEngineV2::updateContactFetchByIdRequest(
-#endif
                 m_request,
                 m_contacts,
                 m_error,
@@ -397,14 +365,14 @@ public:
     QString description() const
     {
         QString s(QLatin1String("FetchByID"));
-        foreach (const QContactIdType &id, m_contactIds) {
+        foreach (const QContactId &id, m_contactIds) {
             s.append(' ').append(ContactId::toString(id));
         }
         return s;
     }
 
 private:
-    QList<QContactIdType> m_contactIds;
+    QList<QContactId> m_contactIds;
     QContactFetchHint m_fetchHint;
     QList<QContact> m_contacts;
 };
@@ -482,13 +450,8 @@ public:
     RelationshipFetchJob(QContactRelationshipFetchRequest *request)
         : TemplateJob(request)
         , m_type(request->relationshipType())
-#ifdef USING_QTPIM
         , m_first(request->first().id())
         , m_second(request->second().id())
-#else
-        , m_first(request->first())
-        , m_second(request->second())
-#endif
     {
     }
 
@@ -676,7 +639,7 @@ public:
         postUpdate();
     }
 
-    void contactIdsAvailable(const QList<QContactIdType> &contactIds)
+    void contactIdsAvailable(const QList<QContactId> &contactIds)
     {
         QMutexLocker locker(&m_mutex);
         m_currentJob->contactIdsAvailable(contactIds);
@@ -748,7 +711,7 @@ public:
         m_thread->contactsAvailable(contacts);
     }
 
-    void contactIdsAvailable(const QList<QContactIdType> &contactIds)
+    void contactIdsAvailable(const QList<QContactId> &contactIds)
     {
         m_thread->contactIdsAvailable(contactIds);
     }
@@ -811,10 +774,8 @@ ContactsEngine::ContactsEngine(const QString &name, const QMap<QString, QString>
     , m_synchronousWriter(0)
     , m_jobThread(0)
 {
-#ifdef USING_QTPIM
     static bool registered = qRegisterMetaType<QList<int> >("QList<int>");
     Q_UNUSED(registered)
-#endif
 
     QString mergePresenceChanges = m_parameters.value(QString::fromLatin1("mergePresenceChanges"));
     if (mergePresenceChanges.isEmpty()) {
@@ -876,7 +837,7 @@ int ContactsEngine::managerVersion() const
     return 1;
 }
 
-QList<QContactIdType> ContactsEngine::contactIds(
+QList<QContactId> ContactsEngine::contactIds(
             const QContactFilter &filter,
             const QList<QContactSortOrder> &sortOrders,
             QContactManager::Error* error) const
@@ -884,7 +845,7 @@ QList<QContactIdType> ContactsEngine::contactIds(
     if (!m_synchronousReader)
         m_synchronousReader = new ContactReader(m_database);
 
-    QList<QContactIdType> contactIds;
+    QList<QContactId> contactIds;
 
     QContactManager::Error err = m_synchronousReader->readContactIds(&contactIds, filter, sortOrders);
     if (error)
@@ -927,7 +888,7 @@ QList<QContact> ContactsEngine::contacts(
 }
 
 QList<QContact> ContactsEngine::contacts(
-            const QList<QContactIdType> &localIds,
+            const QList<QContactId> &localIds,
             const QContactFetchHint &fetchHint,
             QMap<int, QContactManager::Error> *errorMap,
             QContactManager::Error *error) const
@@ -949,14 +910,14 @@ QList<QContact> ContactsEngine::contacts(
 }
 
 QContact ContactsEngine::contact(
-        const QContactIdType &contactId,
+        const QContactId &contactId,
         const QContactFetchHint &fetchHint,
         QContactManager::Error* error) const
 {
     QMap<int, QContactManager::Error> errorMap;
 
     QList<QContact> contacts = ContactsEngine::contacts(
-                QList<QContactIdType>() << contactId, fetchHint, &errorMap, error);
+                QList<QContactId>() << contactId, fetchHint, &errorMap, error);
     return !contacts.isEmpty()
             ? contacts.first()
             : QContact();
@@ -990,15 +951,15 @@ bool ContactsEngine::saveContacts(
     return err == QContactManager::NoError;
 }
 
-bool ContactsEngine::removeContact(const QContactIdType &contactId, QContactManager::Error* error)
+bool ContactsEngine::removeContact(const QContactId &contactId, QContactManager::Error* error)
 {
     QMap<int, QContactManager::Error> errorMap;
 
-    return removeContacts(QList<QContactIdType>() << contactId, &errorMap, error);
+    return removeContacts(QList<QContactId>() << contactId, &errorMap, error);
 }
 
 bool ContactsEngine::removeContacts(
-            const QList<QContactIdType> &contactIds,
+            const QList<QContactId> &contactIds,
             QMap<int, QContactManager::Error> *errorMap,
             QContactManager::Error* error)
 {
@@ -1015,12 +976,12 @@ bool ContactsEngine::removeContacts(
     return err == QContactManager::NoError;
 }
 
-QContactIdType ContactsEngine::selfContactId(QContactManager::Error* error) const
+QContactId ContactsEngine::selfContactId(QContactManager::Error* error) const
 {
     if (!m_synchronousReader)
         m_synchronousReader = new ContactReader(m_database);
 
-    QContactIdType contactId;
+    QContactId contactId;
     QContactManager::Error err = m_synchronousReader->getIdentity(
             ContactsDatabase::SelfContactId, &contactId);
     if (error)
@@ -1029,7 +990,7 @@ QContactIdType ContactsEngine::selfContactId(QContactManager::Error* error) cons
 }
 
 bool ContactsEngine::setSelfContactId(
-        const QContactIdType&, QContactManager::Error* error)
+        const QContactId&, QContactManager::Error* error)
 {
     *error = QContactManager::NotSupportedError;
     return false;
@@ -1037,22 +998,14 @@ bool ContactsEngine::setSelfContactId(
 
 QList<QContactRelationship> ContactsEngine::relationships(
         const QString &relationshipType,
-#ifdef USING_QTPIM
         const QContact &participant,
-#else
-        const QContactId &participantId,
-#endif
         QContactRelationship::Role role,
         QContactManager::Error *error) const
 {
     if (!m_synchronousReader)
         m_synchronousReader = new ContactReader(m_database);
 
-#ifdef USING_QTPIM
     QContactId first = ContactId::apiId(participant);
-#else
-    QContactId first = participantId;
-#endif
     QContactId second;
 
     if (role == QContactRelationship::Second)
@@ -1083,24 +1036,6 @@ bool ContactsEngine::saveRelationships(
         *error = err;
 
     if (err == QContactManager::NoError) {
-#ifndef USING_QTPIM
-        // update id of relationships to include the manager uri where applicable.
-        for (int i = 0; relationships && i < relationships->size(); ++i) {
-            QContactRelationship curr = relationships->at(i);
-            if (curr.first().managerUri().isEmpty()) {
-                QContactId firstId = curr.first();
-                firstId.setManagerUri(QLatin1String("org.nemomobile.contacts.sqlite"));
-                curr.setFirst(firstId);
-            }
-            if (curr.second().managerUri().isEmpty()) {
-                QContactId secondId = curr.second();
-                secondId.setManagerUri(QLatin1String("org.nemomobile.contacts.sqlite"));
-                curr.setSecond(secondId);
-            }
-            relationships->replace(i, curr);
-        }
-#endif
-
         return true;
     }
 
@@ -1145,15 +1080,9 @@ bool ContactsEngine::startRequest(QContactAbstractRequest* request)
     case QContactAbstractRequest::ContactFetchRequest:
         job = new ContactFetchJob(qobject_cast<QContactFetchRequest *>(request));
         break;
-#ifdef USING_QTPIM
     case QContactAbstractRequest::ContactIdFetchRequest:
         job = new IdFetchJob(qobject_cast<QContactIdFetchRequest *>(request));
         break;
-#else
-    case QContactAbstractRequest::ContactLocalIdFetchRequest:
-        job = new IdFetchJob(qobject_cast<QContactLocalIdFetchRequest *>(request));
-        break;
-#endif
     case QContactAbstractRequest::ContactFetchByIdRequest:
         job = new ContactFetchByIdJob(qobject_cast<QContactFetchByIdRequest *>(request));
         break;
@@ -1193,125 +1122,16 @@ bool ContactsEngine::waitForRequestFinished(QContactAbstractRequest* req, int ms
     return true;
 }
 
-#ifndef USING_QTPIM
-QMap<QString, QContactDetailDefinition> ContactsEngine::detailDefinitions(
-        const QString& contactType, QContactManager::Error*) const
-{
-    if (contactType != QContactType::TypeContact) {
-        return QMap<QString, QContactDetailDefinition>();
-    }
-
-    QMap<QString, QContactDetailDefinition> retn = schemaDefinitions(2).value(QContactType::TypeContact);
-    // we don't support some detail types
-    retn.remove(QContactFamily::DefinitionName);
-    retn.remove(QContactGeoLocation::DefinitionName);
-    // we don't support contexts for detail types other than Address, EmailAddress and PhoneNumber
-    QStringList keys = retn.keys();
-    foreach (const QString &key, keys) {
-        if (key == QContactAddress::DefinitionName
-                || key == QContactEmailAddress::DefinitionName
-                || key == QContactPhoneNumber::DefinitionName) {
-            continue;
-        }
-
-        QContactDetailDefinition def = retn.value(key);
-        def.removeField(QContactDetail::FieldContext);
-        retn.insert(key, def);
-    }
-    // we don't support the Index field of Favorite
-    {
-        QContactDetailDefinition def = retn.value(QContactFavorite::DefinitionName);
-        def.removeField(QContactFavorite::FieldIndex);
-        retn.insert(QContactFavorite::DefinitionName, def);
-    }
-    // we don't support the Event field of Anniversary
-    {
-        QContactDetailDefinition def = retn.value(QContactAnniversary::DefinitionName);
-        def.removeField(QContactAnniversary::FieldEvent);
-        retn.insert(QContactAnniversary::DefinitionName, def);
-    }
-    // we don't support the SubTypes field of Address
-    {
-        QContactDetailDefinition def = retn.value(QContactAddress::DefinitionName);
-        def.removeField(QContactAddress::FieldSubTypes);
-        retn.insert(QContactAddress::DefinitionName, def);
-    }
-    // we don't support the AssistantName field of Organization
-    {
-        QContactDetailDefinition def = retn.value(QContactOrganization::DefinitionName);
-        def.removeField(QContactOrganization::FieldAssistantName);
-        retn.insert(QContactOrganization::DefinitionName, def);
-    }
-    // we don't support the VibrationRingtoneUrl field of Ringtone
-    {
-        QContactDetailDefinition def = retn.value(QContactRingtone::DefinitionName);
-        def.removeField(QContactRingtone::FieldVibrationRingtoneUrl);
-        retn.insert(QContactRingtone::DefinitionName, def);
-    }
-    // we don't support the PresenceStateImageUrl or PresenceStateText fields of Presence / Global Presence
-    {
-        QContactDetailDefinition def = retn.value(QContactPresence::DefinitionName);
-        def.removeField(QContactPresence::FieldPresenceStateImageUrl);
-        def.removeField(QContactPresence::FieldPresenceStateText);
-        retn.insert(QContactPresence::DefinitionName, def);
-    }
-    {
-        QContactDetailDefinition def = retn.value(QContactGlobalPresence::DefinitionName);
-        def.removeField(QContactGlobalPresence::FieldPresenceStateImageUrl);
-        def.removeField(QContactGlobalPresence::FieldPresenceStateText);
-        retn.insert(QContactGlobalPresence::DefinitionName, def);
-    }
-    // the Name detail is unique
-    {
-        QContactDetailDefinition def = retn.value(QContactName::DefinitionName);
-        def.setUnique(true);
-        retn.insert(QContactName::DefinitionName, def);
-    }
-    return retn; // XXX TODO: modify the schema definitions with our additions to eg QContactOnlineAccount.
-}
-
-bool ContactsEngine::hasFeature(
-        QContactManager::ManagerFeature feature, const QString &contactType) const
-{
-    if (contactType != QContactType::TypeContact)
-        return false;
-
-    // note that we also support SelfContact, but we don't support
-    // modifying or removing the self contact, thus we report the
-    // feature as unsupported.
-
-    switch (feature) {
-    case QContactManager::Relationships:
-    case QContactManager::ArbitraryRelationshipTypes:
-        return true;
-    default:
-        return false;
-    }
-}
-#endif
-
-#ifdef USING_QTPIM
 bool ContactsEngine::isRelationshipTypeSupported(const QString &relationshipType, QContactType::TypeValues contactType) const
-#else
-bool ContactsEngine::isRelationshipTypeSupported(const QString &relationshipType, const QString &contactType) const
-#endif
 {
     Q_UNUSED(relationshipType);
 
     return contactType == QContactType::TypeContact;
 }
 
-#ifdef USING_QTPIM
 QList<QContactType::TypeValues> ContactsEngine::supportedContactTypes() const
-#else
-QStringList ContactsEngine::supportedContactTypes() const
-#endif
 {
-#ifdef USING_QTPIM
     return QList<QContactType::TypeValues>() << QContactType::TypeContact;
-#else
-    return QStringList() << QContactType::TypeContact;
-#endif
 }
 
 void ContactsEngine::regenerateDisplayLabel(QContact &contact) const
@@ -1326,14 +1146,12 @@ void ContactsEngine::regenerateDisplayLabel(QContact &contact) const
     setContactDisplayLabel(&contact, label);
 }
 
-#ifdef USING_QTPIM
 bool ContactsEngine::setContactDisplayLabel(QContact *contact, const QString &label)
 {
     QContactDisplayLabel detail(contact->detail<QContactDisplayLabel>());
     detail.setLabel(label);
     return contact->saveDetail(&detail);
 }
-#endif
 
 QString ContactsEngine::normalizedPhoneNumber(const QString &input)
 {
@@ -1350,14 +1168,9 @@ QString ContactsEngine::synthesizedDisplayLabel(const QContact &contact, QContac
     QContactName name = contact.detail<QContactName>();
 
     // If a custom label has been set, return that
-#ifdef USING_QTPIM
     const QString customLabel = name.value<QString>(QContactName__FieldCustomLabel);
     if (!customLabel.isEmpty())
         return customLabel;
-#else
-    if (!name.customLabel().isEmpty())
-        return name.customLabel();
-#endif
 
     QString displayLabel;
 
@@ -1407,9 +1220,9 @@ QString ContactsEngine::synthesizedDisplayLabel(const QContact &contact, QContac
     return QString();
 }
 
-static QList<QContactIdType> idList(const QVector<quint32> &contactIds)
+static QList<QContactId> idList(const QVector<quint32> &contactIds)
 {
-    QList<QContactIdType> ids;
+    QList<QContactId> ids;
     ids.reserve(contactIds.size());
     foreach (quint32 dbId, contactIds) {
         ids.append(ContactId::apiId(dbId));

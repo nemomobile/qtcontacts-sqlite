@@ -41,15 +41,9 @@ static const QString aggregatesRelationship(relationshipString(QContactRelations
 
 namespace {
 
-#ifdef USING_QTPIM
 static const char *addedAccumulationSlot = SLOT(addAccumulationSlot(QList<QContactId>));
 static const char *changedAccumulationSlot = SLOT(chgAccumulationSlot(QList<QContactId>));
 static const char *removedAccumulationSlot = SLOT(remAccumulationSlot(QList<QContactId>));
-#else
-static const char *addedAccumulationSlot = SLOT(addAccumulationSlot(QList<QContactLocalId>));
-static const char *changedAccumulationSlot = SLOT(chgAccumulationSlot(QList<QContactLocalId>));
-static const char *removedAccumulationSlot = SLOT(remAccumulationSlot(QList<QContactLocalId>));
-#endif
 
 QString detailProvenance(const QContactDetail &detail)
 {
@@ -80,15 +74,9 @@ public slots:
     void cleanup();
 
 public slots:
-#ifdef USING_QTPIM
-    void addAccumulationSlot(const QList<QContactIdType> &ids);
-    void chgAccumulationSlot(const QList<QContactIdType> &ids);
-    void remAccumulationSlot(const QList<QContactIdType> &ids);
-#else
-    void addAccumulationSlot(const QList<QContactLocalId> &ids);
-    void chgAccumulationSlot(const QList<QContactLocalId> &ids);
-    void remAccumulationSlot(const QList<QContactLocalId> &ids);
-#endif
+    void addAccumulationSlot(const QList<QContactId> &ids);
+    void chgAccumulationSlot(const QList<QContactId> &ids);
+    void remAccumulationSlot(const QList<QContactId> &ids);
 
 private slots:
     void createSingleLocal();
@@ -130,10 +118,10 @@ private:
     void waitForSignalPropagation();
 
     QContactManager *m_cm;
-    QSet<QContactIdType> m_addAccumulatedIds;
-    QSet<QContactIdType> m_chgAccumulatedIds;
-    QSet<QContactIdType> m_remAccumulatedIds;
-    QSet<QContactIdType> m_createdIds;
+    QSet<QContactId> m_addAccumulatedIds;
+    QSet<QContactId> m_chgAccumulatedIds;
+    QSet<QContactId> m_remAccumulatedIds;
+    QSet<QContactId> m_createdIds;
 };
 
 tst_Aggregation::tst_Aggregation()
@@ -186,24 +174,24 @@ void tst_Aggregation::waitForSignalPropagation()
     QTest::qWait(50);
 }
 
-void tst_Aggregation::addAccumulationSlot(const QList<QContactIdType> &ids)
+void tst_Aggregation::addAccumulationSlot(const QList<QContactId> &ids)
 {
-    foreach (const QContactIdType &id, ids) {
+    foreach (const QContactId &id, ids) {
         m_addAccumulatedIds.insert(id);
         m_createdIds.insert(id);
     }
 }
 
-void tst_Aggregation::chgAccumulationSlot(const QList<QContactIdType> &ids)
+void tst_Aggregation::chgAccumulationSlot(const QList<QContactId> &ids)
 {
-    foreach (const QContactIdType &id, ids) {
+    foreach (const QContactId &id, ids) {
         m_chgAccumulatedIds.insert(id);
     }
 }
 
-void tst_Aggregation::remAccumulationSlot(const QList<QContactIdType> &ids)
+void tst_Aggregation::remAccumulationSlot(const QList<QContactId> &ids)
 {
-    foreach (const QContactIdType &id, ids) {
+    foreach (const QContactId &id, ids) {
         m_remAccumulatedIds.insert(id);
     }
 }
@@ -2222,11 +2210,7 @@ void tst_Aggregation::wasLocalUpdate()
 
     QContactPhoneNumber ap;
     ap.setNumber("1234567");
-#ifdef USING_QTPIM
     ap.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypeMobile);
-#else
-    ap.setSubTypes(QStringList() << QContactPhoneNumber::SubTypeMobile);
-#endif
     alice.saveDetail(&ap);
 
     QContact bob;
@@ -2237,11 +2221,7 @@ void tst_Aggregation::wasLocalUpdate()
 
     QContactPhoneNumber bp;
     bp.setNumber("2345678");
-#ifdef USING_QTPIM
     bp.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypeMobile);
-#else
-    bp.setSubTypes(QStringList() << QContactPhoneNumber::SubTypeMobile);
-#endif
     bob.saveDetail(&bp);
 
     m_addAccumulatedIds.clear();
@@ -2389,11 +2369,7 @@ void tst_Aggregation::wasLocalUpdate()
         pn = aggregateAlice.details<QContactPhoneNumber>().at(1);
     }
     pn.setNumber("7654321");
-#ifdef USING_QTPIM
     pn.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypeMobile);
-#else
-    pn.setSubTypes(QStringList() << QContactPhoneNumber::SubTypeMobile);
-#endif
     aggregateAlice.saveDetail(&pn);
 
     QVERIFY(m_cm->saveContact(&aggregateAlice));
@@ -2803,13 +2779,8 @@ void tst_Aggregation::aggregationHeuristic()
         QVERIFY(m_cm->saveContact(i == 0 ? &b : &a));
         QCOMPARE(m_cm->contactIds().count(), shouldAggregate ? (count+1) : (count+2));
 
-#ifdef USING_QTPIM
         m_cm->removeContact(a.id());
         m_cm->removeContact(b.id());
-#else
-        m_cm->removeContact(a.localId());
-        m_cm->removeContact(b.localId());
-#endif
     }
 }
 
@@ -3422,7 +3393,7 @@ void tst_Aggregation::changeLogFiltering()
     clf.setEventType(QContactChangeLogFilter::EventAdded);
     clf.setSince(beforeBCreated); // should contain b, but not a as a's creation time was days-5
     cif.clear(); cif << stf << clf;
-    QList<QContactIdType> filtered = m_cm->contactIds(cif);
+    QList<QContactId> filtered = m_cm->contactIds(cif);
     QVERIFY(!filtered.contains(retrievalId(a)));
     QVERIFY(filtered.contains(retrievalId(b)));
 

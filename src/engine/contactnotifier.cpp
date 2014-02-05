@@ -52,17 +52,17 @@ void initialize()
     qDBusRegisterMetaType<QVector<quint32> >();
 }
 
-QVector<quint32> idVector(const QList<QContactIdType> &contactIds)
+QVector<quint32> idVector(const QList<QContactId> &contactIds)
 {
     QVector<quint32> ids;
     ids.reserve(contactIds.size());
-    foreach (const QContactIdType &id, contactIds) {
+    foreach (const QContactId &id, contactIds) {
         ids.append(ContactId::databaseId(id));
     }
     return ids;
 }
 
-void contactsAdded(const QList<QContactIdType> &contactIds)
+void contactsAdded(const QList<QContactId> &contactIds)
 {
     if (!contactIds.isEmpty()) {
         QDBusMessage message = QDBusMessage::createSignal(
@@ -74,7 +74,7 @@ void contactsAdded(const QList<QContactIdType> &contactIds)
     }
 }
 
-void contactsChanged(const QList<QContactIdType> &contactIds)
+void contactsChanged(const QList<QContactId> &contactIds)
 {
     if (!contactIds.isEmpty()) {
         QDBusMessage message = QDBusMessage::createSignal(
@@ -86,7 +86,7 @@ void contactsChanged(const QList<QContactIdType> &contactIds)
     }
 }
 
-void contactsPresenceChanged(const QList<QContactIdType> &contactIds)
+void contactsPresenceChanged(const QList<QContactId> &contactIds)
 {
     if (!contactIds.isEmpty()) {
         QDBusMessage message = QDBusMessage::createSignal(
@@ -98,7 +98,7 @@ void contactsPresenceChanged(const QList<QContactIdType> &contactIds)
     }
 }
 
-void contactsRemoved(const QList<QContactIdType> &contactIds)
+void contactsRemoved(const QList<QContactId> &contactIds)
 {
     if (!contactIds.isEmpty()) {
         QDBusMessage message = QDBusMessage::createSignal(
@@ -110,7 +110,7 @@ void contactsRemoved(const QList<QContactIdType> &contactIds)
     }
 }
 
-void selfContactIdChanged(QContactIdType oldId, QContactIdType newId)
+void selfContactIdChanged(QContactId oldId, QContactId newId)
 {
     if (oldId != newId) {
         QDBusMessage message = QDBusMessage::createSignal(
@@ -122,7 +122,7 @@ void selfContactIdChanged(QContactIdType oldId, QContactIdType newId)
     }
 }
 
-void relationshipsAdded(const QSet<QContactIdType> &contactIds)
+void relationshipsAdded(const QSet<QContactId> &contactIds)
 {
     if (!contactIds.isEmpty()) {
         QDBusMessage message = QDBusMessage::createSignal(
@@ -134,7 +134,7 @@ void relationshipsAdded(const QSet<QContactIdType> &contactIds)
     }
 }
 
-void relationshipsRemoved(const QSet<QContactIdType> &contactIds)
+void relationshipsRemoved(const QSet<QContactId> &contactIds)
 {
     if (!contactIds.isEmpty()) {
         QDBusMessage message = QDBusMessage::createSignal(

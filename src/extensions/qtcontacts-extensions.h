@@ -32,29 +32,18 @@
 #ifndef QTCONTACTS_EXTENSIONS_H
 #define QTCONTACTS_EXTENSIONS_H
 
-#include "qtcontacts-extensions-config.h"
-
 #include <QContactDetail>
 #include <QContactId>
 
-#ifdef USING_QTPIM
 #include <QContactOnlineAccount>
 #include <QContactPhoneNumber>
 #include <QContactAvatar>
 #include <QContactName>
-#endif
 
 // Defines the extended values supported by qtcontacts-sqlite
 
-#ifdef USING_QTPIM
 QT_BEGIN_NAMESPACE_CONTACTS
-#elif defined(USING_QTMOBILITY)
-QTM_BEGIN_NAMESPACE
-#else
-#error "QtContacts variant in use is not specified"
-#endif
 
-#ifdef USING_QTPIM
 // In QContactDetail, we support the provenance and modifiable properties
 static const int QContactDetail__FieldProvenance = (QContactDetail::FieldLinkedDetailUris+1);
 static const int QContactDetail__FieldModifiable = (QContactDetail::FieldLinkedDetailUris+2);
@@ -88,50 +77,14 @@ static const QContactDetail::DetailType QContactDetail__TypeOriginMetadata = sta
 // We support the QContactStatusFlags detail type
 static const QContactDetail::DetailType QContactDetail__TypeStatusFlags = static_cast<QContactDetail::DetailType>(QContactDetail::TypeVersion + 2);
 
-#else
-// Declared as static:
-Q_DECLARE_LATIN1_CONSTANT(QContactDetail__FieldProvenance, "Provenance") = { "Provenance" };
-Q_DECLARE_LATIN1_CONSTANT(QContactDetail__FieldModifiable, "Modifiable") = { "Modifiable" };
-
-Q_DECLARE_LATIN1_CONSTANT(QContactDetail__ContextDefault, "Default") = { "Default" };
-Q_DECLARE_LATIN1_CONSTANT(QContactDetail__ContextLarge, "Large") = { "Large" };
-
-Q_DECLARE_LATIN1_CONSTANT(QContactOnlineAccount__FieldAccountPath, "AccountPath") = { "AccountPath" };
-Q_DECLARE_LATIN1_CONSTANT(QContactOnlineAccount__FieldAccountIconPath, "AccountIconPath") = { "AccountIconPath" };
-Q_DECLARE_LATIN1_CONSTANT(QContactOnlineAccount__FieldEnabled, "Enabled") = { "Enabled" };
-Q_DECLARE_LATIN1_CONSTANT(QContactOnlineAccount__FieldAccountDisplayName, "AccountDisplayName") = { "AccountDisplayName" };
-Q_DECLARE_LATIN1_CONSTANT(QContactOnlineAccount__FieldServiceProviderDisplayName, "ServiceProviderDisplayName") = { "ServiceProviderDisplayName" };
-
-Q_DECLARE_LATIN1_CONSTANT(QContactPhoneNumber__FieldNormalizedNumber, "NormalizedNumber") = { "NormalizedNumber" };
-
-Q_DECLARE_LATIN1_CONSTANT(QContactAvatar__FieldAvatarMetadata, "AvatarMetadata") = { "AvatarMetadata" };
-#endif
-
-#ifdef USING_QTPIM
 QT_END_NAMESPACE_CONTACTS
-#else
-QTM_END_NAMESPACE
-#endif
 
 namespace QtContactsSqliteExtensions {
 
-#ifdef USING_QTPIM
 QTCONTACTS_USE_NAMESPACE
-#else
-QTM_USE_NAMESPACE
-#endif
 
-#ifdef USING_QTPIM
-typedef QContactId ApiContactIdType;
-#else
-typedef QContactLocalId ApiContactIdType;
-#endif
-
-ApiContactIdType apiContactId(quint32);
-quint32 internalContactId(const ApiContactIdType &);
-#ifndef USING_QTPIM
+QContactId apiContactId(quint32);
 quint32 internalContactId(const QContactId &);
-#endif
 
 enum NormalizePhoneNumberFlag {
     KeepPhoneNumberPunctuation = (1 << 0),

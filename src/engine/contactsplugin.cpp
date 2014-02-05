@@ -35,20 +35,12 @@
 
 #include <QtDebug>
 
-USE_CONTACTS_NAMESPACE
+QTCONTACTS_USE_NAMESPACE
 
-#ifdef USING_QTPIM
 class ContactsFactory : public QContactManagerEngineFactory
-#else
-class ContactsFactory : public QObject, public QContactManagerEngineFactory
-#endif
 {
     Q_OBJECT
-#ifdef USING_QTPIM
     Q_PLUGIN_METADATA(IID "org.qt-project.Qt.QContactManagerEngineFactoryInterface" FILE "plugin.json")
-#else
-    Q_INTERFACES(QtMobility::QContactManagerEngineFactory)
-#endif
 
 public:
     ContactsFactory();
@@ -56,12 +48,8 @@ public:
     QContactManagerEngine *engine(
             const QMap<QString, QString> &parameters, QContactManager::Error* error);
     QString managerName() const;
-#ifdef USING_QTPIM
     QContactEngineId *createContactEngineId(
             const QMap<QString, QString> &parameters, const QString &engineIdString) const;
-#else
-    QList<int> supportedImplementationVersions() const;
-#endif
 };
 
 
@@ -89,22 +77,11 @@ QString ContactsFactory::managerName() const
     return QString::fromLatin1("org.nemomobile.contacts.sqlite");
 }
 
-#ifdef USING_QTPIM
 QContactEngineId *ContactsFactory::createContactEngineId(
         const QMap<QString, QString> &parameters, const QString &engineIdString) const
 {
     Q_UNUSED(parameters)
     return new ContactId(engineIdString);
 }
-#else
-QList<int> ContactsFactory::supportedImplementationVersions() const
-{
-    return QList<int>() << 1 << 2;
-}
-#endif
-
-#ifndef QT_VERSION_5
-Q_EXPORT_PLUGIN2(qtcontacts_sqlite, ContactsFactory);
-#endif
 
 #include "contactsplugin.moc"

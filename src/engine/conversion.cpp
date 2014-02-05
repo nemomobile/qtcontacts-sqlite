@@ -29,7 +29,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
  */
 
-#ifdef USING_QTPIM
 #include "conversion_p.h"
 
 #include <QContactAddress>
@@ -39,9 +38,13 @@
 #include <QContactPhoneNumber>
 #include <QContactUrl>
 
-USE_CONTACTS_NAMESPACE
+QTCONTACTS_USE_NAMESPACE
 
 namespace Conversion {
+
+// Note: all of this is only necessary because we remain compatible with databases
+// created for QtMobility Contacts, where various properties has string representations,
+// which were stored in string form
 
 int propertyValue(const QString &name, const QMap<QString, int> &propertyValues)
 {
@@ -394,6 +397,4 @@ QString gender(int type)
 }
 
 }
-
-#endif
 

@@ -41,7 +41,7 @@
 #include <QSqlDatabase>
 #include <QSqlQuery>
 
-USE_CONTACTS_NAMESPACE
+QTCONTACTS_USE_NAMESPACE
 
 class ContactReader
 {
@@ -59,16 +59,16 @@ public:
     QContactManager::Error readContacts(
             const QString &table,
             QList<QContact> *contacts,
-            const QList<QContactIdType> &contactIds,
+            const QList<QContactId> &contactIds,
             const QContactFetchHint &fetchHint);
 
     QContactManager::Error readContactIds(
-            QList<QContactIdType> *contactIds,
+            QList<QContactId> *contactIds,
             const QContactFilter &filter,
             const QList<QContactSortOrder> &order);
 
     QContactManager::Error getIdentity(
-            ContactsDatabase::Identity identity, QContactIdType *contactId);
+            ContactsDatabase::Identity identity, QContactId *contactId);
 
     QContactManager::Error readRelationships(
             QList<QContactRelationship> *relationships,
@@ -81,7 +81,7 @@ protected:
             const QString &table, QList<QContact> *contacts, const QContactFetchHint &fetchHint);
 
     virtual void contactsAvailable(const QList<QContact> &contacts);
-    virtual void contactIdsAvailable(const QList<QContactIdType> &contactIds);
+    virtual void contactIdsAvailable(const QList<QContactId> &contactIds);
 
 private:
     QSqlDatabase m_database;

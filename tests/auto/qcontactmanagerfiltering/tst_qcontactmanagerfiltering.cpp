@@ -68,28 +68,13 @@ do {                                                                      \
 Q_DECLARE_METATYPE(QVariant)
 Q_DECLARE_METATYPE(QContactManager*)
 
-#ifdef USING_QTPIM
 Q_DECLARE_METATYPE(QContactDetail::DetailType)
-#endif
 
-#ifdef USING_QTPIM
 static int detailField(int field) { return field; }
-#else
-template<typename T>
-static QString detailField(T field) { return QString::fromLatin1(field.latin1()); }
-#endif
 
-#ifdef USING_QTPIM
 static bool validDetailField(int field) { return (field != -1); }
-#else
-static bool validDetailField(const QString &field) { return !field.isEmpty(); }
-#endif
 
-#ifdef USING_QTPIM
 static bool validDetailInfo(const QPair<QContactDetail::DetailType, int> &info)
-#else
-static bool validDetailInfo(const QPair<QString, QString> &info)
-#endif
 {
     return validDetailType(info.first) && validDetailField(info.second);
 }
@@ -133,27 +118,18 @@ private:
 #ifdef DETAIL_DEFINITION_SUPPORTED
     QPair<QString, QString> definitionAndField(QContactManager *cm, QVariant::Type type, bool *nativelyFilterable);
 #endif
-    QList<QContactIdType> prepareModel(QContactManager* cm); // add the standard contacts
+    QList<QContactId> prepareModel(QContactManager* cm); // add the standard contacts
 
-    QString convertIds(QList<QContactIdType> allIds, QList<QContactIdType> ids, QChar minimumContact = 'a', QChar maximumContact = 'z'); // convert back to "abcd"
+    QString convertIds(QList<QContactId> allIds, QList<QContactId> ids, QChar minimumContact = 'a', QChar maximumContact = 'z'); // convert back to "abcd"
 
-#ifdef USING_QTPIM
     QContact createContact(QContactManager* cm, QContactType::TypeValues type, QString name);
-#else
-    QContact createContact(QContactManager* cm, QString type, QString name);
-#endif
 
-#ifdef USING_QTPIM
     typedef QContactDetail::DetailType TypeIdentifier;
     typedef int FieldIdentifier;
-#else
-    typedef QString TypeIdentifier;
-    typedef QString FieldIdentifier;
-#endif
 
     typedef QPair<TypeIdentifier, FieldIdentifier> FieldSelector;
     QMap<QContactManager*, QMap<QString, FieldSelector> > defAndFieldNamesForTypePerManager;
-    QMultiMap<QContactManager*, QContactIdType> contactsAddedToManagers;
+    QMultiMap<QContactManager*, QContactId> contactsAddedToManagers;
     QMultiMap<QContactManager*, QString> detailDefinitionsAddedToManagers;
     QList<QContactManager*> managers;
     QScopedPointer<QContactManagerDataHolder> managerDataHolder;
@@ -189,7 +165,8 @@ private slots:
     void relationshipFiltering();
     void relationshipFiltering_data();
 
-#ifndef USING_QTPIM
+#if 0
+    // These tests should be supported...
     void changelogFiltering();
     void changelogFiltering_data();
 #endif
@@ -250,7 +227,7 @@ void tst_QContactManagerFiltering::initTestCase()
 
     // for each manager that we wish to test, prepare the model.
     foreach (QContactManager* cm, managers) {
-        QList<QContactIdType> addedContacts = prepareModel(cm);
+        QList<QContactId> addedContacts = prepareModel(cm);
         if (addedContacts != contactsAddedToManagers.values(cm)) {
             qDebug() << "prepareModel returned:" << addedContacts;
             qDebug() << "contactsAdded are:    " << contactsAddedToManagers.values(cm);
@@ -263,7 +240,7 @@ void tst_QContactManagerFiltering::cleanupTestCase()
 {
     // first, remove any contacts that we've added to any managers.
     foreach (QContactManager* manager, managers) {
-        QList<QContactIdType> contactIds = contactsAddedToManagers.values(manager);
+        QList<QContactId> contactIds = contactsAddedToManagers.values(manager);
         manager->removeContacts(contactIds, 0);
     }
     contactsAddedToManagers.clear();
@@ -288,7 +265,7 @@ void tst_QContactManagerFiltering::cleanupTestCase()
     managerDataHolder.reset(0);
 }
 
-QString tst_QContactManagerFiltering::convertIds(QList<QContactIdType> allIds, QList<QContactIdType> ids, QChar minimumContact, QChar maximumContact)
+QString tst_QContactManagerFiltering::convertIds(QList<QContactId> allIds, QList<QContactId> ids, QChar minimumContact, QChar maximumContact)
 {
     QString ret;
     /* Expected is of the form "abcd".. it's possible that there are some extra contacts */
@@ -337,13 +314,8 @@ void tst_QContactManagerFiltering::detailStringFiltering_data()
     TypeIdentifier phonenumber = detailType<QContactPhoneNumber>();
     FieldIdentifier number = QContactPhoneNumber::FieldNumber;
 
-#ifdef USING_QTPIM
     TypeIdentifier noType(QContactDetail::TypeUndefined);
     FieldIdentifier noField(-1);
-#else
-    TypeIdentifier noType;
-    FieldIdentifier noField;
-#endif
 
     for (int i = 0; i < managers.size(); i++) {
         QContactManager *manager = managers.at(i);
@@ -468,8 +440,8 @@ void tst_QContactManagerFiltering::detailStringFiltering()
     QFETCH(QString, expected);
     QFETCH(int, matchflags);
 
-    QList<QContactIdType> contacts = contactsAddedToManagers.values(cm);
-    QList<QContactIdType> ids;
+    QList<QContactId> contacts = contactsAddedToManagers.values(cm);
+    QList<QContactId> ids;
 
     QContactDetailFilter df;
     setFilterDetail(df, defname, fieldname);
@@ -510,11 +482,6 @@ void tst_QContactManagerFiltering::detailPhoneNumberFiltering_data()
     // purely to test phone number filtering.
     for (int i = 0; i < managers.size(); i++) {
         QContactManager *manager = managers.at(i);
-
-#ifndef USING_QTPIM
-        if (!manager->detailDefinitions().contains(detailType<QContactPhoneNumber>()))
-            continue; // don't test phone numbers with this manager: not supported.
-#endif
 
         // now do phone number matching - first, aaron's phone number
         QTest::newRow("a phone hyphen") << manager << phoneDef << phoneField << QVariant(QString("555-1212")) << (int)(QContactFilter::MatchPhoneNumber) << "a";
@@ -582,8 +549,8 @@ void tst_QContactManagerFiltering::detailPhoneNumberFiltering()
 
     // note: this test is exactly the same as string filtering, but uses different fields and specific matchflags.
 
-    QList<QContactIdType> contacts = contactsAddedToManagers.values(cm);
-    QList<QContactIdType> ids;
+    QList<QContactId> contacts = contactsAddedToManagers.values(cm);
+    QList<QContactId> ids;
 
     QContactDetailFilter df;
     setFilterDetail(df, defname, fieldname);
@@ -598,7 +565,7 @@ void tst_QContactManagerFiltering::detailPhoneNumberFiltering()
     ids = cm->contactIds(df);
 
     QString output = convertIds(contacts, ids, 'a', 'k'); // don't include the convenience filtering contacts
-    //SKIP_TEST("TODO: fix default implementation of phone number matching!", SkipSingle);
+    //QSKIP("TODO: fix default implementation of phone number matching!");
     QCOMPARE_UNSORTED(output, expected);
 }
 
@@ -617,21 +584,21 @@ void tst_QContactManagerFiltering::statusFlagsFiltering()
     QFETCH(QContactManager*, cm);
 
     // Test for correct matching of all contact properties
-    QSet<QContactIdType> phoneNumberIds = cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::HasPhoneNumber, QContactFilter::MatchContains)).toSet();
-    QSet<QContactIdType> emailAddressIds = cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::HasEmailAddress, QContactFilter::MatchContains)).toSet();
-    QSet<QContactIdType> onlineAccountIds = cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::HasOnlineAccount, QContactFilter::MatchContains)).toSet();
-    QSet<QContactIdType> onlineIds = cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::IsOnline, QContactFilter::MatchContains)).toSet();
+    QSet<QContactId> phoneNumberIds = cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::HasPhoneNumber, QContactFilter::MatchContains)).toSet();
+    QSet<QContactId> emailAddressIds = cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::HasEmailAddress, QContactFilter::MatchContains)).toSet();
+    QSet<QContactId> onlineAccountIds = cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::HasOnlineAccount, QContactFilter::MatchContains)).toSet();
+    QSet<QContactId> onlineIds = cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::IsOnline, QContactFilter::MatchContains)).toSet();
 
     // Also test for combination tests
     QContactFilter filter(QContactStatusFlags::matchFlags(QContactStatusFlags::HasPhoneNumber | QContactStatusFlags::HasEmailAddress, QContactFilter::MatchContains));
-    QSet<QContactIdType> phoneAndEmailIds = cm->contactIds(filter).toSet();
+    QSet<QContactId> phoneAndEmailIds = cm->contactIds(filter).toSet();
 
     filter = QContactStatusFlags::matchFlags(QContactStatusFlags::HasPhoneNumber, QContactFilter::MatchExactly);
-    QSet<QContactIdType> phoneOnlyIds = cm->contactIds(filter).toSet();
+    QSet<QContactId> phoneOnlyIds = cm->contactIds(filter).toSet();
 
-    QList<QContactIdType> contacts = contactsAddedToManagers.values(cm);
+    QList<QContactId> contacts = contactsAddedToManagers.values(cm);
     foreach (const QContact &contact, cm->contacts(contacts)) {
-        QContactIdType contactId(ContactId::apiId(contact));
+        QContactId contactId(ContactId::apiId(contact));
 
         const bool hasPhoneNumber = !contact.details<QContactPhoneNumber>().isEmpty();
         const bool hasEmailAddress = !contact.details<QContactEmailAddress>().isEmpty();
@@ -663,15 +630,9 @@ void tst_QContactManagerFiltering::detailVariantFiltering_data()
     QVariant ev; // empty variant
     QString es; // empty string
 
-#ifdef USING_QTPIM
     QContactDetail::DetailType noType(QContactDetail::TypeUndefined);
     int noField(-1);
     int invalidField(0x666);
-#else
-    QString noType;
-    QString noField;
-    QString invalidField("x-mobility-contacts-test-invalidFieldName");
-#endif
 
     for (int i = 0; i < managers.size(); i++) {
         QContactManager *manager = managers.at(i);
@@ -912,8 +873,8 @@ void tst_QContactManagerFiltering::detailVariantFiltering()
     QFETCH(QVariant, value);
     QFETCH(QString, expected);
 
-    QList<QContactIdType> contacts = contactsAddedToManagers.values(cm);
-    QList<QContactIdType> ids;
+    QList<QContactId> contacts = contactsAddedToManagers.values(cm);
+    QList<QContactId> ids;
 
     QContactDetailFilter df;
     setFilterDetail(df, defname, fieldname);
@@ -952,17 +913,10 @@ void tst_QContactManagerFiltering::rangeFiltering_data()
     TypeIdentifier phonedef = detailType<QContactPhoneNumber>();
     FieldIdentifier phonenum = QContactPhoneNumber::FieldNumber;
 
-#ifdef USING_QTPIM
     TypeIdentifier noType(QContactDetail::TypeUndefined);
     FieldIdentifier noField(-1);
     TypeIdentifier invalidType = static_cast<TypeIdentifier>(0x666);
     FieldIdentifier invalidField = 0x666;
-#else
-    TypeIdentifier noType;
-    FieldIdentifier noField;
-    TypeIdentifier invalidType("Bongo");
-    FieldIdentifier invalidField("Beef");
-#endif
 
     int csflag = (int)QContactFilter::MatchCaseSensitive;
 
@@ -1088,8 +1042,8 @@ void tst_QContactManagerFiltering::rangeFiltering()
         matchflags |= QContactFilter::MatchFixedString;
     }
 
-    QList<QContactIdType> contacts = contactsAddedToManagers.values(cm);
-    QList<QContactIdType> ids;
+    QList<QContactId> contacts = contactsAddedToManagers.values(cm);
+    QList<QContactId> ids;
 
     /* Build the range filter */
     QContactDetailRangeFilter drf;
@@ -1349,8 +1303,8 @@ void tst_QContactManagerFiltering::intersectionFiltering()
             resultFilter = *z & *y;
     }
 
-    QList<QContactIdType> contacts = contactsAddedToManagers.values(cm);
-    QList<QContactIdType> ids;
+    QList<QContactId> contacts = contactsAddedToManagers.values(cm);
+    QList<QContactId> ids;
 
     ids = cm->contactIds(resultFilter);
 
@@ -1587,8 +1541,8 @@ void tst_QContactManagerFiltering::unionFiltering()
             resultFilter = *z | *y;
     }
 
-    QList<QContactIdType> contacts = contactsAddedToManagers.values(cm);
-    QList<QContactIdType> ids;
+    QList<QContactId> contacts = contactsAddedToManagers.values(cm);
+    QList<QContactId> ids;
 
     ids = cm->contactIds(resultFilter);
 
@@ -1644,11 +1598,7 @@ void tst_QContactManagerFiltering::relationshipFiltering_data()
         QTest::newRow("RF-17") << manager << static_cast<int>(QContactRelationship::First) << relationshipString(QContactRelationship::HasSpouse) << static_cast<unsigned int>(0) << QString() << "b";
         QTest::newRow("RF-18") << manager << static_cast<int>(QContactRelationship::Either) << relationshipString(QContactRelationship::HasSpouse) << static_cast<unsigned int>(0) << QString() << "ab";
 
-#ifdef USING_QTPIM
         const bool aribtraryRelationshipsFeatureSupported = true;
-#else
-        const bool aribtraryRelationshipsFeatureSupported = manager->hasFeature(QContactManager::ArbitraryRelationshipTypes);
-#endif
         // Unknown relationship
         if (aribtraryRelationshipsFeatureSupported) {
             QTest::newRow("RF-19") << manager << static_cast<int>(QContactRelationship::Second) << QString::fromLatin1("UnknownRelationship") << static_cast<unsigned int>(0) << QString() << "a";
@@ -1669,11 +1619,7 @@ void tst_QContactManagerFiltering::relationshipFiltering_data()
     }
 }
 
-#ifdef USING_QTPIM
 QContact tst_QContactManagerFiltering::createContact(QContactManager* cm, QContactType::TypeValues type, QString name)
-#else
-QContact tst_QContactManagerFiltering::createContact(QContactManager* cm, QString type, QString name)
-#endif
 {
     QContact contact;
     contact.setType(type);
@@ -1726,13 +1672,8 @@ void tst_QContactManagerFiltering::relationshipFiltering()
     h2i = makeRelationship(relationshipType, firstId, secondId);
     // save and check error code
     bool succeeded = false;
-#ifdef USING_QTPIM
     const bool relationshipsFeatureSupported = true;
     const bool aribtraryRelationshipsFeatureSupported = true;
-#else
-    const bool relationshipsFeatureSupported = cm->hasFeature(QContactManager::Relationships);
-    const bool aribtraryRelationshipsFeatureSupported = cm->hasFeature(QContactManager::ArbitraryRelationshipTypes);
-#endif
     if((relationshipsFeatureSupported
         && cm->isRelationshipTypeSupported(relationshipType, contactA.type())
         && cm->isRelationshipTypeSupported(relationshipType, contactB.type()))
@@ -1747,30 +1688,21 @@ void tst_QContactManagerFiltering::relationshipFiltering()
 
     // 3. Construct the filter
     QContactId relatedContactId;
-#ifdef USING_QTPIM
     relatedContactId = ContactId::contactId(ContactId::apiId(relatedContactLocalId));
     Q_UNUSED(otherManagerUri)
-#else
-    relatedContactId.setLocalId(relatedContactLocalId);
-    relatedContactId.setManagerUri(otherManagerUri);
-#endif
 
     QContactRelationshipFilter crf;
     crf.setRelatedContactRole(static_cast<QContactRelationship::Role>(relatedContactRole));
     crf.setRelationshipType(relationshipType);
-#ifdef USING_QTPIM
     QContact rc;
     rc.setId(relatedContactId);
     crf.setRelatedContact(rc);
-#else
-    crf.setRelatedContactId(relatedContactId);
-#endif
 
     // 4. Grab the filtering results
-    QList<QContactIdType> contacts;
+    QList<QContactId> contacts;
     contacts.append(ContactId::apiId(contactA));
     contacts.append(ContactId::apiId(contactB));
-    QList<QContactIdType> ids = cm->contactIds(crf);
+    QList<QContactId> ids = cm->contactIds(crf);
     QString output = convertIds(contacts, ids, 'a', 'k'); // don't include the convenience filtering contacts
 
     // 5. Remove the created relationship and contacts
@@ -1784,13 +1716,13 @@ void tst_QContactManagerFiltering::relationshipFiltering()
         //TODO: what is the expected error code?
         //QCOMPARE(cm->error(), QContactManager::DoesNotExistError);
     }
-    foreach (const QContactIdType& cid, contacts) {
+    foreach (const QContactId& cid, contacts) {
         cm->removeContact(cid);
     }
 
     // 6. Verify the filtering result
     if (!relationshipsFeatureSupported) {
-        SKIP_TEST("Manager does not support relationships; skipping relationship filtering", SkipSingle);
+        QSKIP("Manager does not support relationships; skipping relationship filtering");
     } else if(relationshipType.isEmpty()
         || (cm->isRelationshipTypeSupported(relationshipType, contactA.type())
             && cm->isRelationshipTypeSupported(relationshipType, contactB.type()))) {
@@ -1798,7 +1730,7 @@ void tst_QContactManagerFiltering::relationshipFiltering()
         QCOMPARE_UNSORTED(output, expected);
     } else {
         QString msg = "Manager does not support relationship type " + relationshipType + " between " + contactA.type() + " and " + contactB.type() + " type contacts.";
-        SKIP_TEST(msg.toLatin1(), SkipSingle);
+        QSKIP(msg.toLatin1());
     }
 }
 
@@ -1897,8 +1829,8 @@ void tst_QContactManagerFiltering::sorting()
     QContactSortOrder::BlankPolicy blankpolicy = (QContactSortOrder::BlankPolicy) blankpolicyi;
     Qt::CaseSensitivity casesensitivity = (Qt::CaseSensitivity) casesensitivityi;
     
-    QList<QContactIdType> contacts = contactsAddedToManagers.values(cm);
-    QList<QContactIdType> ids;
+    QList<QContactId> contacts = contactsAddedToManagers.values(cm);
+    QList<QContactId> ids;
 
     /* Build the sort order */
     QContactSortOrder s;
@@ -2020,13 +1952,8 @@ void tst_QContactManagerFiltering::multiSorting_data()
     TypeIdentifier phonedef = detailType<QContactPhoneNumber>();
     FieldIdentifier numberfield = QContactPhoneNumber::FieldNumber;
 
-#ifdef USING_QTPIM
     TypeIdentifier noType(QContactDetail::TypeUndefined);
     FieldIdentifier noField(-1);
-#else
-    TypeIdentifier noType;
-    FieldIdentifier noField;
-#endif
 
     int asc = Qt::AscendingOrder;
     int desc = Qt::DescendingOrder;
@@ -2136,7 +2063,7 @@ void tst_QContactManagerFiltering::multiSorting()
     Qt::SortOrder fsdirection = (Qt::SortOrder)fsdirectioni;
     Qt::SortOrder ssdirection = (Qt::SortOrder)ssdirectioni;
 
-    QList<QContactIdType> contacts = contactsAddedToManagers.values(cm);
+    QList<QContactId> contacts = contactsAddedToManagers.values(cm);
 
     /* Build the sort orders */
     QContactSortOrder fs;
@@ -2151,7 +2078,7 @@ void tst_QContactManagerFiltering::multiSorting()
     if (secondsort)
         sortOrders.append(ss);
 
-    QList<QContactIdType> ids = cm->contactIds(sortOrders);
+    QList<QContactId> ids = cm->contactIds(sortOrders);
     QString output = convertIds(contacts, ids, 'a', 'k'); // don't include the convenience filtering contacts
 
     // Remove the display label tests
@@ -2201,13 +2128,13 @@ void tst_QContactManagerFiltering::idListFiltering()
     QFETCH(QString, input);
     QFETCH(QString, expected);
 
-    QList<QContactIdType> contacts = contactsAddedToManagers.values(cm);
-    QList<QContactIdType> ids;
+    QList<QContactId> contacts = contactsAddedToManagers.values(cm);
+    QList<QContactId> ids;
 
     // 3 extra ids that (hopefully) won't exist
-    QContactIdType e = ContactId::apiId(0x54555657);
-    QContactIdType f = ContactId::apiId(0x96969696);
-    QContactIdType g = ContactId::apiId(0x44335566);
+    QContactId e = ContactId::apiId(0x54555657);
+    QContactId f = ContactId::apiId(0x96969696);
+    QContactId g = ContactId::apiId(0x44335566);
 
     /* Convert the input to a list of ids */
     foreach (const QChar &c, input) {
@@ -2228,11 +2155,7 @@ void tst_QContactManagerFiltering::idListFiltering()
     }
 
     /* And do the search */
-#ifdef USING_QTPIM
     QContactIdFilter idf;
-#else
-    QContactLocalIdFilter idf;
-#endif
     idf.setIds(ids);
 
     /* Retrieve contacts matching the filter, and compare (unsorted) output */
@@ -2261,7 +2184,6 @@ void tst_QContactManagerFiltering::convenienceFiltering_data()
 
     QString es; // empty string
 
-#if USING_QTPIM
     QSet<QContactDetail::DetailType> allDefs;
     allDefs.insert(detailType<QContactAddress>());
     allDefs.insert(detailType<QContactEmailAddress>());
@@ -2269,13 +2191,9 @@ void tst_QContactManagerFiltering::convenienceFiltering_data()
     allDefs.insert(detailType<QContactName>());
     allDefs.insert(detailType<QContactPhoneNumber>());
     allDefs.insert(detailType<QContactTag>());
-#endif
 
     for (int i = 0; i < managers.size(); i++) {
         QContactManager *manager = managers.at(i);
-#ifndef USING_QTPIM
-        QMap<QString, QContactDetailDefinition> allDefs = manager->detailDefinitions();
-#endif
         if (allDefs.contains(detailType<QContactAddress>())) {
             newMRow("address matching only", manager) << manager
                                                       << "streetstring" << true
@@ -2425,10 +2343,10 @@ void tst_QContactManagerFiltering::convenienceFiltering()
     }
 
     /* Retrieve contacts matching the filter, and ensure that the results are expected */
-    QList<QContactIdType> ids = cm->contactIds(finalFilter);
+    QList<QContactId> ids = cm->contactIds(finalFilter);
 
     // build a string containing letters corresponding to the ids we retrieved.
-    QList<QContactIdType> contacts = contactsAddedToManagers.values(cm);
+    QList<QContactId> contacts = contactsAddedToManagers.values(cm);
     QString resultString = convertIds(contacts, ids, 'l', 'r'); // just the convenience filtering contacts (L->R)
     QCOMPARE(resultString, expected);
 }
@@ -2447,9 +2365,9 @@ void tst_QContactManagerFiltering::invalidFiltering()
 {
     QFETCH(QContactManager*, cm);
 
-    QList<QContactIdType> contacts = contactsAddedToManagers.values(cm);
+    QList<QContactId> contacts = contactsAddedToManagers.values(cm);
     QContactInvalidFilter f; // invalid
-    QList<QContactIdType> ids = cm->contactIds(f);
+    QList<QContactId> ids = cm->contactIds(f);
     QVERIFY(ids.count() == 0);
 
     // Try unions/intersections of invalids too
@@ -2474,9 +2392,9 @@ void tst_QContactManagerFiltering::allFiltering()
 {
     QFETCH(QContactManager*, cm);
 
-    QList<QContactIdType> contacts = contactsAddedToManagers.values(cm);
+    QList<QContactId> contacts = contactsAddedToManagers.values(cm);
     QContactFilter f; // default = permissive
-    QList<QContactIdType> ids = cm->contactIds(f);
+    QList<QContactId> ids = cm->contactIds(f);
     QVERIFY(ids.count() == contacts.size());
     QString output = convertIds(contacts, ids, 'a', 'k'); // don't include the convenience filtering contacts
     QString expected = convertIds(contacts, contacts, 'a', 'k'); // :)
@@ -2515,15 +2433,9 @@ void tst_QContactManagerFiltering::fetchHint()
     // We sort on name, because we include name details in the fetch hint.
     QList<QContactSortOrder> nameSort;
     QContactSortOrder firstNameSort, middleNameSort, lastNameSort;
-#ifdef USING_QTPIM
     firstNameSort.setDetailType(detailType<QContactName>(), QContactName::FieldFirstName);
     middleNameSort.setDetailType(detailType<QContactName>(), QContactName::FieldMiddleName);
     lastNameSort.setDetailType(detailType<QContactName>(), QContactName::FieldLastName);
-#else
-    firstNameSort.setDetailDefinitionName(QContactName::DefinitionName, QContactName::FieldFirstName);
-    middleNameSort.setDetailDefinitionName(QContactName::DefinitionName, QContactName::FieldMiddleName);
-    lastNameSort.setDetailDefinitionName(QContactName::DefinitionName, QContactName::FieldLastName);
-#endif
     nameSort << lastNameSort << middleNameSort << firstNameSort;
 
     // fetch all contacts from the manager.
@@ -2531,11 +2443,7 @@ void tst_QContactManagerFiltering::fetchHint()
 
     // define some maximum count limit, and some list of detail definitions to retrieve.
     int countLimit = (allContacts.size() / 2) + 1;
-#ifdef USING_QTPIM
     QList<QContactDetail::DetailType> defs;
-#else
-    QStringList defs;
-#endif
     defs << detailType<QContactName>()
          << detailType<QContactPhoneNumber>();
 
@@ -2545,15 +2453,11 @@ void tst_QContactManagerFiltering::fetchHint()
     QContactFetchHint mclh; // max count limited hint
     QContactFetchHint ddh;  // detail definitions hint
     mclh.setMaxCountHint(countLimit);
-#ifdef USING_QTPIM
     ddh.setDetailTypesHint(defs);
-#else
-    ddh.setDetailDefinitionsHint(defs);
-#endif
 
     // the next part of the test requires some contacts to be saved in the manager.
     if (allContacts.size() == 0) {
-        SKIP_TEST("No contacts in manager; skipping fetch hint limit test.", SkipSingle);
+        QSKIP("No contacts in manager; skipping fetch hint limit test.");
     }
 
     // test with a hint which sets a maximum count limit for retrieved contacts.
@@ -2592,11 +2496,11 @@ void tst_QContactManagerFiltering::fetchHint()
 }
 
 
-#ifndef USING_QTPIM
+#if 0
 void tst_QContactManagerFiltering::changelogFiltering_data()
 {
     QTest::addColumn<QContactManager *>("cm");
-    QTest::addColumn<QList<QContactIdType> >("contacts");
+    QTest::addColumn<QList<QContactId> >("contacts");
     QTest::addColumn<int>("eventType");
     QTest::addColumn<QDateTime>("since");
     QTest::addColumn<QString>("expected");
@@ -2609,7 +2513,7 @@ void tst_QContactManagerFiltering::changelogFiltering_data()
         QContactManager *manager = managers.at(i);
 
         if (manager->hasFeature(QContactManager::ChangeLogs)) {
-            QList<QContactIdType> contacts = contactsAddedToManagers.values(manager);
+            QList<QContactId> contacts = contactsAddedToManagers.values(manager);
             QContact a,b,c,d;
             a = manager->contact(contacts.at(0));
             b = manager->contact(contacts.at(1));
@@ -2657,7 +2561,7 @@ void tst_QContactManagerFiltering::changelogFiltering_data()
             newMRow("Removed since after fourth", manager) << manager << contacts << removed << dc.addSecs(1) << "";
         } else {
             // Stop spam and asserts with a single row
-            newMRow("Unsupported", manager) << manager << QList<QContactIdType>() << added << QDateTime() << QString();
+            newMRow("Unsupported", manager) << manager << QList<QContactId>() << added << QDateTime() << QString();
         }
     }
 }
@@ -2668,10 +2572,10 @@ void tst_QContactManagerFiltering::changelogFiltering()
     QFETCH(QDateTime, since);
     QFETCH(QString, expected);
     QFETCH(QContactManager*, cm);
-    QFETCH(QList<QContactIdType>, contacts);
+    QFETCH(QList<QContactId>, contacts);
 
     if (cm->hasFeature(QContactManager::ChangeLogs)) {
-        QList<QContactIdType> ids;
+        QList<QContactId> ids;
 
         QContactChangeLogFilter clf((QContactChangeLogFilter::EventType)eventType);
         clf.setSince(since);
@@ -2681,7 +2585,7 @@ void tst_QContactManagerFiltering::changelogFiltering()
         QString output = convertIds(contacts, ids, 'a', 'k'); // don't include the convenience filtering contacts
         QCOMPARE(output, expected); // unsorted? or sorted?
     } else {
-        SKIP_TEST("Changelogs not supported by this manager.", SkipSingle);
+        QSKIP("Changelogs not supported by this manager.");
     }
 }
 #endif
@@ -2784,7 +2688,7 @@ QPair<QString, QString> tst_QContactManagerFiltering::definitionAndField(QContac
 }
 #endif
 
-QList<QContactIdType> tst_QContactManagerFiltering::prepareModel(QContactManager *cm)
+QList<QContactId> tst_QContactManagerFiltering::prepareModel(QContactManager *cm)
 {
 #ifdef DETAIL_DEFINITION_SUPPORTED
     /* Discover the definition and field names required for testing */
@@ -2960,7 +2864,6 @@ QList<QContactIdType> tst_QContactManagerFiltering::prepareModel(QContactManager
     const int napTime = 1;
 #endif
 
-#ifdef USING_QTPIM
     QMap<QString, QPair<QContactDetail::DetailType, int> > definitionDetails;
     //definitionDetails.insert("String", qMakePair(QContactOrganization::Type, static_cast<int>(QContactOrganization::FieldName)));
     definitionDetails.insert("String", qMakePair(QContactGuid::Type, static_cast<int>(QContactGuid::FieldGuid)));
@@ -2978,7 +2881,6 @@ QList<QContactIdType> tst_QContactManagerFiltering::prepareModel(QContactManager
     definitionDetails.insert("Char", qMakePair(QContactDetail::TypeUndefined, -1));
 
     defAndFieldNamesForTypePerManager.insert(cm, definitionDetails);
-#endif
 
     /* Add some contacts */
     QContact contactA, contactB, contactC, contactD;
@@ -3244,7 +3146,6 @@ QList<QContactIdType> tst_QContactManagerFiltering::prepareModel(QContactManager
     QTest::qSleep(napTime);
 
     /* Now some for convenience filtering */
-#ifdef USING_QTPIM
     QSet<QContactDetail::DetailType> allDefs;
     allDefs.insert(detailType<QContactAddress>());
     allDefs.insert(detailType<QContactEmailAddress>());
@@ -3252,9 +3153,6 @@ QList<QContactIdType> tst_QContactManagerFiltering::prepareModel(QContactManager
     allDefs.insert(detailType<QContactName>());
     allDefs.insert(detailType<QContactPhoneNumber>());
     allDefs.insert(detailType<QContactTag>());
-#else
-    QMap<QString, QContactDetailDefinition> allDefs = cm->detailDefinitions();
-#endif
 
     // Contact L ----------------------------------------
     QContact contactL;
@@ -3530,7 +3428,7 @@ QList<QContactIdType> tst_QContactManagerFiltering::prepareModel(QContactManager
     contactQ = cm->contact(retrievalId(contactQ));
     contactR = cm->contact(retrievalId(contactR));
 
-    QList<QContactIdType> list;
+    QList<QContactId> list;
     if (!contactA.isEmpty())
         list << ContactId::apiId(contactA);
     if (!contactB.isEmpty())
@@ -3674,11 +3572,7 @@ bool tst_QContactManagerFiltering::isSuperset(const QContact& ca, const QContact
 void tst_QContactManagerFiltering::dumpContact(const QContact& contact)
 {
     QContactManager m;
-#ifdef USING_QTPIM
     qDebug() << "Contact: " << ContactId::toString(contact);
-#else
-    qDebug() << "Contact: " << ContactId::toString(contact) << "(" << m.synthesizedContactDisplayLabel(contact) << ")";
-#endif
     QList<QContactDetail> details = contact.details();
     foreach (const QContactDetail &d, details) {
         qDebug() << "  " << detailTypeName(d) << ":";
@@ -3689,9 +3583,9 @@ void tst_QContactManagerFiltering::dumpContact(const QContact& contact)
 void tst_QContactManagerFiltering::dumpContacts()
 {
     QContactManager m;
-    QList<QContactIdType> ids = m.contactIds();
+    QList<QContactId> ids = m.contactIds();
 
-    foreach (const QContactIdType &id, ids) {
+    foreach (const QContactId &id, ids) {
         QContact c = m.contact(id);
         dumpContact(c);
     }

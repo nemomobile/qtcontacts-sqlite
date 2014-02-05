@@ -47,11 +47,7 @@
 #include <QtGlobal>
 #include <QtCore/qnumeric.h>
 
-#ifdef USING_QTPIM
 #include <QtContacts>
-#else
-#include "qtcontacts.h"
-#endif
 
 #include "contactid_p.h"
 
@@ -64,17 +60,8 @@
 #include "qcontactstatusflags.h"
 #include "qcontactstatusflags_impl.h"
 
-// qtpim Contacts does not support all the feaures of QtMobility Contacts
-#ifndef USING_QTPIM
-#define DETAIL_DEFINITION_SUPPORTED
-//#define MUTABLE_SCHEMA_SUPPORTED // Not supported by qtcontacts-sqlite with QtMobility, either
-#define COMPATIBLE_CONTACT_SUPPORTED
-#define DISPLAY_LABEL_SUPPORTED
-#define CUSTOM_LABEL_SUPPORTED
-#else
 // qtpim doesn't support the customLabel field natively, but qtcontact-sqlite provides it
 #define CUSTOM_LABEL_STORAGE_SUPPORTED
-#endif
 
 // Eventually these will make it into qtestcase.h
 // but we might need to tweak the timeout values here.
@@ -135,7 +122,7 @@
             __spiedSigCount = 0; \
             const QList<QList<QVariant> > __spiedSignals = __signalSpy; \
             foreach (const QList<QVariant> &__arguments, __spiedSignals) { \
-                foreach (QContactIdType __apiId, __arguments.first().value<QList<QContactIdType> >()) { \
+                foreach (QContactId __apiId, __arguments.first().value<QList<QContactId> >()) { \
                     QVERIFY(ContactId::isValid(__apiId)); \
                     __spiedSigCount++; \
                 } \
@@ -148,33 +135,16 @@
         QCOMPARE(__spiedSigCount, __expectedCount); \
     } while(0)
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
-#define SKIP_TEST(x,y) QSKIP(x)
-#else
-#define SKIP_TEST(x,y) QSKIP(x, y)
-#endif
+QTCONTACTS_USE_NAMESPACE
 
-
-USE_CONTACTS_NAMESPACE
-
-#ifdef USING_QTPIM
 Q_DECLARE_METATYPE(QList<QContactId>)
-#else
-Q_DECLARE_METATYPE(QList<QContactLocalId>)
-#endif
 
 void registerIdType()
 {
-#ifdef USING_QTPIM
     qRegisterMetaType<QContactId>("QContactId");
     qRegisterMetaType<QList<QContactId> >("QList<QContactId>");
-#else
-    qRegisterMetaType<QContactLocalId>("QContactLocalId");
-    qRegisterMetaType<QList<QContactLocalId> >("QList<QContactLocalId>");
-#endif
 }
 
-#ifdef USING_QTPIM
 const char *contactsAddedSignal = SIGNAL(contactsAdded(QList<QContactId>));
 const char *contactsChangedSignal = SIGNAL(contactsChanged(QList<QContactId>));
 const char *contactsPresenceChangedSignal = SIGNAL(contactsPresenceChanged(QList<QContactId>));
@@ -182,100 +152,47 @@ const char *contactsRemovedSignal = SIGNAL(contactsRemoved(QList<QContactId>));
 const char *relationshipsAddedSignal = SIGNAL(relationshipsAdded(QList<QContactId>));
 const char *relationshipsRemovedSignal = SIGNAL(relationshipsRemoved(QList<QContactId>));
 const char *selfContactIdChangedSignal = SIGNAL(selfContactIdChanged(QContactId,QContactId));
-#else
-const char *contactsAddedSignal = SIGNAL(contactsAdded(QList<QContactLocalId>));
-const char *contactsChangedSignal = SIGNAL(contactsChanged(QList<QContactLocalId>));
-const char *contactsPresenceChangedSignal = SIGNAL(contactsPresenceChanged(QList<QContactLocalId>));
-const char *contactsRemovedSignal = SIGNAL(contactsRemoved(QList<QContactLocalId>));
-const char *relationshipsAddedSignal = SIGNAL(relationshipsAdded(QList<QContactLocalId>));
-const char *relationshipsRemovedSignal = SIGNAL(relationshipsRemoved(QList<QContactLocalId>));
-const char *selfContactIdChangedSignal = SIGNAL(selfContactIdChanged(QContactLocalId,QContactLocalId));
-#endif
 
-#ifdef USING_QTPIM
 const QContactId &retrievalId(const QContactId &id) { return id; }
-#else
-QContactLocalId retrievalId(const QContactId &id) { return id.localId(); }
-#endif
 
-#ifdef USING_QTPIM
 QContactId retrievalId(const QContact &contact)
-#else
-QContactLocalId retrievalId(const QContact &contact)
-#endif
 {
     return retrievalId(contact.id());
 }
 
-#ifdef USING_QTPIM
 QContactId removalId(const QContact &contact) { return retrievalId(contact); }
-#else
-QContactLocalId removalId(const QContact &contact) { return retrievalId(contact); }
-#endif
 
-#ifdef USING_QTPIM
 typedef QList<QContactDetail::DetailType> DetailList;
-#else
-typedef QStringList DetailList;
-#endif
 
 DetailList::value_type detailType(const QContactDetail &detail)
 {
-#ifdef USING_QTPIM
     return detail.type();
-#else
-    return detail.definitionName();
-#endif
 }
 
 template<typename T>
 DetailList::value_type detailType()
 {
-#ifdef USING_QTPIM
     return T::Type;
-#else
-    return T::DefinitionName;
-#endif
 }
 
 QString detailTypeName(const QContactDetail &detail)
 {
-#ifdef USING_QTPIM
     // We could create the table to print this, but I'm not bothering now...
     return QString::number(detail.type());
-#else
-    return detail.definitionName();
-#endif
 }
 
-#ifdef USING_QTPIM
 bool validDetailType(QContactDetail::DetailType type) { return (type != QContactDetail::TypeUndefined); }
-#else
-bool validDetailType(const QString &type) { return !type.isEmpty(); }
-#endif
 
 bool validDetailType(const QContactDetail &detail)
 {
-#ifdef USING_QTPIM
     return validDetailType(detail.type());
-#else
-    return validDetailType(detail.definitionName());
-#endif
 }
 
-#ifdef USING_QTPIM
 typedef QMap<int, QVariant> DetailMap;
-#else
-typedef QVariantMap DetailMap;
-#endif
 
 DetailMap detailValues(const QContactDetail &detail, bool includeProvenance = true)
 {
-#ifdef USING_QTPIM
     DetailMap rv(detail.values());
-#else
-    DetailMap rv(detail.variantValues());
-#endif
 
     if (!includeProvenance) {
         DetailMap::iterator it = rv.begin();
@@ -293,7 +210,6 @@ DetailMap detailValues(const QContactDetail &detail, bool includeProvenance = tr
 
 static bool variantEqual(const QVariant &lhs, const QVariant &rhs)
 {
-#ifdef USING_QTPIM
     // Work around incorrect result from QVariant::operator== when variants contain QList<int>
     static const int QListIntType = QMetaType::type("QList<int>");
 
@@ -305,7 +221,6 @@ static bool variantEqual(const QVariant &lhs, const QVariant &rhs)
     if (lhsType == QListIntType) {
         return (lhs.value<QList<int> >() == rhs.value<QList<int> >());
     }
-#endif
     return (lhs == rhs);
 }
 
@@ -366,99 +281,59 @@ static bool detailsSuperset(const QContactDetail &lhs, const QContactDetail &rhs
 
 bool validContactType(const QContact &contact)
 {
-#ifdef USING_QTPIM
     return (contact.type() == QContactType::TypeContact);
-#else
-    return !contact.type().isEmpty();
-#endif
 }
 
 template<typename T, typename F>
 void setFilterDetail(QContactDetailFilter &filter, F field)
 {
-#ifdef USING_QTPIM
     filter.setDetailType(T::Type, field);
-#else
-    filter.setDetailDefinitionName(T::DefinitionName, field);
-#endif
 }
 
 template<typename T, typename F>
 void setFilterDetail(QContactDetailFilter &filter, T type, F field)
 {
-#ifdef USING_QTPIM
     filter.setDetailType(type, field);
-#else
-    filter.setDetailDefinitionName(type, field);
-#endif
 }
 
 template<typename T, typename F>
 void setFilterDetail(QContactDetailRangeFilter &filter, F field)
 {
-#ifdef USING_QTPIM
     filter.setDetailType(T::Type, field);
-#else
-    filter.setDetailDefinitionName(T::DefinitionName, field);
-#endif
 }
 
 template<typename T, typename F>
 void setFilterDetail(QContactDetailRangeFilter &filter, T type, F field)
 {
-#ifdef USING_QTPIM
     filter.setDetailType(type, field);
-#else
-    filter.setDetailDefinitionName(type, field);
-#endif
 }
 
 template<typename T>
 void setFilterDetail(QContactDetailFilter &filter)
 {
-#ifdef USING_QTPIM
     filter.setDetailType(T::Type);
-#else
-    filter.setDetailDefinitionName(T::DefinitionName);
-#endif
 }
 
 template<typename T>
 void setFilterValue(QContactDetailFilter &filter, T value)
 {
-#ifdef USING_QTPIM
     filter.setValue(value);
-#else
-    filter.setValue(QString(QLatin1String(value)));
-#endif
 }
 
 template<typename T, typename F>
 void setSortDetail(QContactSortOrder &sort, F field)
 {
-#ifdef USING_QTPIM
     sort.setDetailType(T::Type, field);
-#else
-    sort.setDetailDefinitionName(T::DefinitionName, field);
-#endif
 }
 
 template<typename T, typename F>
 void setSortDetail(QContactSortOrder &sort, T type, F field)
 {
-#ifdef USING_QTPIM
     sort.setDetailType(type, field);
-#else
-    sort.setDetailDefinitionName(type, field);
-#endif
 }
 
-#ifdef USING_QTPIM
 template<typename F>
 QString relationshipString(F fn) { return fn(); }
-#else
-const QString &relationshipString(const QString &s) { return s; }
-#endif
 
 template<typename T>
 void setFilterType(QContactRelationshipFilter &filter, T type)
@@ -468,27 +343,18 @@ void setFilterType(QContactRelationshipFilter &filter, T type)
 
 void setFilterContact(QContactRelationshipFilter &filter, const QContact &contact)
 {
-#ifdef USING_QTPIM
     filter.setRelatedContact(contact);
-#else
-    filter.setRelatedContactId(contact.id());
-#endif
 }
 
 QContactRelationship makeRelationship(const QContactId &firstId, const QContactId &secondId)
 {
     QContactRelationship relationship;
 
-#ifdef USING_QTPIM
     QContact first, second;
     first.setId(firstId);
     second.setId(secondId);
     relationship.setFirst(first);
     relationship.setSecond(second);
-#else
-    relationship.setFirst(firstId);
-    relationship.setSecond(secondId);
-#endif
 
     return relationship;
 }
@@ -508,19 +374,10 @@ QContactRelationship makeRelationship(const QString &type, const QContactId &fir
     return relationship;
 }
 
-#ifdef USING_QTPIM
 const QContact &relatedContact(const QContact &contact) { return contact; }
-#else
-QContactId relatedContact(const QContact &contact) { return contact.id(); }
-#endif
 
-#ifdef USING_QTPIM
 QContactId relatedContactId(const QContact &contact) { return contact.id(); }
-#else
-const QContactId &relatedContactId(const QContactId &id) { return id; }
-#endif
 
-#ifdef USING_QTPIM
 QList<QContactId> relatedContactIds(const QList<QContact> &contacts)
 {
     QList<QContactId> rv;
@@ -529,8 +386,5 @@ QList<QContactId> relatedContactIds(const QList<QContact> &contacts)
     }
     return rv;
 }
-#else
-const QList<QContactId> &relatedContactIds(const QList<QContactId> &ids) { return ids; }
-#endif
 
 #endif
