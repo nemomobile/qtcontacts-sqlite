@@ -77,6 +77,10 @@ public:
             const QContactId &second);
 
 protected:
+    QContactManager::Error readDeletedContactIds(
+            QList<QContactId> *contactIds,
+            const QContactFilter &filter);
+
     QContactManager::Error queryContacts(
             const QString &table, QList<QContact> *contacts, const QContactFetchHint &fetchHint);
 

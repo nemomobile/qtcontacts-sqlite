@@ -1422,6 +1422,33 @@ bool includesIdFilter(const QContactFilter &filter)
     }
 }
 
+static bool deletedContactFilter(const QContactFilter &filter)
+{
+    const QContactFilter::FilterType filterType(filter.type());
+
+    // The only queries we suport regarding deleted contacts are for the IDs, possibly
+    // intersected with a syncTarget detail filter
+    if (filterType == QContactFilter::ChangeLogFilter) {
+        const QContactChangeLogFilter &changeLogFilter(static_cast<const QContactChangeLogFilter &>(filter));
+        return changeLogFilter.eventType() == QContactChangeLogFilter::EventRemoved;
+    } else if (filterType == QContactFilter::IntersectionFilter) {
+        const QContactIntersectionFilter &intersectionFilter(static_cast<const QContactIntersectionFilter &>(filter));
+        const QList<QContactFilter> filters(intersectionFilter.filters());
+        if (filters.count() <= 2) {
+            foreach (const QContactFilter &partialFilter, filters) {
+                if (partialFilter.type() == QContactFilter::ChangeLogFilter) {
+                    const QContactChangeLogFilter &changeLogFilter(static_cast<const QContactChangeLogFilter &>(partialFilter));
+                    if (changeLogFilter.eventType() == QContactChangeLogFilter::EventRemoved) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
 QString expandWhere(const QString &where, const QContactFilter &filter)
 {
     QString preamble(QLatin1String("WHERE "));
@@ -1782,12 +1809,102 @@ QContactManager::Error ContactReader::queryContacts(
     return QContactManager::NoError;
 }
 
+QContactManager::Error ContactReader::readDeletedContactIds(
+        QList<QContactId> *contactIds,
+        const QContactFilter &filter)
+{
+    QDateTime since;
+    QString syncTarget;
+
+    // The only queries we support regarding deleted contacts are for the IDs, possibly
+    // intersected with a syncTarget detail filter
+    if (filter.type() == QContactFilter::ChangeLogFilter) {
+        const QContactChangeLogFilter &changeLogFilter(static_cast<const QContactChangeLogFilter &>(filter));
+        since = changeLogFilter.since();
+    } else if (filter.type() == QContactFilter::IntersectionFilter) {
+        const QContactIntersectionFilter &intersectionFilter(static_cast<const QContactIntersectionFilter &>(filter));
+        foreach (const QContactFilter &partialFilter, intersectionFilter.filters()) {
+            const QContactFilter::FilterType filterType(partialFilter.type());
+
+            if (filterType == QContactFilter::ChangeLogFilter) {
+                const QContactChangeLogFilter &changeLogFilter(static_cast<const QContactChangeLogFilter &>(partialFilter));
+                since = changeLogFilter.since();
+            } else if (filterType == QContactFilter::ContactDetailFilter) {
+                const QContactDetailFilter &detailFilter(static_cast<const QContactDetailFilter &>(partialFilter));
+                if (filterOnField<QContactSyncTarget>(detailFilter, QContactSyncTarget::FieldSyncTarget)) {
+                    syncTarget = detailFilter.value().toString();
+                } else {
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot readDeletedContactIds with unsupported detail filter type: %1").arg(detailFilter.detailType()));
+                    return QContactManager::UnspecifiedError;
+                }
+            } else {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot readDeletedContactIds with invalid filter type: %1").arg(filterType));
+                return QContactManager::UnspecifiedError;
+            }
+        }
+    }
+
+    QStringList restrictions;
+    QVariantList bindings;
+    if (!since.isNull()) {
+        restrictions.append(QString::fromLatin1("deleted >= ?"));
+        bindings.append(since);
+    }
+    if (!syncTarget.isNull()) {
+        restrictions.append(QString::fromLatin1("syncTarget = ?"));
+        bindings.append(syncTarget);
+    }
+
+    QString queryStatement(QString::fromLatin1("SELECT contactId FROM DeletedContacts"));
+    if (!restrictions.isEmpty()) {
+        queryStatement.append(QString::fromLatin1(" WHERE "));
+        queryStatement.append(restrictions.takeFirst());
+        if (!restrictions.isEmpty()) {
+            queryStatement.append(QString::fromLatin1(" AND "));
+            queryStatement.append(restrictions.takeFirst());
+        }
+    }
+
+    QSqlQuery query(m_database);
+    query.setForwardOnly(true);
+    if (!query.prepare(queryStatement)) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare deleted contacts ids:\n%1\nQuery:\n%2")
+                .arg(query.lastError().text())
+                .arg(queryStatement));
+        return QContactManager::UnspecifiedError;
+    }
+
+    for (int i = 0; i < bindings.count(); ++i)
+        query.bindValue(i, bindings.at(i));
+
+    if (!query.exec()) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to query deleted contacts ids\n%1\nQuery:\n%2")
+                .arg(query.lastError().text())
+                .arg(queryStatement));
+        return QContactManager::UnspecifiedError;
+    }
+
+    do {
+        for (int i = 0; i < ReportBatchSize && query.next(); ++i) {
+            contactIds->append(ContactId::apiId(query.value(0).toUInt()));
+        }
+        contactIdsAvailable(*contactIds);
+    } while (query.isValid());
+
+    return QContactManager::NoError;
+}
+
 QContactManager::Error ContactReader::readContactIds(
         QList<QContactId> *contactIds,
         const QContactFilter &filter,
         const QList<QContactSortOrder> &order)
 {
     QMutexLocker locker(ContactsDatabase::accessMutex());
+
+    // Is this a query on deleted contacts?
+    if (deletedContactFilter(filter)) {
+        return readDeletedContactIds(contactIds, filter);
+    }
 
     // Use a dummy table name to identify any temporary tables we create
     const QString tableName(QString::fromLatin1("readContactIds"));

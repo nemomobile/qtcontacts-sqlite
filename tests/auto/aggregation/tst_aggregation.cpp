@@ -3388,6 +3388,9 @@ void tst_Aggregation::changeLogFiltering()
     QContactDetailFilter stf;
     setFilterDetail<QContactSyncTarget>(stf, QContactSyncTarget::FieldSyncTarget);
     stf.setValue("local"); // explicitly ignore aggregates.
+    QContactDetailFilter astf;
+    setFilterDetail<QContactSyncTarget>(astf, QContactSyncTarget::FieldSyncTarget);
+    astf.setValue("aggregate"); // only include aggregates
     QContactChangeLogFilter clf;
 
     clf.setEventType(QContactChangeLogFilter::EventAdded);
@@ -3417,6 +3420,81 @@ void tst_Aggregation::changeLogFiltering()
     filtered = m_cm->contactIds(cif);
     QVERIFY(filtered.contains(retrievalId(a)));
     QVERIFY(filtered.contains(retrievalId(b)));
+
+    // Filtering for removed contactIds is supported
+    clf.setEventType(QContactChangeLogFilter::EventRemoved);
+    clf.setSince(startTime);     // should contain neither a nor b
+    filtered = m_cm->contactIds(clf);
+    QVERIFY(!filtered.contains(retrievalId(a)));
+    QVERIFY(!filtered.contains(retrievalId(b)));
+
+    // Filtering in combination with syncTarget filtering is also supported
+    cif.clear(); cif << stf << clf;
+    filtered = m_cm->contactIds(cif);
+    QVERIFY(!filtered.contains(retrievalId(a)));
+    QVERIFY(!filtered.contains(retrievalId(b)));
+
+    // Either order of intersected filters is the same
+    cif.clear(); cif << clf << stf;
+    filtered = m_cm->contactIds(cif);
+    QVERIFY(!filtered.contains(retrievalId(a)));
+    QVERIFY(!filtered.contains(retrievalId(b)));
+
+    QContactId idA(removalId(a));
+    QVERIFY(m_cm->removeContact(idA));
+
+    QTest::qWait(1001);
+    QDateTime postDeleteTime = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
+
+    QContactId idB(removalId(b));
+    QVERIFY(m_cm->removeContact(idB));
+
+    clf = QContactChangeLogFilter();
+    clf.setEventType(QContactChangeLogFilter::EventRemoved);
+    clf.setSince(startTime);     // should contain both a and b
+    filtered = m_cm->contactIds(clf);
+    QVERIFY(filtered.count() >= 4);
+    QVERIFY(filtered.contains(idA));
+    QVERIFY(filtered.contains(idB));
+
+    // Check that syncTarget filtering is also applied
+    cif.clear(); cif << stf << clf;
+    filtered = m_cm->contactIds(cif);
+    QVERIFY(filtered.count() >= 2);
+    QVERIFY(filtered.contains(idA));
+    QVERIFY(filtered.contains(idB));
+
+    cif.clear(); cif << astf << clf;
+    filtered = m_cm->contactIds(cif);
+    QVERIFY(filtered.count() >= 2);
+    QVERIFY(!filtered.contains(idA));
+    QVERIFY(!filtered.contains(idB));
+
+    // Check that since values are applied
+    clf = QContactChangeLogFilter();
+    clf.setEventType(QContactChangeLogFilter::EventRemoved);
+    clf.setSince(postDeleteTime);     // should contain both only b
+    filtered = m_cm->contactIds(clf);
+    QVERIFY(filtered.count() >= 2);
+    QVERIFY(filtered.contains(idB));
+
+    cif.clear(); cif << stf << clf;
+    filtered = m_cm->contactIds(cif);
+    QVERIFY(filtered.count() >= 1);
+    QVERIFY(filtered.contains(idB));
+
+    cif.clear(); cif << astf << clf;
+    filtered = m_cm->contactIds(cif);
+    QVERIFY(filtered.count() >= 1);
+    QVERIFY(!filtered.contains(idB));
+
+    // Check that since is not required
+    clf = QContactChangeLogFilter();
+    clf.setEventType(QContactChangeLogFilter::EventRemoved);
+    filtered = m_cm->contactIds(clf);
+    QVERIFY(filtered.count() >= 4);
+    QVERIFY(filtered.contains(idA));
+    QVERIFY(filtered.contains(idB));
 }
 
 QTEST_MAIN(tst_Aggregation)
