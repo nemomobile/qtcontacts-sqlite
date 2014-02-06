@@ -75,7 +75,8 @@ static const char *createContactsTable =
         "\n hasPhoneNumber BOOL DEFAULT 0,"
         "\n hasEmailAddress BOOL DEFAULT 0,"
         "\n hasOnlineAccount BOOL DEFAULT 0,"
-        "\n isOnline BOOL DEFAULT 0);";
+        "\n isOnline BOOL DEFAULT 0,"
+        "\n isDeactivated BOOL DEFAULT 0);";
 
 static const char *createAddressesTable =
         "\n CREATE TABLE Addresses ("
@@ -469,6 +470,9 @@ static const char *createContactsHasOnlineAccountIndex =
 static const char *createContactsIsOnlineIndex =
         "\n CREATE INDEX ContactsIsOnlineIndex ON Contacts(isOnline);";
 
+static const char *createContactsIsDeactivatedIndex =
+        "\n CREATE INDEX ContactsIsDeactivatedIndex ON Contacts(isDeactivated);";
+
 static const char *createRelationshipsFirstIdIndex =
         "\n CREATE INDEX RelationshipsFirstIdIndex ON Relationships(firstId);";
 
@@ -588,13 +592,21 @@ static const char *upgradeVersion1[] = {
     "PRAGMA user_version=2",
     0 // NULL-terminated
 };
+static const char *upgradeVersion2[] = {
+    "ALTER TABLE Contacts ADD COLUMN isDeactivated BOOL DEFAULT 0",
+    createContactsIsDeactivatedIndex,
+    "PRAGMA user_version=3",
+    0 // NULL-terminated
+};
+
 
 static const char **upgradeVersions[] = {
     upgradeVersion0,
     upgradeVersion1,
+    upgradeVersion2,
 };
 
-static const int currentSchemaVersion = 2;
+static const int currentSchemaVersion = 3;
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {
@@ -1210,5 +1222,6 @@ QMutex *ContactsDatabase::accessMutex()
     return databaseMutex();
 }
 
-#include "qcontactoriginmetadata_impl.h"
-#include "qcontactstatusflags_impl.h"
+#include "../extensions/qcontactdeactivated_impl.h"
+#include "../extensions/qcontactoriginmetadata_impl.h"
+#include "../extensions/qcontactstatusflags_impl.h"

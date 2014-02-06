@@ -38,7 +38,8 @@
 #include "semaphore_p.h"
 #include "trace_p.h"
 
-#include <QContactStatusFlags>
+#include "../extensions/qcontactdeactivated.h"
+#include "../extensions/qcontactstatusflags.h"
 
 #include <QContactFavorite>
 #include <QContactGender>
@@ -116,6 +117,7 @@ static const char *possibleAggregatesWhere = /* SELECT contactId FROM Contacts .
         "\n AND (COALESCE(Contacts.lowerLastName, '') = '' OR COALESCE(:lastName, '') = '' OR Contacts.lowerLastName = :lastName)"
         "\n AND COALESCE(Contacts.gender, '') != :excludeGender"
         "\n AND contactId > 2" // exclude self contact
+        "\n AND isDeactivated = 0" // exclude deactivated
         "\n AND contactId NOT IN ("
         "\n   SELECT secondId FROM Relationships WHERE firstId = :contactId AND type = 'IsNot'"
         "\n   UNION"
@@ -184,7 +186,7 @@ static const char *childlessAggregateIds =
         "\n SELECT DISTINCT firstId FROM Relationships WHERE type = 'Aggregates')";
 
 static const char *orphanContactIds =
-        "\n SELECT contactId FROM Contacts WHERE syncTarget != 'aggregate' AND contactId NOT IN ("
+        "\n SELECT contactId FROM Contacts WHERE syncTarget != 'aggregate' AND isDeactivated = 0 AND contactId NOT IN ("
         "\n SELECT DISTINCT secondId FROM Relationships WHERE type = 'Aggregates')";
 
 static const char *countLocalConstituents =
@@ -228,7 +230,8 @@ static const char *insertContact =
         "\n  hasPhoneNumber,"
         "\n  hasEmailAddress,"
         "\n  hasOnlineAccount,"
-        "\n  isOnline)"
+        "\n  isOnline,"
+        "\n  isDeactivated)"
         "\n VALUES ("
         "\n  :displayLabel,"
         "\n  :firstName,"
@@ -247,7 +250,8 @@ static const char *insertContact =
         "\n  :hasPhoneNumber,"
         "\n  :hasEmailAccount,"
         "\n  :hasOnlineAccount,"
-        "\n  :isOnline);";
+        "\n  :isOnline,"
+        "\n  :isDeactivated);";
 
 static const char *updateContact =
         "\n UPDATE Contacts SET"
@@ -268,7 +272,8 @@ static const char *updateContact =
         "\n  hasPhoneNumber = CASE WHEN :valueKnown = 1 THEN :value ELSE hasPhoneNumber END, "
         "\n  hasEmailAddress = CASE WHEN :valueKnown = 1 THEN :value ELSE hasEmailAddress END, "
         "\n  hasOnlineAccount = CASE WHEN :valueKnown = 1 THEN :value ELSE hasOnlineAccount END, "
-        "\n  isOnline = CASE WHEN :valueKnown = 1 THEN :value ELSE isOnline END "
+        "\n  isOnline = CASE WHEN :valueKnown = 1 THEN :value ELSE isOnline END, "
+        "\n  isDeactivated = CASE WHEN :valueKnown = 1 THEN :value ELSE isDeactivated END "
         "\n WHERE contactId = :contactId;";
 
 static const char *removeContact =
@@ -997,7 +1002,9 @@ QContactManager::Error ContactWriter::saveRelationships(
 
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     if (!aggregatesAffected.isEmpty()) {
-        regenerateAggregates(aggregatesAffected.toList(), DetailList(), true);
+        QContactManager::Error writeError = regenerateAggregates(aggregatesAffected.toList(), DetailList(), true);
+        if (writeError != QContactManager::NoError)
+            return writeError;
     }
 #endif
 
@@ -1130,7 +1137,9 @@ QContactManager::Error ContactWriter::removeRelationships(
     }
 
     if (!aggregatesAffected.isEmpty()) {
-        regenerateAggregates(aggregatesAffected.toList(), DetailList(), true);
+        QContactManager::Error writeError = regenerateAggregates(aggregatesAffected.toList(), DetailList(), true);
+        if (writeError != QContactManager::NoError)
+            return writeError;
     }
 
     // Some contacts may need to have new aggregates created
@@ -1214,6 +1223,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactId> &contactIds
                 // only rollback if we created a transaction.
                 rollbackTransaction();
             }
+            m_removeContact.finish();
             return QContactManager::UnspecifiedError;
         }
         m_removeContact.finish();
@@ -1291,6 +1301,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactId> &contactIds
                 // only rollback the transaction if we created it
                 rollbackTransaction();
             }
+            m_removeContact.finish();
             return QContactManager::UnspecifiedError;
         }
 
@@ -1334,6 +1345,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactId> &contactIds
                 // only rollback the transaction if we created it
                 rollbackTransaction();
             }
+            m_removeContact.finish();
             return QContactManager::UnspecifiedError;
         }
         m_removeContact.finish();
@@ -1362,7 +1374,9 @@ QContactManager::Error ContactWriter::remove(const QList<QContactId> &contactIds
 
     // Now regenerate our remaining aggregates as required.
     if (aggregatesOfRemoved.size() > 0) {
-        regenerateAggregates(aggregatesOfRemoved, DetailList(), true);
+        QContactManager::Error writeError = regenerateAggregates(aggregatesOfRemoved, DetailList(), true);
+        if (writeError != QContactManager::NoError)
+            return writeError;
     }
 
     // Success!  If we created a transaction, commit.
@@ -1430,6 +1444,7 @@ QMap<QContactDetail::DetailType, const char *> getDetailTypeNames()
     INSERT(rv, QContactVersion);
 
     // Our extensions:
+    INSERT(rv, QContactDeactivated);
     INSERT(rv, QContactOriginMetadata);
     INSERT(rv, QContactStatusFlags);
 
@@ -1480,6 +1495,7 @@ static ContactWriter::DetailList getUnpromotedDetailTypes()
     rv << detailType<QContactGlobalPresence>();
     rv << detailType<QContactStatusFlags>();
     rv << detailType<QContactOriginMetadata>();
+    rv << detailType<QContactDeactivated>();
     return rv;
 }
 
@@ -1958,6 +1974,7 @@ static ContactWriter::DetailList allSupportedDetails()
     appendDetailType<QContactRingtone>(&details);
     appendDetailType<QContactStatusFlags>(&details);
     appendDetailType<QContactExtendedDetail>(&details);
+    appendDetailType<QContactDeactivated>(&details);
 
     return details;
 }
@@ -1975,6 +1992,7 @@ static ContactWriter::DetailList allSingularDetails()
     appendDetailType<QContactBirthday>(&details);
     appendDetailType<QContactOriginMetadata>(&details);
     appendDetailType<QContactStatusFlags>(&details);
+    appendDetailType<QContactDeactivated>(&details);
 
     return details;
 }
@@ -1991,7 +2009,7 @@ static QContactManager::Error enforceDetailConstraints(QContact *contact)
     foreach (const QContactDetail &det, contact->details()) {
         QString typeName(detailTypeName(det));
         if (!detailListContains(supported, det)) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Invalid detail type: %1").arg(typeName));
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Invalid detail type: %1 %2").arg(typeName).arg(det.type()));
             return QContactManager::InvalidDetailError;
         } else {
             ++detailCounts[detailType(det)];
@@ -2888,7 +2906,7 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
     the database.  It simply means that the existing aggregates may contain
     some stale data.
 */
-void ContactWriter::regenerateAggregates(const QList<quint32> &aggregateIds, const DetailList &definitionMask, bool withinTransaction)
+QContactManager::Error ContactWriter::regenerateAggregates(const QList<quint32> &aggregateIds, const DetailList &definitionMask, bool withinTransaction)
 {
     static const DetailList identityDetailTypes(getIdentityDetailTypes());
     static const DetailList unpromotedDetailTypes(getUnpromotedDetailTypes());
@@ -2901,6 +2919,8 @@ void ContactWriter::regenerateAggregates(const QList<quint32> &aggregateIds, con
 
     QList<QContact> aggregatesToSave;
     QSet<QContactId> aggregatesToSaveIds;
+    QVariantList aggregatesToRemove;
+
     foreach (quint32 aggId, aggregateIds) {
         QContactId apiId(ContactId::apiId(aggId));
         if (aggregatesToSaveIds.contains(apiId)) {
@@ -2913,7 +2933,7 @@ void ContactWriter::regenerateAggregates(const QList<quint32> &aggregateIds, con
         m_findConstituentsForAggregate.bindValue(":aggregateId", aggId);
         if (!m_findConstituentsForAggregate.exec()) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to find constituent contacts for aggregate %1 during regenerate").arg(aggId));
-            continue;
+            return QContactManager::UnspecifiedError;
         }
         while (m_findConstituentsForAggregate.next()) {
             readIds.append(ContactId::apiId(m_findConstituentsForAggregate.value(0).toUInt()));
@@ -2922,7 +2942,7 @@ void ContactWriter::regenerateAggregates(const QList<quint32> &aggregateIds, con
 
         if (readIds.size() == 1) { // only the aggregate?
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Existing aggregate %1 should already have been removed - aborting regenerate").arg(aggId));
-            continue;
+            return QContactManager::UnspecifiedError;
         }
 
         QContactFetchHint hint;
@@ -2934,6 +2954,21 @@ void ContactWriter::regenerateAggregates(const QList<quint32> &aggregateIds, con
                 || readList.size() <= 1
                 || readList.at(0).detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget) != aggregateSyncTarget) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to read constituent contacts for aggregate %1 during regenerate").arg(aggId));
+            return QContactManager::UnspecifiedError;
+        }
+
+        // See if there are any constituents to aggregate
+        bool activeConstituent = false;
+        for (int i = 1; i < readList.size(); ++i) { // start from 1 to skip aggregate
+            const QContact &curr(readList.at(i));
+            if (curr.details<QContactDeactivated>().count() == 0) {
+                activeConstituent = true;
+                break;
+            }
+        }
+        if (!activeConstituent) {
+            // No active constituents - we need to remove this aggregate
+            aggregatesToRemove.append(QVariant(aggId));
             continue;
         }
 
@@ -2960,6 +2995,8 @@ void ContactWriter::regenerateAggregates(const QList<quint32> &aggregateIds, con
         // Step two: search for the "local" contact and promote its details first
         for (int i = 1; i < readList.size(); ++i) { // start from 1 to skip aggregate
             QContact curr = readList.at(i);
+            if (curr.details<QContactDeactivated>().count())
+                continue;
             if (curr.detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget) != localSyncTarget)
                 continue;
             QList<QContactDetail> currDetails = curr.details();
@@ -2978,6 +3015,8 @@ void ContactWriter::regenerateAggregates(const QList<quint32> &aggregateIds, con
         // Step Three: promote data from details of other related contacts
         for (int i = 1; i < readList.size(); ++i) { // start from 1 to skip aggregate
             QContact curr = readList.at(i);
+            if (curr.details<QContactDeactivated>().count())
+                continue;
             if (curr.detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget) == localSyncTarget) {
                 continue; // already promoted the "local" contact's details.
             }
@@ -2991,11 +3030,26 @@ void ContactWriter::regenerateAggregates(const QList<quint32> &aggregateIds, con
         aggregatesToSaveIds.insert(ContactId::apiId(aggregateContact));
     }
 
-    QMap<int, QContactManager::Error> errorMap;
-    QContactManager::Error writeError = save(&aggregatesToSave, definitionMask, 0, &errorMap, withinTransaction, true); // we're updating aggregates.
-    if (writeError != QContactManager::NoError) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to write updated aggregate contacts during regenerate.  definitionMask:") << definitionMask);
+    if (!aggregatesToSave.isEmpty()) {
+        QMap<int, QContactManager::Error> errorMap;
+        QContactManager::Error writeError = save(&aggregatesToSave, definitionMask, 0, &errorMap, withinTransaction, true); // we're updating aggregates.
+        if (writeError != QContactManager::NoError) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to write updated aggregate contacts during regenerate.  definitionMask:") << definitionMask);
+            return writeError;
+        }
     }
+    if (!aggregatesToRemove.isEmpty()) {
+        m_removeContact.bindValue(QLatin1String(":contactId"), aggregatesToRemove);
+        if (!m_removeContact.execBatch()) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to remove deactivated aggregate contacts:\n%1")
+                    .arg(m_removeContact.lastError().text()));
+            m_removeContact.finish();
+            return QContactManager::UnspecifiedError;
+        }
+        m_removeContact.finish();
+    }
+
+    return QContactManager::NoError;
 }
 
 QContactManager::Error ContactWriter::removeChildlessAggregates(QList<QContactId> *removedIds)
@@ -3018,6 +3072,7 @@ QContactManager::Error ContactWriter::removeChildlessAggregates(QList<QContactId
         if (!m_removeContact.execBatch()) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to remove childless aggregate contacts:\n%1")
                     .arg(m_removeContact.lastError().text()));
+            m_removeContact.finish();
             return QContactManager::UnspecifiedError;
         }
         m_removeContact.finish();
@@ -3154,7 +3209,7 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
         return writeErr;
     }
 
-    bindContactDetails(*contact, m_insertContact, DetailList(), false);
+    bindContactDetails(*contact, m_insertContact);
     if (!m_insertContact.exec()) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create contact:\n%1")
                 .arg(m_insertContact.lastError().text()));
@@ -3172,35 +3227,9 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
         if (!withinAggregateUpdate) {
             // and either update the aggregate contact (if it exists) or create a new one (unless it is an aggregate contact).
             if (contact->detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget) != aggregateSyncTarget) {
-                quint32 aggregateId = 0;
-                writeErr = updateOrCreateAggregate(contact, definitionMask, withinTransaction, &aggregateId);
-                if ((writeErr == QContactManager::NoError) && (aggregateId < contactId)) {
-                    // The aggregate pre-dates the new contact - it probably had a local constituent already
-                    quint32 localCount = 0;
-
-                    m_countLocalConstituents.bindValue(":aggregateId", aggregateId);
-                    if (!m_countLocalConstituents.exec()) {
-                        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to fetch self contact id during remove:\n%1")
-                                .arg(m_countLocalConstituents.lastError().text()));
-                        return QContactManager::UnspecifiedError;
-                    }
-                    if (m_countLocalConstituents.next()) {
-                        localCount = m_countLocalConstituents.value(0).toUInt();
-                    }
-                    m_countLocalConstituents.finish();
-
-                    if (localCount > 1) {
-                        // The matched aggregate now has multiple 'local' constituents; change this one to 'was_local'
-                        m_updateSyncTarget.bindValue(":contactId", contactId);
-                        m_updateSyncTarget.bindValue(":syncTarget", wasLocalSyncTarget);
-                        if (!m_updateSyncTarget.exec()) {
-                            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to update contact syncTarget:\n%1")
-                                    .arg(m_updateSyncTarget.lastError().text()));
-                            return QContactManager::UnspecifiedError;
-                        }
-                        m_updateSyncTarget.finish();
-                    }
-                }
+                writeErr = setAggregate(contact, contactId, false, definitionMask, withinTransaction);
+                if (writeErr != QContactManager::NoError)
+                    return writeErr;
             }
         }
 #endif
@@ -3284,8 +3313,7 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
     // update the display label for this contact
     m_engine.regenerateDisplayLabel(*contact);
 
-    bindContactDetails(*contact, m_updateContact, definitionMask, true);
-    m_updateContact.bindValue(22, contactId);
+    bindContactDetails(*contact, m_updateContact, definitionMask, contactId);
     if (!m_updateContact.exec()) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to update contact:\n%1")
                 .arg(m_updateContact.lastError().text()));
@@ -3311,15 +3339,58 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
             m_findAggregateForContact.finish();
 
             if (aggregatesOfUpdated.size() > 0) {
-                *aggregateUpdated = true;
-                regenerateAggregates(aggregatesOfUpdated, definitionMask, withinTransaction);
+                writeError = regenerateAggregates(aggregatesOfUpdated, definitionMask, withinTransaction);
+            } else if (oldSyncTarget != localSyncTarget && oldSyncTarget != wasLocalSyncTarget) {
+                writeError = setAggregate(contact, contactId, true, definitionMask, withinTransaction);
             }
+            if (writeError != QContactManager::NoError)
+                return writeError;
+
+            *aggregateUpdated = true;
         }
     }
 #endif
 
     return writeError;
 }
+
+#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
+QContactManager::Error ContactWriter::setAggregate(QContact *contact, quint32 contactId, bool update, const DetailList &definitionMask, bool withinTransaction)
+{
+    quint32 aggregateId = 0;
+
+    QContactManager::Error writeErr = updateOrCreateAggregate(contact, definitionMask, withinTransaction, &aggregateId);
+    if ((writeErr == QContactManager::NoError) && (update || (aggregateId < contactId))) {
+        // The aggregate pre-dates the new contact - it probably had a local constituent already
+        quint32 localCount = 0;
+
+        m_countLocalConstituents.bindValue(":aggregateId", aggregateId);
+        if (!m_countLocalConstituents.exec()) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to count local consitutents for aggregate %1 remove:\n%2")
+                    .arg(aggregateId).arg(m_countLocalConstituents.lastError().text()));
+            return QContactManager::UnspecifiedError;
+        }
+        if (m_countLocalConstituents.next()) {
+            localCount = m_countLocalConstituents.value(0).toUInt();
+        }
+        m_countLocalConstituents.finish();
+
+        if (localCount > 1) {
+            // The matched aggregate now has multiple 'local' constituents; change this one to 'was_local'
+            m_updateSyncTarget.bindValue(":contactId", contactId);
+            m_updateSyncTarget.bindValue(":syncTarget", wasLocalSyncTarget);
+            if (!m_updateSyncTarget.exec()) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to update contact syncTarget:\n%1")
+                        .arg(m_updateSyncTarget.lastError().text()));
+                return QContactManager::UnspecifiedError;
+            }
+            m_updateSyncTarget.finish();
+        }
+    }
+
+    return QContactManager::NoError;
+}
+#endif
 
 QContactManager::Error ContactWriter::write(quint32 contactId, QContact *contact, const DetailList &definitionMask)
 {
@@ -3357,7 +3428,7 @@ QContactManager::Error ContactWriter::write(quint32 contactId, QContact *contact
     return error;
 }
 
-void ContactWriter::bindContactDetails(const QContact &contact, QSqlQuery &query, const DetailList &definitionMask, bool update)
+void ContactWriter::bindContactDetails(const QContact &contact, QSqlQuery &query, const DetailList &definitionMask, quint32 contactId)
 {
     QContactDisplayLabel label = contact.detail<QContactDisplayLabel>();
     if (!label.isEmpty()) {
@@ -3377,7 +3448,8 @@ void ContactWriter::bindContactDetails(const QContact &contact, QSqlQuery &query
     query.bindValue(7, name.value<QString>(QContactName::FieldSuffix).trimmed());
     query.bindValue(8, name.value<QString>(QContactName__FieldCustomLabel).trimmed());
 
-    query.bindValue(9, contact.detail<QContactSyncTarget>().syncTarget());
+    const QString syncTarget(contact.detail<QContactSyncTarget>().syncTarget());
+    query.bindValue(9, syncTarget);
 
     const QContactTimestamp timestamp = contact.detail<QContactTimestamp>();
     query.bindValue(10, timestamp.value<QDateTime>(QContactTimestamp::FieldCreationTimestamp).toUTC());
@@ -3391,49 +3463,58 @@ void ContactWriter::bindContactDetails(const QContact &contact, QSqlQuery &query
     const QContactFavorite favorite = contact.detail<QContactFavorite>();
     query.bindValue(13, favorite.isFavorite());
 
+    const bool update(contactId != 0);
+
     // Does this contact contain the information needed to update hasPhoneNumber?
-    bool valueKnown = definitionMask.isEmpty() || detailListContains<QContactPhoneNumber>(definitionMask);
-    bool value = valueKnown ? !contact.detail<QContactPhoneNumber>().isEmpty() : false;
-    if (update) {
-        query.bindValue(14, valueKnown);
-        query.bindValue(15, value);
-    } else {
-        query.bindValue(14, value);
-    }
+    bool hasPhoneNumberKnown = definitionMask.isEmpty() || detailListContains<QContactPhoneNumber>(definitionMask);
+    bool hasPhoneNumber = hasPhoneNumberKnown ? !contact.detail<QContactPhoneNumber>().isEmpty() : false;
 
-    valueKnown = definitionMask.isEmpty() || detailListContains<QContactEmailAddress>(definitionMask);
-    value = valueKnown ? !contact.detail<QContactEmailAddress>().isEmpty() : false;
-    if (update) {
-        query.bindValue(16, valueKnown);
-        query.bindValue(17, value);
-    } else {
-        query.bindValue(15, value);
-    }
+    bool hasEmailAddressKnown = definitionMask.isEmpty() || detailListContains<QContactEmailAddress>(definitionMask);
+    bool hasEmailAddress = hasEmailAddressKnown ? !contact.detail<QContactEmailAddress>().isEmpty() : false;
 
-    valueKnown = definitionMask.isEmpty() || detailListContains<QContactOnlineAccount>(definitionMask);
-    value = valueKnown ? !contact.detail<QContactOnlineAccount>().isEmpty() : false;
-    if (update) {
-        query.bindValue(18, valueKnown);
-        query.bindValue(19, value);
-    } else {
-        query.bindValue(16, value);
-    }
+    bool hasOnlineAccountKnown = definitionMask.isEmpty() || detailListContains<QContactOnlineAccount>(definitionMask);
+    bool hasOnlineAccount = hasOnlineAccountKnown ? !contact.detail<QContactOnlineAccount>().isEmpty() : false;
 
     // isOnline is true if any presence details are not offline/unknown
-    valueKnown = definitionMask.isEmpty() || detailListContains<QContactPresence>(definitionMask);
-    value = false;
+    bool isOnlineKnown = definitionMask.isEmpty() || detailListContains<QContactPresence>(definitionMask);
+    bool isOnline = false;
     foreach (const QContactPresence &presence, contact.details<QContactPresence>()) {
         if (presence.presenceState() >= QContactPresence::PresenceAvailable &&
             presence.presenceState() <= QContactPresence::PresenceExtendedAway) {
-            value = true;
+            isOnline = true;
             break;
         }
     }
+
+    // isDeactivated is true if the contact contains QContactDeactivated
+    bool isDeactivatedKnown = definitionMask.isEmpty() || detailListContains<QContactDeactivated>(definitionMask);
+    bool isDeactivated = isDeactivatedKnown ? !contact.details<QContactDeactivated>().isEmpty() : false;
+    if (isDeactivated) {
+        // Deactivation is only possible for syncable contacts
+        if (syncTarget == aggregateSyncTarget || syncTarget == localSyncTarget || syncTarget == wasLocalSyncTarget) {
+            isDeactivated = false;
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot set deactivated for syncTarget: %1").arg(syncTarget));
+        }
+    }
+
     if (update) {
-        query.bindValue(20, valueKnown);
-        query.bindValue(21, value);
+        query.bindValue(14, hasPhoneNumberKnown);
+        query.bindValue(15, hasPhoneNumber);
+        query.bindValue(16, hasEmailAddressKnown);
+        query.bindValue(17, hasEmailAddress);
+        query.bindValue(18, hasOnlineAccountKnown);
+        query.bindValue(19, hasOnlineAccount);
+        query.bindValue(20, isOnlineKnown);
+        query.bindValue(21, isOnline);
+        query.bindValue(22, isDeactivatedKnown);
+        query.bindValue(23, isDeactivated);
+        query.bindValue(24, contactId);
     } else {
-        query.bindValue(17, value);
+        query.bindValue(14, hasPhoneNumber);
+        query.bindValue(15, hasEmailAddress);
+        query.bindValue(16, hasOnlineAccount);
+        query.bindValue(17, isOnline);
+        query.bindValue(18, isDeactivated);
     }
 }
 

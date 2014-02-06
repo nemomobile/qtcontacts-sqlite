@@ -44,7 +44,8 @@
 #include "../../util.h"
 #include "../../qcontactmanagerdataholder.h"
 
-#include <QContactStatusFlags>
+#include "../../../src/extensions/qcontactdeactivated.h"
+#include "../../../src/extensions/qcontactstatusflags.h"
 
 //TESTED_COMPONENT=src/contacts
 //TESTED_CLASS=
@@ -130,6 +131,7 @@ private:
     typedef QPair<TypeIdentifier, FieldIdentifier> FieldSelector;
     QMap<QContactManager*, QMap<QString, FieldSelector> > defAndFieldNamesForTypePerManager;
     QMultiMap<QContactManager*, QContactId> contactsAddedToManagers;
+    QMultiMap<QContactManager*, QContactId> transientContacts;
     QMultiMap<QContactManager*, QString> detailDefinitionsAddedToManagers;
     QList<QContactManager*> managers;
     QScopedPointer<QContactManagerDataHolder> managerDataHolder;
@@ -140,6 +142,7 @@ private slots:
 
     void initTestCase();
     void cleanupTestCase();
+    void cleanup();
 
     void rangeFiltering(); // XXX should take all managers
     void rangeFiltering_data();
@@ -152,6 +155,9 @@ private slots:
 
     void statusFlagsFiltering();
     void statusFlagsFiltering_data();
+
+    void deactivation();
+    void deactivation_data();
 
     void detailVariantFiltering();
     void detailVariantFiltering_data();
@@ -263,6 +269,15 @@ void tst_QContactManagerFiltering::cleanupTestCase()
 
     // And restore old contacts
     managerDataHolder.reset(0);
+}
+
+void tst_QContactManagerFiltering::cleanup()
+{
+    foreach (QContactManager* manager, managers) {
+        QList<QContactId> contactIds = transientContacts.values(manager);
+        manager->removeContacts(contactIds, 0);
+    }
+    transientContacts.clear();
 }
 
 QString tst_QContactManagerFiltering::convertIds(QList<QContactId> allIds, QList<QContactId> ids, QChar minimumContact, QChar maximumContact)
@@ -588,6 +603,7 @@ void tst_QContactManagerFiltering::statusFlagsFiltering()
     QSet<QContactId> emailAddressIds = cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::HasEmailAddress, QContactFilter::MatchContains)).toSet();
     QSet<QContactId> onlineAccountIds = cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::HasOnlineAccount, QContactFilter::MatchContains)).toSet();
     QSet<QContactId> onlineIds = cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::IsOnline, QContactFilter::MatchContains)).toSet();
+    QSet<QContactId> deactivatedIds = cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::IsDeactivated, QContactFilter::MatchContains)).toSet();
 
     // Also test for combination tests
     QContactFilter filter(QContactStatusFlags::matchFlags(QContactStatusFlags::HasPhoneNumber | QContactStatusFlags::HasEmailAddress, QContactFilter::MatchContains));
@@ -608,14 +624,107 @@ void tst_QContactManagerFiltering::statusFlagsFiltering()
         QContactPresence::PresenceState presenceState = presence.presenceState();
         const bool isOnline = (presenceState > QContactPresence::PresenceUnknown) && (presenceState < QContactPresence::PresenceOffline);
 
+        const bool isDeactivated = (contact.details<QContactDeactivated>().count() > 0);
+
         QCOMPARE(phoneNumberIds.contains(contactId), hasPhoneNumber);
         QCOMPARE(emailAddressIds.contains(contactId), hasEmailAddress);
         QCOMPARE(onlineAccountIds.contains(contactId), hasOnlineAccount);
         QCOMPARE(onlineIds.contains(contactId), isOnline);
+        QCOMPARE(deactivatedIds.contains(contactId), isDeactivated);
 
         QCOMPARE(phoneAndEmailIds.contains(contactId), (hasPhoneNumber && hasEmailAddress));
         QCOMPARE(phoneOnlyIds.contains(contactId), (hasPhoneNumber && !hasEmailAddress && !hasOnlineAccount && !isOnline));
     }
+}
+
+void tst_QContactManagerFiltering::deactivation_data()
+{
+    QTest::addColumn<QContactManager *>("cm");
+
+    for (int i = 0; i < managers.size(); i++) {
+        QContactManager *cm = managers.at(i);
+        QTest::newRow(qPrintable(cm->objectName())) << cm;
+    }
+}
+
+void tst_QContactManagerFiltering::deactivation()
+{
+    QFETCH(QContactManager*, cm);
+
+    QContact alice;
+    QContact bob;
+
+    QContactName an, bn;
+    an.setFirstName("Alice");
+    an.setMiddleName("Through The");
+    an.setLastName("Looking-Glass");
+    alice.saveDetail(&an);
+    bn.setFirstName("Bob");
+    bn.setMiddleName("The");
+    bn.setLastName("Demolisher");
+    bob.saveDetail(&bn);
+
+    // Alice must have a sync-target to be deactivated
+    QContactSyncTarget st;
+    st.setSyncTarget("test");
+    alice.saveDetail(&st);
+
+    QVERIFY(cm->saveContact(&alice));
+    QVERIFY(cm->saveContact(&bob));
+    alice = cm->contact(alice.id());
+    bob = cm->contact(bob.id());
+    transientContacts.insert(cm, ContactId::apiId(alice));
+    transientContacts.insert(cm, ContactId::apiId(bob));
+
+    QList<QContactId> ids(cm->contactIds());
+    QVERIFY(ids.contains(alice.id()));
+    QVERIFY(ids.contains(bob.id()));
+
+    // Verify that both contacts are non-deactivated
+    QCOMPARE(alice.details<QContactDeactivated>().count(), 0);
+    QCOMPARE(alice.detail<QContactStatusFlags>().testFlag(QContactStatusFlags::IsDeactivated), false);
+    QCOMPARE(bob.details<QContactDeactivated>().count(), 0);
+    QCOMPARE(bob.detail<QContactStatusFlags>().testFlag(QContactStatusFlags::IsDeactivated), false);
+
+    // Deactivate alice
+    QContactDeactivated deactivated;
+    alice.saveDetail(&deactivated);
+    QVERIFY(cm->saveContact(&alice));
+    alice = cm->contact(alice.id());
+
+    // Verify that alice is now deactivated
+    QCOMPARE(alice.details<QContactDeactivated>().count(), 1);
+    QCOMPARE(alice.detail<QContactStatusFlags>().testFlag(QContactStatusFlags::IsDeactivated), true);
+
+    // Alice is no longer returned in the contact set
+    ids = cm->contactIds();
+    QVERIFY(ids.contains(alice.id()) == false);
+    QVERIFY(ids.contains(bob.id()));
+
+    // Alice is returned by a deactivated query
+    ids = cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::IsDeactivated, QContactFilter::MatchContains));
+    QVERIFY(ids.contains(alice.id()));
+    QVERIFY(ids.contains(bob.id()) == false);
+
+    // Re-activate alice
+    deactivated = alice.detail<QContactDeactivated>();
+    alice.removeDetail(&deactivated);
+    QVERIFY(cm->saveContact(&alice));
+    alice = cm->contact(alice.id());
+
+    // Verify that alice is no longer deactivated
+    QCOMPARE(alice.details<QContactDeactivated>().count(), 0);
+    QCOMPARE(alice.detail<QContactStatusFlags>().testFlag(QContactStatusFlags::IsDeactivated), false);
+
+    // Alice is now returned in the contact set
+    ids = cm->contactIds();
+    QVERIFY(ids.contains(alice.id()));
+    QVERIFY(ids.contains(bob.id()));
+
+    // Alice is not retuned by a deactivated query
+    ids = cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::IsDeactivated, QContactFilter::MatchContains));
+    QVERIFY(ids.contains(alice.id()) == false);
+    QVERIFY(ids.contains(bob.id()) == false);
 }
 
 void tst_QContactManagerFiltering::detailVariantFiltering_data()

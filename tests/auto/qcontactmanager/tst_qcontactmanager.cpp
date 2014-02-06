@@ -767,6 +767,7 @@ void tst_QContactManager::add()
     QCOMPARE(flags.testFlag(QContactStatusFlags::HasPhoneNumber), true);
     QCOMPARE(flags.testFlag(QContactStatusFlags::HasEmailAddress), false);
     QCOMPARE(flags.testFlag(QContactStatusFlags::HasOnlineAccount), false);
+    QCOMPARE(flags.testFlag(QContactStatusFlags::IsDeactivated), false);
 
     // now try adding a contact that does not exist in the database with non-zero id
     if (cm->managerName() == "symbiansim") {
@@ -1112,6 +1113,7 @@ void tst_QContactManager::update()
     QCOMPARE(flags.testFlag(QContactStatusFlags::HasPhoneNumber), true);
     QCOMPARE(flags.testFlag(QContactStatusFlags::HasEmailAddress), false);
     QCOMPARE(flags.testFlag(QContactStatusFlags::HasOnlineAccount), false);
+    QCOMPARE(flags.testFlag(QContactStatusFlags::IsDeactivated), false);
 
     /* Test that adding a new detail doesn't cause unwanted side effects */
     int detailCount = alice.details().size();
@@ -1130,6 +1132,7 @@ void tst_QContactManager::update()
     QCOMPARE(flags.testFlag(QContactStatusFlags::HasPhoneNumber), true);
     QCOMPARE(flags.testFlag(QContactStatusFlags::HasEmailAddress), true);
     QCOMPARE(flags.testFlag(QContactStatusFlags::HasOnlineAccount), false);
+    QCOMPARE(flags.testFlag(QContactStatusFlags::IsDeactivated), false);
 
     /* Test that removal of fields in a detail works */
     QContactPhoneNumber phn = alice.detail<QContactPhoneNumber>();
@@ -1162,6 +1165,7 @@ void tst_QContactManager::update()
     QCOMPARE(flags.testFlag(QContactStatusFlags::HasPhoneNumber), false);
     QCOMPARE(flags.testFlag(QContactStatusFlags::HasEmailAddress), true);
     QCOMPARE(flags.testFlag(QContactStatusFlags::HasOnlineAccount), false);
+    QCOMPARE(flags.testFlag(QContactStatusFlags::IsDeactivated), false);
 
     // This test is dangerous, since backends can add timestamps etc...
     //detailCount -= 1;

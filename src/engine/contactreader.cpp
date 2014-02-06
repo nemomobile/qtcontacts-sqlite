@@ -34,9 +34,10 @@
 #include "conversion_p.h"
 #include "trace_p.h"
 
-#include "qtcontacts-extensions.h"
-#include "QContactOriginMetadata"
-#include "QContactStatusFlags"
+#include "../extensions/qtcontacts-extensions.h"
+#include "../extensions/qcontactdeactivated.h"
+#include "../extensions/qcontactoriginmetadata.h"
+#include "../extensions/qcontactstatusflags.h"
 
 #include <QContactAddress>
 #include <QContactAnniversary>
@@ -161,7 +162,7 @@ static const FieldInfo favoriteFields[] =
 
 static const FieldInfo statusFlagsFields[] =
 {
-    // No specific field; tests hasPhoneNumber/hasEmailAddress/hasOnlineAccount/isOnline
+    // No specific field; tests hasPhoneNumber/hasEmailAddress/hasOnlineAccount/isOnline/isDeactivated
     { QContactStatusFlags::FieldFlags, "", OtherField }
 };
 
@@ -775,13 +776,15 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
             if (field.fieldType == OtherField) {
                 if (filterOnField<QContactStatusFlags>(filter, QContactStatusFlags::FieldFlags)) {
                     static const quint64 flags[] = { QContactStatusFlags::HasPhoneNumber,
-                                                 QContactStatusFlags::HasEmailAddress,
-                                                 QContactStatusFlags::HasOnlineAccount,
-                                                 QContactStatusFlags::IsOnline };
+                                                     QContactStatusFlags::HasEmailAddress,
+                                                     QContactStatusFlags::HasOnlineAccount,
+                                                     QContactStatusFlags::IsOnline,
+                                                     QContactStatusFlags::IsDeactivated };
                     static const char *flagColumns[] = { "hasPhoneNumber",
                                                          "hasEmailAddress",
                                                          "hasOnlineAccount",
-                                                         "isOnline" };
+                                                         "isOnline",
+                                                         "isDeactivated" };
 
                     quint64 flagsValue = filter.value().value<quint64>();
 
@@ -1379,6 +1382,106 @@ bool includesSelfId(const QContactFilter &filter)
     }
 }
 
+bool includesSyncTarget(const QContactFilter &filter);
+
+// Returns true if this filter includes a filter for specific syncTarget
+bool includesSyncTarget(const QList<QContactFilter> &filters)
+{
+    foreach (const QContactFilter &filter, filters) {
+        if (includesSyncTarget(filter)) {
+            return true;
+        }
+    }
+    return false;
+}
+bool includesSyncTarget(const QContactIntersectionFilter &filter)
+{
+    return includesSyncTarget(filter.filters());
+}
+bool includesSyncTarget(const QContactUnionFilter &filter)
+{
+    return includesSyncTarget(filter.filters());
+}
+bool includesSyncTarget(const QContactDetailFilter &filter)
+{
+    return filterOnField<QContactSyncTarget>(filter, QContactSyncTarget::FieldSyncTarget);
+}
+bool includesSyncTarget(const QContactFilter &filter)
+{
+    switch (filter.type()) {
+    case QContactFilter::DefaultFilter:
+    case QContactFilter::ContactDetailRangeFilter:
+    case QContactFilter::ChangeLogFilter:
+    case QContactFilter::RelationshipFilter:
+    case QContactFilter::IdFilter:
+        return false;
+
+    case QContactFilter::IntersectionFilter:
+        return includesSyncTarget(static_cast<const QContactIntersectionFilter &>(filter));
+    case QContactFilter::UnionFilter:
+        return includesSyncTarget(static_cast<const QContactUnionFilter &>(filter));
+    case QContactFilter::ContactDetailFilter:
+        return includesSyncTarget(static_cast<const QContactDetailFilter &>(filter));
+
+    default:
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot includesSyncTarget with unknown filter type %1").arg(filter.type()));
+        return false;
+    }
+}
+
+bool includesDeactivated(const QContactFilter &filter);
+
+// Returns true if this filter includes deactivated contacts
+bool includesDeactivated(const QList<QContactFilter> &filters)
+{
+    foreach (const QContactFilter &filter, filters) {
+        if (includesDeactivated(filter)) {
+            return true;
+        }
+    }
+    return false;
+}
+bool includesDeactivated(const QContactIntersectionFilter &filter)
+{
+    return includesDeactivated(filter.filters());
+}
+bool includesDeactivated(const QContactUnionFilter &filter)
+{
+    return includesDeactivated(filter.filters());
+}
+bool includesDeactivated(const QContactDetailFilter &filter)
+{
+    if (filterOnField<QContactStatusFlags>(filter, QContactStatusFlags::FieldFlags)) {
+        quint64 flagsValue = filter.value().value<quint64>();
+        if (flagsValue & QContactStatusFlags::IsDeactivated) {
+            return true;
+        }
+    }
+    return false;
+}
+bool includesDeactivated(const QContactFilter &filter)
+{
+    switch (filter.type()) {
+    case QContactFilter::IdFilter:
+    case QContactFilter::DefaultFilter:
+    case QContactFilter::ContactDetailRangeFilter:
+    case QContactFilter::ChangeLogFilter:
+    case QContactFilter::RelationshipFilter:
+        return false;
+
+    case QContactFilter::IntersectionFilter:
+        return includesDeactivated(static_cast<const QContactIntersectionFilter &>(filter));
+    case QContactFilter::UnionFilter:
+        return includesDeactivated(static_cast<const QContactUnionFilter &>(filter));
+    case QContactFilter::ContactDetailFilter:
+        return includesDeactivated(static_cast<const QContactDetailFilter &>(filter));
+
+    default:
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot includesDeactivated with unknown filter type %1").arg(filter.type()));
+        return false;
+    }
+}
+
 bool includesIdFilter(const QContactFilter &filter);
 
 // Returns true if this filter includes a filter for specific IDs
@@ -1451,40 +1554,53 @@ static bool deletedContactFilter(const QContactFilter &filter)
 
 QString expandWhere(const QString &where, const QContactFilter &filter)
 {
-    QString preamble(QLatin1String("WHERE "));
+    QStringList constraints;
 
     // remove the self contact, unless specifically included
-    bool includesSelfContactId = includesSelfId(filter);
-    if (!includesSelfContactId) {
-        preamble += QLatin1String("Contacts.contactId > 2 AND ");
+    if (!includesSelfId(filter)) {
+        constraints.append("Contacts.contactId > 2 ");
+    }
+
+    // if the filter does not specify contacts by ID
+    if (!includesIdFilter(filter)) {
+#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
+        // exclude non-aggregates, unless the filter specifies syncTarget
+        if (!includesSyncTarget(filter)) {
+            constraints.append("Contacts.syncTarget = 'aggregate' ");
+        }
+#endif
+
+        // exclude deactivated unless they're explicitly included
+        if (!includesDeactivated(filter)) {
+            constraints.append("Contacts.isDeactivated = 0 ");
+        }
     }
 
     // some (union) filters can add spurious braces around empty expressions
-    QString strippedWhere = where;
-    strippedWhere.remove(QChar('('));
-    strippedWhere.remove(QChar(')'));
-    strippedWhere.remove(QChar(' '));
+    bool emptyFilter = false;
+    {
+        QString strippedWhere = where;
+        strippedWhere.remove(QChar('('));
+        strippedWhere.remove(QChar(')'));
+        strippedWhere.remove(QChar(' '));
+        emptyFilter = strippedWhere.isEmpty();
+    }
 
-#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
-    // by default, we only return "aggregate" contacts, and we don't return the self contact (2)
-    if (strippedWhere.isEmpty()) {
-        return preamble + QLatin1String("Contacts.syncTarget = 'aggregate'");
-    } else if (!where.contains("syncTarget") && !includesIdFilter(filter)) {
-        return preamble + QLatin1String("Contacts.syncTarget = 'aggregate' AND ") + where;
-    } else { // Unless they explicitly specify a syncTarget criterium, or specific IDs
-        return preamble + where;
-    }
-#else
-    if (strippedWhere.isEmpty()) {
-        if (!includesSelfContactId) {
-            return QLatin1String("WHERE Contacts.contactId > 2");
-        } else {
-            return QString();
+    if (emptyFilter && constraints.isEmpty())
+        return QString();
+
+    QString whereClause(QString::fromLatin1("WHERE "));
+    if (!constraints.isEmpty()) {
+        whereClause += constraints.join(QLatin1String("AND "));
+        if (!emptyFilter) {
+            whereClause += QLatin1String("AND ");
         }
-    } else {
-        return preamble + where;
     }
-#endif
+    if (!emptyFilter) {
+        whereClause += where;
+    }
+
+    return whereClause;
 }
 
 }
@@ -1711,8 +1827,14 @@ QContactManager::Error ContactReader::queryContacts(
             flags.setFlag(QContactStatusFlags::HasEmailAddress, query.value(16).toBool());
             flags.setFlag(QContactStatusFlags::HasOnlineAccount, query.value(17).toBool());
             flags.setFlag(QContactStatusFlags::IsOnline, query.value(18).toBool());
+            flags.setFlag(QContactStatusFlags::IsDeactivated, query.value(19).toBool());
             QContactManagerEngine::setDetailAccessConstraints(&flags, QContactDetail::ReadOnly | QContactDetail::Irremovable);
             contact.saveDetail(&flags);
+
+            if (flags.testFlag(QContactStatusFlags::IsDeactivated)) {
+                QContactDeactivated deactivated;
+                contact.saveDetail(&deactivated);
+            }
 
             contacts->append(contact);
 

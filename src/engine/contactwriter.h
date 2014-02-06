@@ -35,8 +35,8 @@
 #include "contactsdatabase.h"
 #include "contactid_p.h"
 
-#include "qtcontacts-extensions.h"
-#include "QContactOriginMetadata"
+#include "../extensions/qtcontacts-extensions.h"
+#include "../extensions/qcontactoriginmetadata.h"
 
 #include <QContactAddress>
 #include <QContactAnniversary>
@@ -109,16 +109,17 @@ private:
     QContactManager::Error removeRelationships(const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap);
 
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
+    QContactManager::Error setAggregate(QContact *contact, quint32 contactId, bool update, const DetailList &definitionMask, bool withinTransaction);
     QContactManager::Error calculateDelta(QContact *contact, const ContactWriter::DetailList &definitionMask,
                                           QList<QContactDetail> *addDelta, QList<QContactDetail> *removeDelta, QList<QContact> *writeList);
     QContactManager::Error updateOrCreateAggregate(QContact *contact, const DetailList &definitionMask, bool withinTransaction, quint32 *aggregateContactId = 0);
     QContactManager::Error updateLocalAndAggregate(QContact *contact, const DetailList &definitionMask, bool withinTransaction);
-    void regenerateAggregates(const QList<quint32> &aggregateIds, const DetailList &definitionMask, bool withinTransaction);
+    QContactManager::Error regenerateAggregates(const QList<quint32> &aggregateIds, const DetailList &definitionMask, bool withinTransaction);
     QContactManager::Error removeChildlessAggregates(QList<QContactId> *realRemoveIds);
     QContactManager::Error aggregateOrphanedContacts(bool withinTransaction);
 #endif
 
-    void bindContactDetails(const QContact &contact, QSqlQuery &query, const DetailList &definitionMask, bool update);
+    void bindContactDetails(const QContact &contact, QSqlQuery &query, const DetailList &definitionMask = DetailList(), quint32 contactId = 0);
 
     template <typename T> bool writeDetails(
             quint32 contactId,
