@@ -51,14 +51,17 @@
 
 #include "contactid_p.h"
 
-#include "qtcontacts-extensions.h"
-#include "contactmanagerengine.h"
+#include "../../../src/extensions/qtcontacts-extensions.h"
+#include "../../../src/extensions/contactmanagerengine.h"
 
-#include "qcontactoriginmetadata.h"
-#include "qcontactoriginmetadata_impl.h"
+#include "../../../src/extensions/qcontactdeactivated.h"
+#include "../../../src/extensions/qcontactdeactivated_impl.h"
 
-#include "qcontactstatusflags.h"
-#include "qcontactstatusflags_impl.h"
+#include "../../../src/extensions/qcontactoriginmetadata.h"
+#include "../../../src/extensions/qcontactoriginmetadata_impl.h"
+
+#include "../../../src/extensions/qcontactstatusflags.h"
+#include "../../../src/extensions/qcontactstatusflags_impl.h"
 
 // qtpim doesn't support the customLabel field natively, but qtcontact-sqlite provides it
 #define CUSTOM_LABEL_STORAGE_SUPPORTED

@@ -114,6 +114,9 @@ private slots:
 
     void changeLogFiltering();
 
+    void deactivationSingle();
+    void deactivationMultiple();
+
 private:
     void waitForSignalPropagation();
 
@@ -3495,6 +3498,342 @@ void tst_Aggregation::changeLogFiltering()
     QVERIFY(filtered.count() >= 4);
     QVERIFY(filtered.contains(idA));
     QVERIFY(filtered.contains(idB));
+}
+
+void tst_Aggregation::deactivationSingle()
+{
+    QContactDetailFilter allSyncTargets;
+    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
+
+    // add a new contact (synctarget must be specified to deactivate)
+    QContact syncAlice;
+
+    QContactSyncTarget sast;
+    sast.setSyncTarget(QLatin1String("test"));
+    syncAlice.saveDetail(&sast);
+
+    QContactName an;
+    an.setFirstName("Alice");
+    an.setMiddleName("Through The");
+    an.setLastName("Looking-Glass");
+    syncAlice.saveDetail(&an);
+
+    QVERIFY(m_cm->saveContact(&syncAlice));
+
+    QContact aggregateAlice;
+
+    QList<QContact> contacts = m_cm->contacts(allSyncTargets);
+    foreach (const QContact &curr, contacts) {
+        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
+        QContactName currName = curr.detail<QContactName>();
+        if (currName.firstName() == QLatin1String("Alice") &&
+            currName.middleName() == QLatin1String("Through The") &&
+            currName.lastName() == QLatin1String("Looking-Glass")) {
+            if (currSt.syncTarget() == QLatin1String("test")) {
+                syncAlice = curr;
+            } else {
+                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                aggregateAlice = curr;
+            }
+        }
+    }
+
+    // Check that aggregation occurred
+    QVERIFY(syncAlice.id() != QContactId());
+    QVERIFY(aggregateAlice.id() != QContactId());
+    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).count() == 1);
+    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).count() == 1);
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(syncAlice.id()));
+
+    // Verify the presence of the contact IDs
+    QList<QContactId> contactIds = m_cm->contactIds(allSyncTargets);
+    QVERIFY(contactIds.contains(ContactId::apiId(syncAlice)));
+    QVERIFY(contactIds.contains(ContactId::apiId(aggregateAlice)));
+
+    contactIds = m_cm->contactIds();
+    QVERIFY(contactIds.contains(ContactId::apiId(syncAlice)) == false);
+    QVERIFY(contactIds.contains(ContactId::apiId(aggregateAlice)));
+
+    QContactId syncAliceId = syncAlice.id();
+
+    // Now deactivate the test contact
+    QContactDeactivated deactivated;
+    syncAlice.saveDetail(&deactivated);
+    QVERIFY(m_cm->saveContact(&syncAlice));
+
+    syncAlice = aggregateAlice = QContact();
+
+    contacts = m_cm->contacts(allSyncTargets);
+    foreach (const QContact &curr, contacts) {
+        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
+        QContactName currName = curr.detail<QContactName>();
+        if (currName.firstName() == QLatin1String("Alice") &&
+            currName.middleName() == QLatin1String("Through The") &&
+            currName.lastName() == QLatin1String("Looking-Glass")) {
+            if (currSt.syncTarget() == QLatin1String("test")) {
+                syncAlice = curr;
+            } else {
+                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                aggregateAlice = curr;
+            }
+        }
+    }
+
+    // The deactivated contact is not found (although relationships remain)
+    // The deactivated contact is not found and the aggregate is removed
+    QVERIFY(syncAlice.id() == QContactId());
+    QVERIFY(aggregateAlice.id() == QContactId());
+
+    // Verify that test alice still exists
+    syncAlice = m_cm->contact(syncAliceId);
+    QVERIFY(syncAlice.id() == syncAliceId);
+    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).count() == 0);
+
+    // Verify the presence/absence of the contact IDs
+    contactIds = m_cm->contactIds(allSyncTargets);
+    QVERIFY(contactIds.contains(ContactId::apiId(syncAlice)) == false);
+
+    contactIds = m_cm->contactIds(allSyncTargets & QContactStatusFlags::matchFlag(QContactStatusFlags::IsDeactivated, QContactFilter::MatchContains));
+    QVERIFY(contactIds.contains(syncAliceId));
+
+    // Reactivate
+    deactivated = syncAlice.detail<QContactDeactivated>();
+    syncAlice.removeDetail(&deactivated);
+    QVERIFY(m_cm->saveContact(&syncAlice));
+
+    syncAlice = aggregateAlice = QContact();
+
+    contacts = m_cm->contacts(allSyncTargets);
+    foreach (const QContact &curr, contacts) {
+        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
+        QContactName currName = curr.detail<QContactName>();
+        if (currName.firstName() == QLatin1String("Alice") &&
+            currName.middleName() == QLatin1String("Through The") &&
+            currName.lastName() == QLatin1String("Looking-Glass")) {
+            if (currSt.syncTarget() == QLatin1String("test")) {
+                syncAlice = curr;
+            } else {
+                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                aggregateAlice = curr;
+            }
+        }
+    }
+
+    // Check that aggregation is restored
+    QVERIFY(syncAlice.id() != QContactId());
+    QVERIFY(aggregateAlice.id() != QContactId());
+    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).count() == 1);
+    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).count() == 1);
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(syncAlice.id()));
+
+    // Check that the reactivated contact retains the same ID
+    QVERIFY(syncAlice.id() == syncAliceId);
+
+    // Verify the presence of all contact IDs when queried
+    contactIds = m_cm->contactIds(allSyncTargets);
+    QVERIFY(contactIds.contains(ContactId::apiId(syncAlice)));
+    QVERIFY(contactIds.contains(ContactId::apiId(aggregateAlice)));
+}
+
+void tst_Aggregation::deactivationMultiple()
+{
+    QContactDetailFilter allSyncTargets;
+    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
+
+    // add a new contact (synctarget must be specified to deactivate)
+    QContact syncAlice;
+
+    QContactName an;
+    an.setFirstName("Alice");
+    an.setMiddleName("Through The");
+    an.setLastName("Looking-Glass");
+    syncAlice.saveDetail(&an);
+
+    QContactSyncTarget sast;
+    sast.setSyncTarget(QLatin1String("test"));
+    syncAlice.saveDetail(&sast);
+
+    QContactPhoneNumber aph;
+    aph.setNumber("34567");
+    syncAlice.saveDetail(&aph);
+
+    QVERIFY(m_cm->saveContact(&syncAlice));
+
+    // now add the doppelganger from another sync source
+    QContact otherAlice;
+    QContactName san;
+    san.setFirstName(an.firstName());
+    san.setMiddleName(an.middleName());
+    san.setLastName(an.lastName());
+    otherAlice.saveDetail(&san);
+
+    QContactPhoneNumber saph;
+    saph.setNumber("76543");
+    otherAlice.saveDetail(&saph);
+
+    QContactSyncTarget oast;
+    oast.setSyncTarget(QLatin1String("other"));
+    otherAlice.saveDetail(&oast);
+
+    QVERIFY(m_cm->saveContact(&otherAlice));
+
+    QContact aggregateAlice;
+
+    QList<QContact> contacts = m_cm->contacts(allSyncTargets);
+    foreach (const QContact &curr, contacts) {
+        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
+        QContactName currName = curr.detail<QContactName>();
+        if (currName.firstName() == QLatin1String("Alice") &&
+            currName.middleName() == QLatin1String("Through The") &&
+            currName.lastName() == QLatin1String("Looking-Glass")) {
+            if (currSt.syncTarget() == QLatin1String("test")) {
+                syncAlice = curr;
+            } else if (currSt.syncTarget() == QLatin1String("other")) {
+                otherAlice = curr;
+            } else {
+                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                aggregateAlice = curr;
+            }
+        }
+    }
+
+    // Check that aggregation occurred
+    QVERIFY(syncAlice.id() != QContactId());
+    QVERIFY(otherAlice.id() != QContactId());
+    QVERIFY(aggregateAlice.id() != QContactId());
+    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).count() == 1);
+    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(otherAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).count() == 1);
+    QVERIFY(relatedContactIds(otherAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).count() == 2);
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(syncAlice.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(otherAlice.id()));
+
+    QCOMPARE(syncAlice.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(otherAlice.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().count(), 2);
+
+    // Verify the presence of the contact IDs
+    QList<QContactId> contactIds = m_cm->contactIds(allSyncTargets);
+    QVERIFY(contactIds.contains(ContactId::apiId(syncAlice)));
+    QVERIFY(contactIds.contains(ContactId::apiId(otherAlice)));
+    QVERIFY(contactIds.contains(ContactId::apiId(aggregateAlice)));
+
+    contactIds = m_cm->contactIds();
+    QVERIFY(contactIds.contains(ContactId::apiId(syncAlice)) == false);
+    QVERIFY(contactIds.contains(ContactId::apiId(otherAlice)) == false);
+    QVERIFY(contactIds.contains(ContactId::apiId(aggregateAlice)));
+
+    QContactId syncAliceId = syncAlice.id();
+
+    // Now deactivate the test contact
+    QContactDeactivated deactivated;
+    syncAlice.saveDetail(&deactivated);
+    QVERIFY(m_cm->saveContact(&syncAlice));
+
+    syncAlice = otherAlice = aggregateAlice = QContact();
+
+    contacts = m_cm->contacts(allSyncTargets);
+    foreach (const QContact &curr, contacts) {
+        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
+        QContactName currName = curr.detail<QContactName>();
+        if (currName.firstName() == QLatin1String("Alice") &&
+            currName.middleName() == QLatin1String("Through The") &&
+            currName.lastName() == QLatin1String("Looking-Glass")) {
+            if (currSt.syncTarget() == QLatin1String("test")) {
+                syncAlice = curr;
+            } else if (currSt.syncTarget() == QLatin1String("other")) {
+                otherAlice = curr;
+            } else {
+                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                aggregateAlice = curr;
+            }
+        }
+    }
+
+    // The deactivated contact is not found (although relationships remain)
+    QVERIFY(syncAlice.id() == QContactId());
+    QVERIFY(otherAlice.id() != QContactId());
+    QVERIFY(aggregateAlice.id() != QContactId());
+    QVERIFY(relatedContactIds(otherAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).count() == 1);
+    QVERIFY(relatedContactIds(otherAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).count() == 2);
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(syncAliceId));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(otherAlice.id()));
+
+    // Check that the aggregate does not contain the deactivated detail
+    QCOMPARE(otherAlice.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().count(), 1);
+
+    // Verify that test alice still exists
+    syncAlice = m_cm->contact(syncAliceId);
+    QVERIFY(syncAlice.id() == syncAliceId);
+    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).count() == 1);
+    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+
+    // Verify the presence/absence of the contact IDs
+    contactIds = m_cm->contactIds(allSyncTargets);
+    QVERIFY(contactIds.contains(ContactId::apiId(syncAlice)) == false);
+    QVERIFY(contactIds.contains(ContactId::apiId(otherAlice)));
+    QVERIFY(contactIds.contains(ContactId::apiId(aggregateAlice)));
+
+    contactIds = m_cm->contactIds(allSyncTargets & QContactStatusFlags::matchFlag(QContactStatusFlags::IsDeactivated, QContactFilter::MatchContains));
+    QVERIFY(contactIds.contains(syncAliceId));
+    QVERIFY(contactIds.contains(ContactId::apiId(otherAlice)) == false);
+    QVERIFY(contactIds.contains(ContactId::apiId(aggregateAlice)) == false);
+
+    // Reactivate
+    deactivated = syncAlice.detail<QContactDeactivated>();
+    syncAlice.removeDetail(&deactivated);
+    QVERIFY(m_cm->saveContact(&syncAlice));
+
+    syncAlice = otherAlice = aggregateAlice = QContact();
+
+    contacts = m_cm->contacts(allSyncTargets);
+    foreach (const QContact &curr, contacts) {
+        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
+        QContactName currName = curr.detail<QContactName>();
+        if (currName.firstName() == QLatin1String("Alice") &&
+            currName.middleName() == QLatin1String("Through The") &&
+            currName.lastName() == QLatin1String("Looking-Glass")) {
+            if (currSt.syncTarget() == QLatin1String("test")) {
+                syncAlice = curr;
+            } else if (currSt.syncTarget() == QLatin1String("other")) {
+                otherAlice = curr;
+            } else {
+                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                aggregateAlice = curr;
+            }
+        }
+    }
+
+    // Check that aggregation remains intact
+    QVERIFY(syncAlice.id() != QContactId());
+    QVERIFY(otherAlice.id() != QContactId());
+    QVERIFY(aggregateAlice.id() != QContactId());
+    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).count() == 1);
+    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(otherAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).count() == 1);
+    QVERIFY(relatedContactIds(otherAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).count() == 2);
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(syncAlice.id()));
+    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(otherAlice.id()));
+
+    // Re-activated details are now aggregated
+    QCOMPARE(syncAlice.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(otherAlice.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().count(), 2);
+
+    // Check that the reactivated contact retains the same ID
+    QVERIFY(syncAlice.id() == syncAliceId);
+
+    // Verify the presence of all contact IDs when queried
+    contactIds = m_cm->contactIds(allSyncTargets);
+    QVERIFY(contactIds.contains(ContactId::apiId(syncAlice)));
+    QVERIFY(contactIds.contains(ContactId::apiId(otherAlice)));
+    QVERIFY(contactIds.contains(ContactId::apiId(aggregateAlice)));
 }
 
 QTEST_MAIN(tst_Aggregation)
