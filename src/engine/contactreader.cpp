@@ -124,6 +124,15 @@ static QVariant urlValue(const QVariant &columnValue)
     return QUrl(urlString);
 }
 
+static QVariant dateValue(const QVariant &columnValue)
+{
+    if (columnValue.isNull())
+        return columnValue;
+
+    QString dtString(columnValue.toString());
+    return QDate::fromString(dtString, Qt::ISODate);
+}
+
 static const FieldInfo displayLabelFields[] =
 {
     { QContactDisplayLabel::FieldLabel, "displayLabel", StringField }
@@ -205,7 +214,7 @@ static void setValues(QContactAnniversary *detail, QSqlQuery *query, const int o
 {
     typedef QContactAnniversary T;
 
-    setValue(detail, T::FieldOriginalDate, query->value(offset + 0));
+    setValue(detail, T::FieldOriginalDate, dateValue(query->value(offset + 0)));
     setValue(detail, T::FieldCalendarId  , query->value(offset + 1));
     setValue(detail, T::FieldSubType     , QVariant::fromValue<int>(Anniversary::subType(query->value(offset + 2).toString())));
 }
@@ -236,7 +245,7 @@ static void setValues(QContactBirthday *detail, QSqlQuery *query, const int offs
 {
     typedef QContactBirthday T;
 
-    setValue(detail, T::FieldBirthday  , query->value(offset + 0));
+    setValue(detail, T::FieldBirthday  , dateValue(query->value(offset + 0)));
     setValue(detail, T::FieldCalendarId, query->value(offset + 1));
 }
 
