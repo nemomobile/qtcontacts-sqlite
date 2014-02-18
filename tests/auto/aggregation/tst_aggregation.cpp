@@ -1589,7 +1589,7 @@ void tst_Aggregation::uniquenessConstraints()
     QVERIFY(!m_cm->saveContact(&aggregateAlice)); // should fail, uniqueness.
     QVERIFY(aggregateAlice.removeDetail(&anotherBd));
     QVERIFY(m_cm->saveContact(&aggregateAlice)); // back to just one, should succeed.
-    QVERIFY(m_cm->contact(retrievalId(aggregateAlice)).detail<QContactBirthday>().dateTime() == aliceBirthday);
+    QVERIFY(m_cm->contact(retrievalId(aggregateAlice)).detail<QContactBirthday>().date() == aliceBirthday.date());
     // now save a different birthday in another contact aggregated into alice.
     QContact testsyncAlice;
     QContactSyncTarget tsst;
@@ -1608,7 +1608,7 @@ void tst_Aggregation::uniquenessConstraints()
     QVERIFY(m_cm->saveContact(&testsyncAlice)); // should get aggregated into aggregateAlice.
     aggregateAlice = m_cm->contact(retrievalId(aggregateAlice)); // reload
     QCOMPARE(aggregateAlice.details<QContactBirthday>().size(), 1); // should still only have one birthday - local should take precedence.
-    QVERIFY(aggregateAlice.detail<QContactBirthday>().dateTime() == aliceBirthday);
+    QVERIFY(aggregateAlice.detail<QContactBirthday>().date() == aliceBirthday.date());
     aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
 
     // test uniqueness constraint of name detail.
