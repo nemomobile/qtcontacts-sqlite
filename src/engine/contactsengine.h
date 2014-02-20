@@ -149,6 +149,9 @@ private slots:
 private:
     QString databaseUuid();
 
+    ContactReader *reader() const;
+    ContactWriter *writer();
+
     QString m_databaseUuid;
     const QString m_name;
     QMap<QString, QString> m_parameters;
