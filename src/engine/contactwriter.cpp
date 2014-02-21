@@ -2335,15 +2335,7 @@ static void promoteDetailsToLocal(const QList<QContactDetail> addDelta, const QL
                 localContact->saveDetail(&lts);
             } else if (type == detailType<QContactGender>()) {
                 QContactGender lg = localContact->detail<QContactGender>();
-                // Gender is a string in QtMobility
-                QString gender(original.value<QString>(QContactGender::FieldGender));
-                if (gender.startsWith(QChar::fromLatin1('f'), Qt::CaseInsensitive)) {
-                    lg.setGender(QContactGender::GenderFemale);
-                } else if (gender.startsWith(QChar::fromLatin1('m'), Qt::CaseInsensitive)) {
-                    lg.setGender(QContactGender::GenderMale);
-                } else {
-                    lg.setGender(QContactGender::GenderUnspecified);
-                }
+                lg.setGender(static_cast<QContactGender::GenderField>(original.value<int>(QContactGender::FieldGender)));
                 localContact->saveDetail(&lg);
             } else if (type == detailType<QContactFavorite>()) {
                 QContactFavorite lf = localContact->detail<QContactFavorite>();
