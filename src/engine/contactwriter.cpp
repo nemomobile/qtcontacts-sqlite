@@ -1837,7 +1837,7 @@ QContactManager::Error ContactWriter::fetchSyncContacts(const QString &syncTarge
     return QContactManager::NoError;
 }
 
-QContactManager::Error ContactWriter::updateSyncContacts(const QString &syncTarget, const QDateTime &timestamp,
+QContactManager::Error ContactWriter::updateSyncContacts(const QString &syncTarget,
                                                          QtContactsSqliteExtensions::ContactManagerEngine::ConflictResolutionPolicy conflictPolicy,
                                                          const QList<QPair<QContact, QContact> > &remoteChanges)
 {
@@ -1858,7 +1858,7 @@ QContactManager::Error ContactWriter::updateSyncContacts(const QString &syncTarg
 
     m_suppressedSyncTargets.insert(syncTarget);
 
-    QContactManager::Error error = syncUpdate(syncTarget, timestamp, conflictPolicy, remoteChanges);
+    QContactManager::Error error = syncUpdate(syncTarget, conflictPolicy, remoteChanges);
     if (error != QContactManager::NoError) {
         rollbackTransaction();
         return error;
@@ -3805,7 +3805,7 @@ static void modifyContactDetail(const QContactDetail &original, const QContactDe
     }
 }
 
-QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget, const QDateTime &timestamp,
+QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
                                                  QtContactsSqliteExtensions::ContactManagerEngine::ConflictResolutionPolicy conflictPolicy,
                                                  const QList<QPair<QContact, QContact> > &remoteChanges)
 {

@@ -4470,7 +4470,7 @@ void tst_Aggregation::storeSyncContacts()
     QList<QPair<QContact, QContact> > modifications;
     QContactManager::Error err;
     QtContactsSqliteExtensions::ContactManagerEngine::ConflictResolutionPolicy policy(QtContactsSqliteExtensions::ContactManagerEngine::PreserveLocalChanges);
-    QVERIFY(cme->storeSyncContacts("sync-test", initialTime, policy, modifications, &err));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
     QCOMPARE(err, QContactManager::NoError);
 
     // Store a sync target contact originating at this service
@@ -4591,7 +4591,7 @@ void tst_Aggregation::storeSyncContacts()
     mpa.removeDetail(&e5);
 
     modifications.append(qMakePair(pa, mpa));
-    QVERIFY(cme->storeSyncContacts("sync-test", initialTime, policy, modifications, &err));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
 
     // The syncTarget should not be reported as updated by storeSyncContacts
     QVERIFY(!syncSpy.wait(1000));
@@ -4781,7 +4781,7 @@ void tst_Aggregation::storeSyncContacts()
 
     modifications.clear();
     modifications.append(qMakePair(pa, mpa));
-    QVERIFY(cme->storeSyncContacts("sync-test", initialTime, policy, modifications, &err));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
 
     // Verify that the expected changes occurred
     stc = m_cm->contact(retrievalId(stc));
@@ -4897,7 +4897,7 @@ void tst_Aggregation::storeSyncContacts()
 
     modifications.clear();
     modifications.append(qMakePair(pa, mpa));
-    QVERIFY(cme->storeSyncContacts("sync-test", initialTime, policy, modifications, &err));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
 
     // A sync-target that was not the subject of this update should be reported as having changed
     QTRY_COMPARE(syncSpy.count(), 1);
@@ -5040,7 +5040,7 @@ void tst_Aggregation::storeSyncContacts()
 
     modifications.clear();
     modifications.append(qMakePair(pa, mpa));
-    QVERIFY(cme->storeSyncContacts("sync-test", initialTime, policy, modifications, &err));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
 
     // Verify that the expected changes occurred
     stc = m_cm->contact(retrievalId(stc));

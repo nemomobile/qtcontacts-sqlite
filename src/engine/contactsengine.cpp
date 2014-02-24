@@ -1127,12 +1127,12 @@ bool ContactsEngine::fetchSyncContacts(const QString &syncTarget, const QDateTim
     return (*error == QContactManager::NoError);
 }
 
-bool ContactsEngine::storeSyncContacts(const QString &syncTarget, const QDateTime &timestamp, ConflictResolutionPolicy conflictPolicy,
+bool ContactsEngine::storeSyncContacts(const QString &syncTarget, ConflictResolutionPolicy conflictPolicy,
                                        const QList<QPair<QContact, QContact> > &remoteChanges, QContactManager::Error *error)
 {
     Q_ASSERT(error);
 
-    *error = writer()->updateSyncContacts(syncTarget, timestamp, conflictPolicy, remoteChanges);
+    *error = writer()->updateSyncContacts(syncTarget, conflictPolicy, remoteChanges);
     return (*error == QContactManager::NoError);
 }
 #endif

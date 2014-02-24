@@ -58,7 +58,7 @@ public:
                                    QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
                                    QContactManager::Error *error) = 0;
 
-    virtual bool storeSyncContacts(const QString &syncTarget, const QDateTime &timestamp, ConflictResolutionPolicy conflictPolicy,
+    virtual bool storeSyncContacts(const QString &syncTarget, ConflictResolutionPolicy conflictPolicy,
                                    const QList<QPair<QContact, QContact> > &remoteChanges, QContactManager::Error *error) = 0;
 #endif
 

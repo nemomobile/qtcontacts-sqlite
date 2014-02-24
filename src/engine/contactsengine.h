@@ -136,7 +136,7 @@ public:
                            QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
                            QContactManager::Error *error);
 
-    bool storeSyncContacts(const QString &syncTarget, const QDateTime &timestamp, ConflictResolutionPolicy conflictPolicy,
+    bool storeSyncContacts(const QString &syncTarget, ConflictResolutionPolicy conflictPolicy,
                            const QList<QPair<QContact, QContact> > &remoteChanges, QContactManager::Error *error);
 #endif
 

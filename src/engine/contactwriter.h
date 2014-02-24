@@ -102,7 +102,7 @@ public:
     QContactManager::Error fetchSyncContacts(const QString &syncTarget, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
                                              QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds);
 
-    QContactManager::Error updateSyncContacts(const QString &syncTarget, const QDateTime &timestamp,
+    QContactManager::Error updateSyncContacts(const QString &syncTarget,
                                               QtContactsSqliteExtensions::ContactManagerEngine::ConflictResolutionPolicy conflictPolicy,
                                               const QList<QPair<QContact, QContact> > &remoteChanges);
 #endif
@@ -135,7 +135,7 @@ private:
     QContactManager::Error syncFetch(const QString &syncTarget, const QDateTime &lastSync, const QSet<quint32> &exportedIds,
                                      QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds);
 
-    QContactManager::Error syncUpdate(const QString &syncTarget, const QDateTime &timestamp,
+    QContactManager::Error syncUpdate(const QString &syncTarget,
                                       QtContactsSqliteExtensions::ContactManagerEngine::ConflictResolutionPolicy conflictPolicy,
                                       const QList<QPair<QContact, QContact> > &remoteChanges);
 #endif
