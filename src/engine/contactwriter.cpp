@@ -70,6 +70,11 @@ static const QString aggregationIdsTable(QString::fromLatin1("aggregationIds"));
 static const QString syncConstituentsTable(QString::fromLatin1("syncConstituents"));
 static const QString syncAggregatesTable(QString::fromLatin1("syncAggregates"));
 
+static const QString possibleAggregatesTable(QString::fromLatin1("possibleAggregates"));
+static const QString matchEmailAddressesTable(QString::fromLatin1("matchEmailAddresses"));
+static const QString matchPhoneNumbersTable(QString::fromLatin1("matchPhoneNumbers"));
+static const QString matchOnlineAccountsTable(QString::fromLatin1("matchOnlineAccounts"));
+
 static const char *findConstituentsForAggregate =
         "\n SELECT secondId FROM Relationships WHERE firstId = :aggregateId AND type = 'Aggregates'";
 
@@ -129,12 +134,10 @@ static const char *possibleAggregatesWhere = /* SELECT contactId FROM Contacts .
         "\n   SELECT firstId FROM Relationships WHERE secondId = :contactId AND type = 'IsNot'"
         "\n )";
 
-// TODO: the IN-clause expansions in this query don't work correctly if there is more than one
-// item in the list; they need to be replaced with lookups into a temporary table
 static const char *heuristicallyMatchData =
         "\n SELECT Matches.contactId, sum(Matches.score) AS total FROM ("
         "\n     SELECT Contacts.contactId, 20 AS score FROM Contacts"
-        "\n     INNER JOIN temp.PossibleAggregates ON Contacts.contactId = temp.PossibleAggregates.contactId"
+        "\n     INNER JOIN temp.possibleAggregates ON Contacts.contactId = temp.possibleAggregates.contactId"
         "\n         WHERE lowerLastName != '' AND lowerLastName = :lastName"
         "\n         AND lowerFirstName != '' AND :firstName != ''"
         "\n         AND ((lowerFirstName NOT LIKE '%-%' AND :firstName NOT LIKE '%-%' AND"
@@ -142,7 +145,7 @@ static const char *heuristicallyMatchData =
         "\n              lowerFirstName = :firstName)"
         "\n     UNION"
         "\n     SELECT Contacts.contactId, 15 AS score FROM Contacts"
-        "\n     INNER JOIN temp.PossibleAggregates ON Contacts.contactId = temp.PossibleAggregates.contactId"
+        "\n     INNER JOIN temp.possibleAggregates ON Contacts.contactId = temp.possibleAggregates.contactId"
         "\n         WHERE COALESCE(lowerFirstName, '') = '' AND COALESCE(:firstName,'') = ''"
         "\n         AND COALESCE(lowerLastName, '') = '' AND COALESCE(:lastName,'') = ''"
         "\n         AND EXISTS ("
@@ -151,7 +154,7 @@ static const char *heuristicallyMatchData =
         "\n             AND lowerNickName = :nickname)"
         "\n     UNION"
         "\n     SELECT Contacts.contactId, 12 AS score FROM Contacts"
-        "\n     INNER JOIN temp.PossibleAggregates ON Contacts.contactId = temp.PossibleAggregates.contactId"
+        "\n     INNER JOIN temp.possibleAggregates ON Contacts.contactId = temp.possibleAggregates.contactId"
         "\n         WHERE (COALESCE(lowerLastName, '') = '' OR COALESCE(:lastName, '') = '')"
         "\n         AND lowerFirstName != ''"
         "\n         AND ((lowerFirstName NOT LIKE '%-%' AND :firstName NOT LIKE '%-%' AND"
@@ -159,24 +162,24 @@ static const char *heuristicallyMatchData =
         "\n              lowerFirstName = :firstName)"
         "\n     UNION"
         "\n     SELECT Contacts.contactId, 12 AS score FROM Contacts"
-        "\n     INNER JOIN temp.PossibleAggregates ON Contacts.contactId = temp.PossibleAggregates.contactId"
+        "\n     INNER JOIN temp.possibleAggregates ON Contacts.contactId = temp.possibleAggregates.contactId"
         "\n         WHERE lowerLastName != '' AND lowerLastName = :lastName"
         "\n         AND (COALESCE(lowerFirstName, '') = '' OR COALESCE(:firstName, '') = '')"
         "\n     UNION"
         "\n     SELECT EmailAddresses.contactId, 3 AS score FROM EmailAddresses"
-        "\n     INNER JOIN temp.PossibleAggregates ON EmailAddresses.contactId = temp.PossibleAggregates.contactId"
-        "\n         WHERE lowerEmailAddress IN ( :email )"
+        "\n     INNER JOIN temp.possibleAggregates ON EmailAddresses.contactId = temp.possibleAggregates.contactId"
+        "\n     INNER JOIN temp.matchEmailAddresses ON EmailAddresses.lowerEmailAddress = temp.matchEmailAddresses.value"
         "\n     UNION"
         "\n     SELECT PhoneNumbers.contactId, 3 AS score FROM PhoneNumbers"
-        "\n     INNER JOIN temp.PossibleAggregates ON PhoneNumbers.contactId = temp.PossibleAggregates.contactId"
-        "\n         WHERE normalizedNumber IN ( :number )"
+        "\n     INNER JOIN temp.possibleAggregates ON PhoneNumbers.contactId = temp.possibleAggregates.contactId"
+        "\n     INNER JOIN temp.matchPhoneNumbers ON PhoneNumbers.normalizedNumber = temp.matchPhoneNumbers.value"
         "\n     UNION"
         "\n     SELECT OnlineAccounts.contactId, 3 AS score FROM OnlineAccounts"
-        "\n     INNER JOIN temp.PossibleAggregates ON OnlineAccounts.contactId = temp.PossibleAggregates.contactId"
-        "\n         WHERE lowerAccountUri IN ( :uri )"
+        "\n     INNER JOIN temp.possibleAggregates ON OnlineAccounts.contactId = temp.possibleAggregates.contactId"
+        "\n     INNER JOIN temp.matchOnlineAccounts ON OnlineAccounts.lowerAccountUri = temp.matchOnlineAccounts.value"
         "\n     UNION"
         "\n     SELECT Nicknames.contactId, 1 AS score FROM Nicknames"
-        "\n     INNER JOIN temp.PossibleAggregates ON Nicknames.contactId = temp.PossibleAggregates.contactId"
+        "\n     INNER JOIN temp.possibleAggregates ON Nicknames.contactId = temp.possibleAggregates.contactId"
         "\n         WHERE lowerNickName != '' AND lowerNickName = :nickname"
         "\n ) AS Matches"
         "\n GROUP BY Matches.contactId"
@@ -759,6 +762,19 @@ ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &d
         m_constituentContactDetails = prepare(constituentContactDetails, database);
     } else {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary %1 table").arg(syncAggregatesTable));
+    }
+
+    // This query needs the temporary aggregation tables to exist
+    if (ContactsDatabase::createTemporaryContactIdsTable(m_database, possibleAggregatesTable, QVariantList())) {
+        if (ContactsDatabase::createTemporaryValuesTable(m_database, matchEmailAddressesTable, QVariantList()) &&
+            ContactsDatabase::createTemporaryValuesTable(m_database, matchPhoneNumbersTable, QVariantList()) &&
+            ContactsDatabase::createTemporaryValuesTable(m_database, matchOnlineAccountsTable, QVariantList())) {
+            m_heuristicallyMatchData = prepare(heuristicallyMatchData, database);
+        } else {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary match tables"));
+        }
+    } else {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary %1 table").arg(possibleAggregatesTable));
     }
 }
 
@@ -3060,9 +3076,9 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
     QString firstName;
     QString lastName;
     QString nickname;
-    QStringList phoneNumbers;
-    QStringList emailAddresses;
-    QStringList accountUris;
+    QVariantList phoneNumbers;
+    QVariantList emailAddresses;
+    QVariantList accountUris;
     QString syncTarget;
     QString excludeGender;
 
@@ -3107,8 +3123,7 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
     bool found = false;
 
     // step one: build the temporary table which contains all "possible" aggregate contact ids.
-    const QString tempName(QString::fromLatin1("PossibleAggregates"));
-    ContactsDatabase::clearTemporaryContactIdsTable(m_database, tempName);
+    ContactsDatabase::clearTemporaryContactIdsTable(m_database, possibleAggregatesTable);
 
     QString orderBy = QLatin1String("contactId ASC ");
     QString where = QLatin1String(possibleAggregatesWhere);
@@ -3116,34 +3131,37 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
     bindings.insert(":lastName", lastName);
     bindings.insert(":contactId", contactId);
     bindings.insert(":excludeGender", excludeGender);
-    if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, tempName,
+    if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, possibleAggregatesTable,
                                                           QString(), where, orderBy, bindings)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error creating PossibleAggregates temporary table"));
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error creating possibleAggregates temporary table"));
         return QContactManager::UnspecifiedError;
     }
 
     // step two: query matching data.
-    QSqlQuery findMatchForContact(m_database);
-    if (!findMatchForContact.prepare(QLatin1String(heuristicallyMatchData))) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error preparing heuristic match query:\n%1")
-                .arg(findMatchForContact.lastError().text()));
+    m_heuristicallyMatchData.bindValue(":firstName", firstName);
+    m_heuristicallyMatchData.bindValue(":lastName", lastName);
+    m_heuristicallyMatchData.bindValue(":nickname", nickname);
+
+    ContactsDatabase::clearTemporaryValuesTable(m_database, matchEmailAddressesTable);
+    ContactsDatabase::clearTemporaryValuesTable(m_database, matchPhoneNumbersTable);
+    ContactsDatabase::clearTemporaryValuesTable(m_database, matchOnlineAccountsTable);
+
+    if (!ContactsDatabase::createTemporaryValuesTable(m_database, matchEmailAddressesTable, emailAddresses) ||
+        !ContactsDatabase::createTemporaryValuesTable(m_database, matchPhoneNumbersTable, phoneNumbers) ||
+        !ContactsDatabase::createTemporaryValuesTable(m_database, matchOnlineAccountsTable, accountUris)) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error creating possibleAggregates match tables"));
         return QContactManager::UnspecifiedError;
     }
-    findMatchForContact.bindValue(":firstName", firstName);
-    findMatchForContact.bindValue(":lastName", lastName);
-    findMatchForContact.bindValue(":nickname", nickname);
-    findMatchForContact.bindValue(":number", phoneNumbers.join(","));
-    findMatchForContact.bindValue(":email", emailAddresses.join(","));
-    findMatchForContact.bindValue(":uri", accountUris.join(","));
-    if (!findMatchForContact.exec()) {
+
+    if (!m_heuristicallyMatchData.exec()) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error finding match for updated local contact:\n%1")
-                .arg(findMatchForContact.lastError().text()));
+                .arg(m_heuristicallyMatchData.lastError().text()));
         return QContactManager::UnspecifiedError;
     }
-    if (findMatchForContact.next()) {
-        const quint32 aggregateId = findMatchForContact.value(0).toUInt();
-        const quint32 score = findMatchForContact.value(1).toUInt();
-        findMatchForContact.finish();
+    if (m_heuristicallyMatchData.next()) {
+        const quint32 aggregateId = m_heuristicallyMatchData.value(0).toUInt();
+        const quint32 score = m_heuristicallyMatchData.value(1).toUInt();
+        m_heuristicallyMatchData.finish();
 
         static const quint32 MinimumMatchScore = 15;
         if (score >= MinimumMatchScore) {
@@ -3164,7 +3182,7 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
             found = true;
         }
     }
-    findMatchForContact.finish();
+    m_heuristicallyMatchData.finish();
 
     // whether it's an existing or new contact, we promote details.
     // XXX TODO: promote relationships!

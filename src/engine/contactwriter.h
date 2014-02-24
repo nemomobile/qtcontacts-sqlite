@@ -199,6 +199,7 @@ private:
     QSqlQuery m_syncContactIds;
     QSqlQuery m_aggregateContactIds;
     QSqlQuery m_constituentContactDetails;
+    QSqlQuery m_heuristicallyMatchData;
     QSqlQuery m_localConstituentIds;
     QSqlQuery m_affectedSyncTargets;
     QSqlQuery m_addedSyncContactIds;

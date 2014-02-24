@@ -2686,6 +2686,25 @@ void tst_Aggregation::aggregationHeuristic_data()
     QTest::newRow("nickname match with lastname") << false
         << "" << "" << "Gumboots" << "Freddy" << "unspecified" << "" << "" << ""
         << "" << "" << "" << "Freddy" << "unspecified" << "" << "" << "";
+
+    QTest::newRow("partial using phonenumber") << true
+        << "Frederick" << "" << "" << "" << "unspecified" << "111992888337" << "" << ""
+        << "Fred" << "" << "" << "" << "unspecified" << "111992888337" << "" << "";
+    QTest::newRow("partial using multiple phonenumbers") << true
+        << "Frederick" << "" << "" << "" << "unspecified" << "111992888337" << "" << ""
+        << "Fred" << "" << "" << "" << "unspecified" << "111992888338|111992888337" << "" << "";
+    QTest::newRow("partial using email address") << true
+        << "Frederick" << "" << "" << "" << "unspecified" << "" << "gumboots@test.com" << ""
+        << "Fred" << "" << "" << "" << "unspecified" << "" << "gumboots@test.com" << "";
+    QTest::newRow("partial using multiple email addresses") << true
+        << "Frederick" << "" << "" << "" << "unspecified" << "" << "gumboots@test.com" << ""
+        << "Fred" << "" << "" << "" << "unspecified" << "" << "wellingtons@test.com|gumboots@test.com" << "";
+    QTest::newRow("partial using account uri") << true
+        << "Frederick" << "" << "" << "" << "unspecified" << "" << "" << "freddy00001@socialaccount"
+        << "Fred" << "" << "" << "" << "unspecified" << "" << "" << "freddy00001@socialaccount";
+    QTest::newRow("partial using multiple account uris") << true
+        << "Frederick" << "" << "" << "" << "unspecified" << "" << "" << "freddy00001@socialaccount"
+        << "Fred" << "" << "" << "" << "unspecified" << "" << "" << "freddy11111@socialaccount|freddy00001@socialaccount";
 }
 
 void tst_Aggregation::aggregationHeuristic()
@@ -2777,18 +2796,27 @@ void tst_Aggregation::aggregationHeuristic()
         }
 
         if (!bPhoneNumber.isEmpty()) {
-            bphn.setNumber(bPhoneNumber);
-            b.saveDetail(&bphn);
+            foreach (QString number, bPhoneNumber.split(QString::fromLatin1("|"))){
+                bphn = QContactPhoneNumber();
+                bphn.setNumber(number);
+                b.saveDetail(&bphn);
+            }
         }
 
         if (!bEmailAddress.isEmpty()) {
-            bem.setEmailAddress(bEmailAddress);
-            b.saveDetail(&bem);
+            foreach (QString address, bEmailAddress.split(QString::fromLatin1("|"))){
+                bem = QContactEmailAddress();
+                bem.setEmailAddress(address);
+                b.saveDetail(&bem);
+            }
         }
 
         if (!bOnlineAccount.isEmpty()) {
-            boa.setAccountUri(bOnlineAccount);
-            b.saveDetail(&boa);
+            foreach (QString address, bOnlineAccount.split(QString::fromLatin1("|"))){
+                bphn = QContactOnlineAccount();
+                boa.setAccountUri(address);
+                b.saveDetail(&boa);
+            }
         }
 
         // Now perform the saves and see if we get some aggregation as required.
