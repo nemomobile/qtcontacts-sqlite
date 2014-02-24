@@ -2205,7 +2205,10 @@ QContactManager::Error ContactWriter::save(
 
         bool aggregateUpdated = false;
         if (dbId == 0) {
-            err = create(&contact, definitionMask, true, withinAggregateUpdate);
+            const bool isIncidental(!contact.details<QContactIncidental>().isEmpty());
+
+            // If the contact is incidental, ignore the definitionMask to save all available details
+            err = create(&contact, isIncidental ? DetailList() : definitionMask, true, withinAggregateUpdate);
             if (err == QContactManager::NoError) {
                 contactId = ContactId::apiId(contact);
                 dbId = ContactId::databaseId(contactId);
@@ -2598,14 +2601,10 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
         writeList.append(localContact);
     }
 
-// TODO: can we use isIncidental to change this write to use the definitionMask?
-
     // update (or create) the local contact
     QMap<int, bool> aggregatesUpdated;
     QMap<int, QContactManager::Error> errorMap;
-    QContactManager::Error writeError = save(&writeList, DetailList(),     // when we update the local, we don't use definitionMask.
-                                             &aggregatesUpdated, &errorMap,  // because it might be a new contact and need name+synct.
-                                             withinTransaction, true, false);
+    QContactManager::Error writeError = save(&writeList, definitionMask, &aggregatesUpdated, &errorMap, withinTransaction, true, false);
     if (writeError != QContactManager::NoError) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to update (or create) local contact for modified aggregate"));
         return writeError;
