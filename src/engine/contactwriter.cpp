@@ -67,6 +67,7 @@ static const QString localSyncTarget(QString::fromLatin1("local"));
 static const QString wasLocalSyncTarget(QString::fromLatin1("was_local"));
 
 static const QString aggregationIdsTable(QString::fromLatin1("aggregationIds"));
+static const QString modifiableContactsTable(QString::fromLatin1("modifiableContacts"));
 static const QString syncConstituentsTable(QString::fromLatin1("syncConstituents"));
 static const QString syncAggregatesTable(QString::fromLatin1("syncAggregates"));
 
@@ -217,7 +218,9 @@ static const char *existingContactIds =
         "\n SELECT DISTINCT contactId FROM Contacts;";
 
 static const char *modifiableDetails =
-        "\n SELECT provenance, detail FROM Details WHERE contactId = :contactId AND modifiable = 1";
+        "\n SELECT provenance, detail, Details.contactId FROM Details"
+        "\n JOIN temp.modifiableContacts ON temp.modifiableContacts.contactId = Details.contactId"
+        "\n WHERE Details.modifiable = 1";
 
 static const char *selfContactId =
         "\n SELECT DISTINCT contactId FROM Identities WHERE identity = :identity;";
@@ -684,7 +687,6 @@ ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &d
     , m_updateSyncTarget(prepare(updateSyncTarget, database))
     , m_checkContactExists(prepare(checkContactExists, database))
     , m_existingContactIds(prepare(existingContactIds, database))
-    , m_modifiableDetails(prepare(modifiableDetails, database))
     , m_selfContactId(prepare(selfContactId, database))
     , m_syncContactIds(prepare(syncContactIds, database))
     , m_addedSyncContactIds(prepare(addedSyncContactIds, database))
@@ -762,6 +764,13 @@ ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &d
         m_constituentContactDetails = prepare(constituentContactDetails, database);
     } else {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary %1 table").arg(syncAggregatesTable));
+    }
+
+    // This query needs the 'temp.modifiableContacts' to exist to prepare
+    if (ContactsDatabase::createTemporaryContactIdsTable(m_database, modifiableContactsTable, QVariantList())) {
+        m_modifiableDetails = prepare(modifiableDetails, database);
+    } else {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary %1 table").arg(modifiableContactsTable));
     }
 
     // This query needs the temporary aggregation tables to exist
@@ -2947,49 +2956,55 @@ QContactManager::Error ContactWriter::calculateDelta(QContact *contact, const Co
             }
         }
 
-        // TODO: use a temporary table to avoid this outer loop:
+        QVariantList ids;
+        foreach (quint32 id, originContactIds) {
+            ids.append(id);
+        }
+
+        ContactsDatabase::clearTemporaryContactIdsTable(m_database, modifiableContactsTable);
+
+        if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, modifiableContactsTable, ids)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error populating temporary table %1").arg(modifiableContactsTable));
+            return QContactManager::UnspecifiedError;
+        }
+
         // See if any of these details are modifiable in-place
-        QSet<quint32>::const_iterator iit = originContactIds.constBegin(), iend = originContactIds.constEnd();
-        for ( ; iit != iend; ++iit) {
-            const quint32 contactId = *iit;
+        if (!m_modifiableDetails.exec()) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to select modifiable details:\n%2")
+                    .arg(m_modifiableDetails.lastError().text()));
+        } else {
+            while (m_modifiableDetails.next()) {
+                const QString provenance = m_modifiableDetails.value(0).toString();
+                const QString detail = m_modifiableDetails.value(1).toString();
+                const quint32 contactId = m_modifiableDetails.value(2).toUInt();
 
-            m_modifiableDetails.bindValue(":contactId", contactId);
-            if (!m_modifiableDetails.exec()) {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to select modifiable details for contact %1:\n%2").arg(contactId)
-                        .arg(m_modifiableDetails.lastError().text()));
-            } else {
-                while (m_modifiableDetails.next()) {
-                    const QString provenance = m_modifiableDetails.value(0).toString();
-                    const QString detail = m_modifiableDetails.value(1).toString();
+                const StringPair identity = qMakePair(provenance, detail);
 
-                    const StringPair identity = qMakePair(provenance, detail);
-
-                    for (oit = originalDetails.begin(), oend = originalDetails.end(); oit != oend; ++oit) {
-                        if ((*oit).second == identity) {
-                            // We have a modifiable detail to modify - find the updated version of this detail, if present
-                            QList<QPair<QContactDetail, StringPair> >::iterator uit = updateDetails.begin(), uend = updateDetails.end();
-                            for ( ; uit != uend; ++uit) {
-                                if ((*uit).second == identity) {
-                                    // Found a match - modify the original detail in the original contact
-                                    contactModifications[contactId].append(qMakePair(identity, (*uit).first));
-                                    updateDetails.erase(uit);
-                                    break;
-                                }
+                for (oit = originalDetails.begin(), oend = originalDetails.end(); oit != oend; ++oit) {
+                    if ((*oit).second == identity) {
+                        // We have a modifiable detail to modify - find the updated version of this detail, if present
+                        QList<QPair<QContactDetail, StringPair> >::iterator uit = updateDetails.begin(), uend = updateDetails.end();
+                        for ( ; uit != uend; ++uit) {
+                            if ((*uit).second == identity) {
+                                // Found a match - modify the original detail in the original contact
+                                contactModifications[contactId].append(qMakePair(identity, (*uit).first));
+                                updateDetails.erase(uit);
+                                break;
                             }
-                            if (uit == uend) {
-                                // No matching update - remove the detail from the original contact
-                                contactRemovals[contactId].append(identity);
-                            }
-
-                            // No longer need to make this change to the local
-                            originalDetails.erase(oit);
-                            break;
                         }
+                        if (uit == uend) {
+                            // No matching update - remove the detail from the original contact
+                            contactRemovals[contactId].append(identity);
+                        }
+
+                        // No longer need to make this change to the local
+                        originalDetails.erase(oit);
+                        break;
                     }
                 }
             }
-            m_modifiableDetails.finish();
         }
+        m_modifiableDetails.finish();
     }
 
     if (!contactModifications.isEmpty() || !contactRemovals.isEmpty()) {
