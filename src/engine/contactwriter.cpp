@@ -255,6 +255,17 @@ static const char *localConstituentIds =
         "\n AND R2.type = 'Aggregates'"
         "\n AND Contacts.syncTarget = 'local'";
 
+static const char *affectedSyncTargets =
+        "\n SELECT Contacts.syncTarget"
+        "\n FROM Contacts"
+        "\n JOIN Relationships AS R1 ON Contacts.contactId = R1.secondId"
+        "\n JOIN Relationships AS R2 ON R2.firstId = R1.firstId"
+        "\n WHERE R2.type = 'Aggregates' AND R2.secondId IN ("
+        "\n  SELECT contactId FROM temp.syncConstituents)"
+        "\n AND R1.type = 'Aggregates'"
+        "\n AND Contacts.syncTarget != 'local'"
+        "\n AND Contacts.syncTarget != 'was_local'";
+
 static const char *addedSyncContactIds =
         "\n SELECT Relationships.firstId"
         "\n FROM Contacts"
@@ -738,6 +749,7 @@ ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &d
     if (ContactsDatabase::createTemporaryContactIdsTable(m_database, syncConstituentsTable, QVariantList())) {
         m_aggregateContactIds = prepare(aggregateContactIds, database);
         m_localConstituentIds = prepare(localConstituentIds, database);
+        m_affectedSyncTargets = prepare(affectedSyncTargets, database);
     } else {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary %1 table").arg(syncConstituentsTable));
     }
@@ -772,6 +784,42 @@ bool ContactWriter::beginTransaction()
 
 bool ContactWriter::commitTransaction()
 {
+    if (!m_changedLocalIds.isEmpty()) {
+        // Find any sync targets affected by modified local contacts
+        bool error(false);
+
+        QVariantList ids;
+        foreach (quint32 id, m_changedLocalIds) {
+            ids.append(id);
+        }
+
+        ContactsDatabase::clearTemporaryContactIdsTable(m_database, syncConstituentsTable);
+
+        if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, syncConstituentsTable, ids)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error populating syncConstituents temporary table"));
+            error = true;
+        } else if (!m_affectedSyncTargets.exec()) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to fetch affected sync targets:\n%1")
+                    .arg(m_affectedSyncTargets.lastError().text()));
+            error = true;
+        }
+        while (!error && m_affectedSyncTargets.next()) {
+            const QString st(m_affectedSyncTargets.value(0).toString());
+            if (!m_suppressedSyncTargets.contains(st)) {
+                m_changedSyncTargets.insert(st);
+            }
+        }
+        m_affectedSyncTargets.finish();
+
+        if (error) {
+            rollbackTransaction();
+            return false;
+        }
+    }
+
+    m_suppressedSyncTargets.clear();
+    m_changedLocalIds.clear();
+
     if (!ContactsDatabase::commitTransaction(m_database)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Commit error: %1").arg(m_database.lastError().text()));
         rollbackTransaction();
@@ -796,6 +844,10 @@ bool ContactWriter::commitTransaction()
         ContactNotifier::contactsPresenceChanged(m_presenceChangedIds.toList());
         m_presenceChangedIds.clear();
     }
+    if (!m_changedSyncTargets.isEmpty()) {
+        ContactNotifier::syncContactsChanged(m_changedSyncTargets.toList());
+        m_changedSyncTargets.clear();
+    }
     if (!m_removedIds.isEmpty()) {
         ContactNotifier::contactsRemoved(m_removedIds.toList());
         m_removedIds.clear();
@@ -813,6 +865,9 @@ void ContactWriter::rollbackTransaction()
     }
 
     m_removedIds.clear();
+    m_suppressedSyncTargets.clear();
+    m_changedLocalIds.clear();
+    m_changedSyncTargets.clear();
     m_presenceChangedIds.clear();
     m_changedIds.clear();
     m_addedIds.clear();
@@ -1785,6 +1840,8 @@ QContactManager::Error ContactWriter::updateSyncContacts(const QString &syncTarg
         return QContactManager::UnspecifiedError;
     }
 
+    m_suppressedSyncTargets.insert(syncTarget);
+
     QContactManager::Error error = syncUpdate(syncTarget, timestamp, conflictPolicy, remoteChanges);
     if (error != QContactManager::NoError) {
         rollbackTransaction();
@@ -2036,12 +2093,16 @@ QContactManager::Error ContactWriter::save(
     QContactManager::Error err = QContactManager::NoError;
     for (int i = 0; i < contacts->count(); ++i) {
         QContact &contact = (*contacts)[i];
-        const QContactId contactId = ContactId::apiId(contact);
+        QContactId contactId = ContactId::apiId(contact);
+        quint32 dbId = ContactId::databaseId(contactId);
+
         bool aggregateUpdated = false;
-        if (ContactId::databaseId(contactId) == 0) {
+        if (dbId == 0) {
             err = create(&contact, definitionMask, true, withinAggregateUpdate);
             if (err == QContactManager::NoError) {
-                m_addedIds.insert(ContactId::apiId(contact));
+                contactId = ContactId::apiId(contact);
+                dbId = ContactId::databaseId(contactId);
+                m_addedIds.insert(contactId);
             } else {
                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error creating contact: %1 syncTarget: %2").arg(err).arg(contact.detail<QContactSyncTarget>().syncTarget()));
             }
@@ -2057,10 +2118,21 @@ QContactManager::Error ContactWriter::save(
                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error updating contact %1: %2").arg(ContactId::toString(contactId)).arg(err));
             }
         }
-        if (aggregatesUpdated) {
-            aggregatesUpdated->insert(i, aggregateUpdated);
-        }
-        if (err != QContactManager::NoError) {
+        if (err == QContactManager::NoError) {
+            if (aggregatesUpdated) {
+                aggregatesUpdated->insert(i, aggregateUpdated);
+            }
+
+            QString currSyncTarget(contact.detail<QContactSyncTarget>().syncTarget());
+            if (currSyncTarget.isEmpty() || currSyncTarget == localSyncTarget || currSyncTarget == wasLocalSyncTarget) {
+                // This contact would cause changes to the partial aggregate for sync target contacts
+                m_changedLocalIds.insert(dbId);
+            } else if (currSyncTarget != aggregateSyncTarget) {
+                if (!m_suppressedSyncTargets.contains(currSyncTarget)) {
+                    m_changedSyncTargets.insert(currSyncTarget);
+                }
+            }
+        } else {
             worstError = err;
             if (errorMap) {
                 errorMap->insert(i, err);

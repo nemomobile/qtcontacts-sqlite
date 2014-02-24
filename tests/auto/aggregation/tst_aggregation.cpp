@@ -3858,6 +3858,8 @@ void tst_Aggregation::fetchSyncContacts()
     typedef QtContactsSqliteExtensions::ContactManagerEngine EngineType;
     EngineType *cme = qobject_cast<EngineType *>(QContactManagerData::managerData(m_cm)->m_engine);
 
+    QSignalSpy syncSpy(cme, SIGNAL(syncContactsChanged(QStringList)));
+
     QList<QContact> syncContacts;
     QList<QContact> addedContacts;
     QList<QContactId> exportedIds;
@@ -3873,6 +3875,7 @@ void tst_Aggregation::fetchSyncContacts()
     QCOMPARE(syncContacts.count(), 0);
     QCOMPARE(addedContacts.count(), 0);
     QCOMPARE(deletedIds.count(), 0);
+    QCOMPARE(syncSpy.count(), 0);
 
     // Store a sync target contact originating at this service
     QContactName n;
@@ -3891,6 +3894,14 @@ void tst_Aggregation::fetchSyncContacts()
     stc.saveDetail(&e);
 
     QVERIFY(m_cm->saveContact(&stc));
+
+    QTRY_COMPARE(syncSpy.count(), 1);
+    QVariantList signalArgs(syncSpy.takeFirst());
+    QCOMPARE(syncSpy.count(), 0);
+    QCOMPARE(signalArgs.count(), 1);
+    QStringList changedSyncTargets(signalArgs.first().value<QStringList>());
+    QCOMPARE(changedSyncTargets.count(), 1);
+    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("sync-test"));
 
     stc = m_cm->contact(retrievalId(stc));
 
@@ -3926,6 +3937,14 @@ void tst_Aggregation::fetchSyncContacts()
 
     QVERIFY(m_cm->saveContact(&lc));
 
+    QTRY_COMPARE(syncSpy.count(), 1);
+    signalArgs = syncSpy.takeFirst();
+    QCOMPARE(syncSpy.count(), 0);
+    QCOMPARE(signalArgs.count(), 1);
+    changedSyncTargets = signalArgs.first().value<QStringList>();
+    QCOMPARE(changedSyncTargets.count(), 1);
+    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("sync-test"));
+
     lc = m_cm->contact(retrievalId(lc));
 
     QCOMPARE(lc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
@@ -3958,6 +3977,14 @@ void tst_Aggregation::fetchSyncContacts()
     alc.saveDetail(&e);
 
     QVERIFY(m_cm->saveContact(&alc));
+
+    QTRY_COMPARE(syncSpy.count(), 1);
+    signalArgs = syncSpy.takeFirst();
+    QCOMPARE(syncSpy.count(), 0);
+    QCOMPARE(signalArgs.count(), 1);
+    changedSyncTargets = signalArgs.first().value<QStringList>();
+    QCOMPARE(changedSyncTargets.count(), 1);
+    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("sync-test"));
 
     alc = m_cm->contact(retrievalId(alc));
 
@@ -3997,6 +4024,14 @@ void tst_Aggregation::fetchSyncContacts()
 
     QVERIFY(m_cm->saveContact(&dstc));
 
+    QTRY_COMPARE(syncSpy.count(), 1);
+    signalArgs = syncSpy.takeFirst();
+    QCOMPARE(syncSpy.count(), 0);
+    QCOMPARE(signalArgs.count(), 1);
+    changedSyncTargets = signalArgs.first().value<QStringList>();
+    QCOMPARE(changedSyncTargets.count(), 1);
+    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("different-sync-target"));
+
     dstc = m_cm->contact(retrievalId(dstc));
 
     QCOMPARE(dstc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
@@ -4033,6 +4068,14 @@ void tst_Aggregation::fetchSyncContacts()
     astc.saveDetail(&e);
 
     QVERIFY(m_cm->saveContact(&astc));
+
+    QTRY_COMPARE(syncSpy.count(), 1);
+    signalArgs = syncSpy.takeFirst();
+    QCOMPARE(syncSpy.count(), 0);
+    QCOMPARE(signalArgs.count(), 1);
+    changedSyncTargets = signalArgs.first().value<QStringList>();
+    QCOMPARE(changedSyncTargets.count(), 1);
+    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("sync-test"));
 
     astc = m_cm->contact(retrievalId(astc));
 
@@ -4091,6 +4134,9 @@ void tst_Aggregation::fetchSyncContacts()
     nlc.saveDetail(&e);
 
     QVERIFY(m_cm->saveContact(&nlc));
+
+    // No sync target is affected by this store
+    QVERIFY(!syncSpy.wait(1000));
 
     nlc = m_cm->contact(retrievalId(nlc));
 
@@ -4189,6 +4235,14 @@ void tst_Aggregation::fetchSyncContacts()
 
     QVERIFY(m_cm->saveContact(&nastc));
 
+    QTRY_COMPARE(syncSpy.count(), 1);
+    signalArgs = syncSpy.takeFirst();
+    QCOMPARE(syncSpy.count(), 0);
+    QCOMPARE(signalArgs.count(), 1);
+    changedSyncTargets = signalArgs.first().value<QStringList>();
+    QCOMPARE(changedSyncTargets.count(), 1);
+    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("different-sync-target"));
+
     nastc = m_cm->contact(retrievalId(nastc));
 
     QCOMPARE(nastc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
@@ -4239,6 +4293,14 @@ void tst_Aggregation::fetchSyncContacts()
 
     QVERIFY(m_cm->saveContact(&fstc));
 
+    QTRY_COMPARE(syncSpy.count(), 1);
+    signalArgs = syncSpy.takeFirst();
+    QCOMPARE(syncSpy.count(), 0);
+    QCOMPARE(signalArgs.count(), 1);
+    changedSyncTargets = signalArgs.first().value<QStringList>();
+    QCOMPARE(changedSyncTargets.count(), 1);
+    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("different-sync-target"));
+
     fstc = m_cm->contact(retrievalId(fstc));
 
     QCOMPARE(fstc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
@@ -4263,6 +4325,14 @@ void tst_Aggregation::fetchSyncContacts()
     f.setFavorite(true);
     QVERIFY(fa.saveDetail(&f));
     QVERIFY(m_cm->saveContact(&fa));
+
+    QTRY_COMPARE(syncSpy.count(), 1);
+    signalArgs = syncSpy.takeFirst();
+    QCOMPARE(syncSpy.count(), 0);
+    QCOMPARE(signalArgs.count(), 1);
+    changedSyncTargets = signalArgs.first().value<QStringList>();
+    QCOMPARE(changedSyncTargets.count(), 1);
+    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("different-sync-target"));
 
     fa = m_cm->contact(a3);
 
@@ -4299,6 +4369,14 @@ void tst_Aggregation::fetchSyncContacts()
     ac.saveDetail(&h);
 
     QVERIFY(m_cm->saveContact(&ac));
+
+    QTRY_COMPARE(syncSpy.count(), 1);
+    signalArgs = syncSpy.takeFirst();
+    QCOMPARE(syncSpy.count(), 0);
+    QCOMPARE(signalArgs.count(), 1);
+    changedSyncTargets = signalArgs.first().value<QStringList>();
+    QCOMPARE(changedSyncTargets.count(), 2);
+    QCOMPARE(changedSyncTargets.toSet(), (QSet<QString>() << "sync-test" << "different-sync-target"));
 
     QContactDetailFilter allSyncTargets;
     setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
@@ -4353,6 +4431,8 @@ void tst_Aggregation::storeSyncContacts()
     typedef QtContactsSqliteExtensions::ContactManagerEngine EngineType;
     EngineType *cme = qobject_cast<EngineType *>(QContactManagerData::managerData(m_cm)->m_engine);
 
+    QSignalSpy syncSpy(cme, SIGNAL(syncContactsChanged(QStringList)));
+
     QDateTime initialTime = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
     QTest::qWait(1000);
 
@@ -4391,6 +4471,9 @@ void tst_Aggregation::storeSyncContacts()
     stc.saveDetail(&h);
 
     QVERIFY(m_cm->saveContact(&stc));
+
+    QTRY_COMPARE(syncSpy.count(), 1);
+    syncSpy.clear();
 
     stc = m_cm->contact(retrievalId(stc));
 
@@ -4480,6 +4563,9 @@ void tst_Aggregation::storeSyncContacts()
     modifications.append(qMakePair(pa, mpa));
     QVERIFY(cme->storeSyncContacts("sync-test", initialTime, policy, modifications, &err));
 
+    // The syncTarget should not be reported as updated by storeSyncContacts
+    QVERIFY(!syncSpy.wait(1000));
+
     // Verify that the expected changes occurred
     stc = m_cm->contact(retrievalId(stc));
     QCOMPARE(stc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
@@ -4547,6 +4633,9 @@ void tst_Aggregation::storeSyncContacts()
     lc.saveDetail(&pn);
 
     QVERIFY(m_cm->saveContact(&lc));
+
+    QTRY_COMPARE(syncSpy.count(), 1);
+    syncSpy.clear();
 
     lc = m_cm->contact(retrievalId(lc));
 
@@ -4750,6 +4839,9 @@ void tst_Aggregation::storeSyncContacts()
 
     QVERIFY(m_cm->saveContact(&dstc));
 
+    QTRY_COMPARE(syncSpy.count(), 1);
+    syncSpy.clear();
+
     dstc = m_cm->contact(retrievalId(dstc));
 
     n2 = dstc.detail<QContactName>();
@@ -4776,6 +4868,15 @@ void tst_Aggregation::storeSyncContacts()
     modifications.clear();
     modifications.append(qMakePair(pa, mpa));
     QVERIFY(cme->storeSyncContacts("sync-test", initialTime, policy, modifications, &err));
+
+    // A sync-target that was not the subject of this update should be reported as having changed
+    QTRY_COMPARE(syncSpy.count(), 1);
+    QVariantList signalArgs(syncSpy.takeFirst());
+    QCOMPARE(syncSpy.count(), 0);
+    QCOMPARE(signalArgs.count(), 1);
+    QStringList changedSyncTargets(signalArgs.first().value<QStringList>());
+    QCOMPARE(changedSyncTargets.count(), 1);
+    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("different-sync-target"));
 
     // Verify that the name changes occurred for the affected constituents, but not the unrelated one
     stc = m_cm->contact(retrievalId(stc));

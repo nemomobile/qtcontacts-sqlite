@@ -197,6 +197,7 @@ private:
     QSqlQuery m_aggregateContactIds;
     QSqlQuery m_constituentContactDetails;
     QSqlQuery m_localConstituentIds;
+    QSqlQuery m_affectedSyncTargets;
     QSqlQuery m_addedSyncContactIds;
     QSqlQuery m_deletedSyncContactIds;
     QSqlQuery m_insertContact;
@@ -256,6 +257,9 @@ private:
     QSet<QContactId> m_removedIds;
     QSet<QContactId> m_changedIds;
     QSet<QContactId> m_presenceChangedIds;
+    QSet<QString> m_changedSyncTargets;
+    QSet<quint32> m_changedLocalIds;
+    QSet<QString> m_suppressedSyncTargets;
 };
 
 

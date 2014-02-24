@@ -46,6 +46,7 @@ namespace ContactNotifier
     void contactsAdded(const QList<QContactId> &contactIds);
     void contactsChanged(const QList<QContactId> &contactIds);
     void contactsPresenceChanged(const QList<QContactId> &contactIds);
+    void syncContactsChanged(const QStringList &syncTargets);
     void contactsRemoved(const QList<QContactId> &contactIds);
     void selfContactIdChanged(QContactId oldId, QContactId newId);
     void relationshipsAdded(const QList<QContactId> &contactIds);

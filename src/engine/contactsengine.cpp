@@ -822,6 +822,7 @@ QContactManager::Error ContactsEngine::open()
         ContactNotifier::connect("contactsAdded", "au", this, SLOT(_q_contactsAdded(QVector<quint32>)));
         ContactNotifier::connect("contactsChanged", "au", this, SLOT(_q_contactsChanged(QVector<quint32>)));
         ContactNotifier::connect("contactsPresenceChanged", "au", this, SLOT(_q_contactsPresenceChanged(QVector<quint32>)));
+        ContactNotifier::connect("syncContactsChanged", "as", this, SLOT(_q_syncContactsChanged(QStringList)));
         ContactNotifier::connect("contactsRemoved", "au", this, SLOT(_q_contactsRemoved(QVector<quint32>)));
         ContactNotifier::connect("selfContactIdChanged", "uu", this, SLOT(_q_selfContactIdChanged(quint32,quint32)));
         ContactNotifier::connect("relationshipsAdded", "au", this, SLOT(_q_relationshipsAdded(QVector<quint32>)));
@@ -1237,6 +1238,11 @@ void ContactsEngine::_q_contactsPresenceChanged(const QVector<quint32> &contactI
     } else {
         emit contactsPresenceChanged(idList(contactIds));
     }
+}
+
+void ContactsEngine::_q_syncContactsChanged(const QStringList &syncTargets)
+{
+    emit syncContactsChanged(syncTargets);
 }
 
 void ContactsEngine::_q_contactsRemoved(const QVector<quint32> &contactIds)

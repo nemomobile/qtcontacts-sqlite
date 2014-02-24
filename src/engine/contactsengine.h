@@ -149,6 +149,7 @@ public:
 private slots:
     void _q_contactsChanged(const QVector<quint32> &contactIds);
     void _q_contactsPresenceChanged(const QVector<quint32> &contactIds);
+    void _q_syncContactsChanged(const QStringList &syncTargets);
     void _q_contactsAdded(const QVector<quint32> &contactIds);
     void _q_contactsRemoved(const QVector<quint32> &contactIds);
     void _q_selfContactIdChanged(quint32,quint32);

@@ -64,6 +64,7 @@ public:
 
 Q_SIGNALS:
     void contactsPresenceChanged(const QList<QContactId> &contactsIds);
+    void syncContactsChanged(const QStringList &syncTargets);
 
 protected:
     bool m_mergePresenceChanges;
