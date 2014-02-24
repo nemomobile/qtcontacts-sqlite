@@ -2542,8 +2542,8 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
 
         if (m_findLocalForAggregate.next()) {
             // found the existing local contact aggregated by this aggregate.
-            QList<QContactId> whichList;
-            whichList.append(ContactId::apiId(m_findLocalForAggregate.value(0).toUInt()));
+            QList<quint32> whichList;
+            whichList.append(m_findLocalForAggregate.value(0).toUInt());
 
             m_findLocalForAggregate.finish();
 
@@ -2901,8 +2901,8 @@ QContactManager::Error ContactWriter::calculateDelta(QContact *contact, const Co
     hint.setDetailTypesHint(definitionMask);
     hint.setOptimizationHints(QContactFetchHint::NoRelationships);
 
-    QList<QContactId> whichList;
-    whichList.append(ContactId::apiId(*contact));
+    QList<quint32> whichList;
+    whichList.append(ContactId::databaseId(*contact));
 
     // Load the existing state of the aggregate from DB
     QList<QContact> readList;
@@ -2979,13 +2979,11 @@ QContactManager::Error ContactWriter::calculateDelta(QContact *contact, const Co
     }
 
     if (!contactModifications.isEmpty() || !contactRemovals.isEmpty()) {
-        whichList.clear();
+        QSet<quint32> retrievalIds;
         foreach (quint32 contactId, contactModifications.keys() + contactRemovals.keys()) {
-            QContactId retrievalId(ContactId::apiId(contactId));
-            if (!whichList.contains(retrievalId)) {
-                whichList.append(retrievalId);
-            }
+            retrievalIds.insert(contactId);
         }
+        whichList = retrievalIds.toList();
 
         QContactManager::Error readError = m_reader->readContacts(QLatin1String("CalculateDelta"), writeList, whichList, hint);
         if (readError != QContactManager::NoError || writeList->size() != whichList.size()) {
@@ -3145,13 +3143,13 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
         return QContactManager::UnspecifiedError;
     }
     if (findMatchForContact.next()) {
-        QContactId aggregateId = ContactId::apiId(findMatchForContact.value(0).toUInt());
-        quint32 score = findMatchForContact.value(1).toUInt();
+        const quint32 aggregateId = findMatchForContact.value(0).toUInt();
+        const quint32 score = findMatchForContact.value(1).toUInt();
         findMatchForContact.finish();
 
         static const quint32 MinimumMatchScore = 15;
         if (score >= MinimumMatchScore) {
-            QList<QContactId> readIds;
+            QList<quint32> readIds;
             readIds.append(aggregateId);
 
             QContactFetchHint hint;
@@ -3160,7 +3158,7 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
             QList<QContact> readList;
             QContactManager::Error readError = m_reader->readContacts(QLatin1String("CreateAggregate"), &readList, readIds, hint);
             if (readError != QContactManager::NoError || readList.size() < 1) {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to read aggregate contact %1 during regenerate").arg(ContactId::toString(aggregateId)));
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to read aggregate contact %1 during regenerate").arg(aggregateId));
                 return QContactManager::UnspecifiedError;
             }
 
@@ -3259,8 +3257,8 @@ QContactManager::Error ContactWriter::regenerateAggregates(const QList<quint32> 
             continue;
         }
 
-        QList<QContactId> readIds;
-        readIds.append(apiId);
+        QList<quint32> readIds;
+        readIds.append(aggId);
 
         m_findConstituentsForAggregate.bindValue(":aggregateId", aggId);
         if (!m_findConstituentsForAggregate.exec()) {
@@ -3268,7 +3266,7 @@ QContactManager::Error ContactWriter::regenerateAggregates(const QList<quint32> 
             return QContactManager::UnspecifiedError;
         }
         while (m_findConstituentsForAggregate.next()) {
-            readIds.append(ContactId::apiId(m_findConstituentsForAggregate.value(0).toUInt()));
+            readIds.append(m_findConstituentsForAggregate.value(0).toUInt());
         }
         m_findConstituentsForAggregate.finish();
 
@@ -3415,15 +3413,14 @@ QContactManager::Error ContactWriter::removeChildlessAggregates(QList<QContactId
 
 QContactManager::Error ContactWriter::aggregateOrphanedContacts(bool withinTransaction)
 {
-    QList<QContactId> contactIds;
+    QList<quint32> contactIds;
     if (!m_orphanContactIds.exec()) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to fetch orphan aggregate contact ids during remove:\n%1")
                 .arg(m_orphanContactIds.lastError().text()));
         return QContactManager::UnspecifiedError;
     }
     while (m_orphanContactIds.next()) {
-        quint32 orphanId = m_orphanContactIds.value(0).toUInt();
-        contactIds.append(ContactId::apiId(orphanId));
+        contactIds.append(m_orphanContactIds.value(0).toUInt());
     }
     m_orphanContactIds.finish();
 
@@ -3918,8 +3915,6 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget, cons
     std::sort(affectedContactIds.begin(), affectedContactIds.end());
     QList<quint32>::iterator newEnd = std::unique(affectedContactIds.begin(), affectedContactIds.end());
     affectedContactIds.erase(newEnd, affectedContactIds.end());
-
-// TODO : convert readContacts calls to use quint32 IDs where appropriate
 
     // Fetch all the contacts we want to apply modifications to
     if (!affectedContactIds.isEmpty()) {
