@@ -123,6 +123,8 @@ private slots:
     void fetchSyncContacts();
     void storeSyncContacts();
 
+    void testOOB();
+
 private:
     void waitForSignalPropagation();
 
@@ -5083,6 +5085,67 @@ void tst_Aggregation::storeSyncContacts()
 
     QCOMPARE(pa.details<QContactPhoneNumber>().count(), 1);
     QCOMPARE(pa.detail<QContactPhoneNumber>().number(), pn.number());
+}
+
+void tst_Aggregation::testOOB()
+{
+    typedef QtContactsSqliteExtensions::ContactManagerEngine EngineType;
+    EngineType *cme = qobject_cast<EngineType *>(QContactManagerData::managerData(m_cm)->m_engine);
+
+    const QString &scope(QString::fromLatin1("tst_Aggregation"));
+
+    // Test simple OOB fetches and stores
+    QVariant data;
+    QVERIFY(cme->fetchOOB(scope, "nonexistentData", &data));
+    QCOMPARE(data, QVariant());
+
+    QVERIFY(cme->fetchOOB(scope, "data", &data));
+    if (!data.isNull()) {
+        QVERIFY(cme->removeOOB(scope, "data"));
+    }
+
+    QVERIFY(cme->storeOOB(scope, "data", QVariant::fromValue<double>(0.123456789)));
+
+    data = QVariant();
+    QVERIFY(cme->fetchOOB(scope, "data", &data));
+    QCOMPARE(data.toDouble(), 0.123456789);
+
+    // Test overwrite
+    QVERIFY(cme->storeOOB(scope, "data", QVariant::fromValue<QString>(QLatin1String("Testing"))));
+
+    data = QVariant();
+    QVERIFY(cme->fetchOOB(scope, "data", &data));
+    QCOMPARE(data.toString(), QLatin1String("Testing"));
+
+    // Test remove
+    QVERIFY(cme->removeOOB(scope, "data"));
+    QVERIFY(cme->fetchOOB(scope, "data", &data));
+    QCOMPARE(data, QVariant());
+
+    // Test multiple items
+    QMap<QString, QVariant> values;
+    values.insert("data", 100);
+    values.insert("other", 200);
+    QVERIFY(cme->storeOOB(scope, values));
+
+    values.clear();
+    QVERIFY(cme->fetchOOB(scope, (QStringList() << "data" << "other" << "nonexistent"), &values));
+    QCOMPARE(values.count(), 2);
+    QCOMPARE(values["data"].toInt(), 100);
+    QCOMPARE(values["other"].toInt(), 200);
+
+    // Test empty lists
+    values.clear();
+    QVERIFY(cme->fetchOOB(scope, &values));
+    QCOMPARE(values.count(), 2);
+    QCOMPARE(values["data"].toInt(), 100);
+    QCOMPARE(values["other"].toInt(), 200);
+
+    QVERIFY(cme->removeOOB(scope));
+
+    values.clear();
+    QVERIFY(cme->fetchOOB(scope, &values));
+    QCOMPARE(values.count(), 0);
 }
 
 QTEST_MAIN(tst_Aggregation)

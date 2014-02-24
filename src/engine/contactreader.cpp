@@ -2230,6 +2230,51 @@ QContactManager::Error ContactReader::readRelationships(
     return QContactManager::NoError;
 }
 
+bool ContactReader::fetchOOB(const QString &scope, const QStringList &keys, QMap<QString, QVariant> *values)
+{
+    QVariantList keyNames;
+
+    QString statement(QString::fromLatin1("SELECT name, value FROM OOB WHERE name "));
+    if (keys.isEmpty()) {
+        statement.append(QString::fromLatin1("LIKE '%1:%%'").arg(scope));
+    } else {
+        const QChar colon(QChar::fromLatin1(':'));
+
+        QString keyList;
+        foreach (const QString &key, keys) {
+            keyNames.append(scope + colon + key);
+            keyList.append(QString::fromLatin1(keyList.isEmpty() ? "?" : ",?"));
+        }
+        statement.append(QString::fromLatin1("IN (%1)").arg(keyList));
+    }
+
+    QSqlQuery query(m_database);
+    query.setForwardOnly(true);
+    if (!query.prepare(statement)) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare OOB query:\n%1\nQuery:\n%2")
+                .arg(query.lastError().text())
+                .arg(statement));
+        return false;
+    }
+
+    foreach (const QVariant &name, keyNames) {
+        query.addBindValue(name);
+    }
+
+    if (!query.exec()) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to query OOB: %1")
+                .arg(query.lastError().text()));
+        return false;
+    }
+    while (query.next()) {
+        const QString type(query.value(0).toString());
+        values->insert(type.mid(scope.length() + 1), query.value(1));
+    }
+    query.finish();
+
+    return true;
+}
+
 void ContactReader::contactsAvailable(const QList<QContact> &)
 {
 }

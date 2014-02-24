@@ -107,6 +107,9 @@ public:
                                               const QList<QPair<QContact, QContact> > &remoteChanges);
 #endif
 
+    bool storeOOB(const QString &scope, const QMap<QString, QVariant> &values);
+    bool removeOOB(const QString &scope, const QStringList &keys);
+
 private:
     bool beginTransaction();
     bool commitTransaction();

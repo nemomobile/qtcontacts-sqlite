@@ -83,6 +83,8 @@ public:
             const QContactId &first,
             const QContactId &second);
 
+    bool fetchOOB(const QString &scope, const QStringList &keys, QMap<QString, QVariant> *values);
+
 protected:
     QContactManager::Error readDeletedContactIds(
             QList<QContactId> *contactIds,

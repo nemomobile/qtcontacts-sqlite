@@ -62,6 +62,17 @@ public:
                                    const QList<QPair<QContact, QContact> > &remoteChanges, QContactManager::Error *error) = 0;
 #endif
 
+    virtual bool fetchOOB(const QString &scope, const QString &key, QVariant *value) = 0;
+    virtual bool fetchOOB(const QString &scope, const QStringList &keys, QMap<QString, QVariant> *values) = 0;
+    virtual bool fetchOOB(const QString &scope, QMap<QString, QVariant> *values) = 0;
+
+    virtual bool storeOOB(const QString &scope, const QString &key, const QVariant &value) = 0;
+    virtual bool storeOOB(const QString &scope, const QMap<QString, QVariant> &values) = 0;
+
+    virtual bool removeOOB(const QString &scope, const QString &key) = 0;
+    virtual bool removeOOB(const QString &scope, const QStringList &keys) = 0;
+    virtual bool removeOOB(const QString &scope) = 0;
+
 Q_SIGNALS:
     void contactsPresenceChanged(const QList<QContactId> &contactsIds);
     void syncContactsChanged(const QStringList &syncTargets);

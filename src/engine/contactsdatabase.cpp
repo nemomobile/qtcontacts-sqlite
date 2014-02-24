@@ -309,6 +309,11 @@ static const char *createDeletedContactsTable =
         "\n syncTarget TEXT,"
         "\n deleted DATETIME);";
 
+static const char *createOOBTable =
+        "\n CREATE TABLE OOB ("
+        "\n name TEXT PRIMARY KEY,"
+        "\n value BLOB);";
+
 static const char *createRemoveTrigger =
         "\n CREATE TRIGGER RemoveContactDetails"
         "\n BEFORE DELETE"
@@ -548,6 +553,7 @@ static const char *createStatements[] =
     createIdentitiesTable,
     createRelationshipsTable,
     createDeletedContactsTable,
+    createOOBTable,
     createRemoveTrigger,
     createLocalSelfContact,
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
@@ -604,15 +610,21 @@ static const char *upgradeVersion3[] = {
     "PRAGMA user_version=4",
     0 // NULL-terminated
 };
+static const char *upgradeVersion4[] = {
+    createOOBTable,
+    "PRAGMA user_version=5",
+    0 // NULL-terminated
+};
 
 static const char **upgradeVersions[] = {
     upgradeVersion0,
     upgradeVersion1,
     upgradeVersion2,
     upgradeVersion3,
+    upgradeVersion4,
 };
 
-static const int currentSchemaVersion = 4;
+static const int currentSchemaVersion = 5;
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {

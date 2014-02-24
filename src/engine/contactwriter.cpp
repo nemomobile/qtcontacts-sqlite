@@ -1857,6 +1857,113 @@ QContactManager::Error ContactWriter::updateSyncContacts(const QString &syncTarg
 }
 #endif
 
+bool ContactWriter::storeOOB(const QString &scope, const QMap<QString, QVariant> &values)
+{
+    QMutexLocker locker(ContactsDatabase::accessMutex());
+
+    if (values.isEmpty())
+        return true;
+
+    if (!beginTransaction()) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to begin database transaction while storing OOB"));
+        return false;
+    }
+
+    QStringList valuePairs;
+    QVariantList dataValues;
+    const QChar colon(QChar::fromLatin1(':'));
+
+    QMap<QString, QVariant>::const_iterator it = values.constBegin(), end = values.constEnd();
+    for ( ; it != end; ++it) {
+        valuePairs.append(QString::fromLatin1("(?,?)"));
+        dataValues.append(scope + colon + it.key());
+        dataValues.append(it.value());
+    }
+
+    QString statement(QString::fromLatin1("INSERT OR REPLACE INTO OOB (name, value) VALUES %1").arg(valuePairs.join(",")));
+
+    QSqlQuery query(m_database);
+    query.setForwardOnly(true);
+    if (!query.prepare(statement)) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare OOB insert:\n%1\nQuery:\n%2")
+                .arg(query.lastError().text())
+                .arg(statement));
+    } else {
+        foreach (const QVariant &v, dataValues) {
+            query.addBindValue(v);
+        }
+        if (!query.exec()) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to insert OOB: %1")
+                    .arg(query.lastError().text()));
+        } else {
+            if (!commitTransaction()) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to commit database after storing OOB"));
+                return false;
+            }
+            return true;
+        }
+    }
+
+    rollbackTransaction();
+
+    return false;
+}
+
+bool ContactWriter::removeOOB(const QString &scope, const QStringList &keys)
+{
+    QMutexLocker locker(ContactsDatabase::accessMutex());
+
+    if (!beginTransaction()) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to begin database transaction while removing OOB"));
+        return false;
+    }
+
+    QVariantList keyNames;
+
+    QString statement(QString::fromLatin1("DELETE FROM OOB WHERE name "));
+
+    if (keys.isEmpty()) {
+        statement.append(QString::fromLatin1("LIKE '%1%%'").arg(scope));
+    } else {
+        const QChar colon(QChar::fromLatin1(':'));
+        QString keyList;
+
+        foreach (const QString &key, keys) {
+            keyNames.append(scope + colon + key);
+            keyList.append(QString::fromLatin1(keyList.isEmpty() ? "?" : ",?"));
+        }
+
+        statement.append(QString::fromLatin1("IN (%1)").arg(keyList));
+    }
+
+    QSqlQuery query(m_database);
+    query.setForwardOnly(true);
+    if (!query.prepare(statement)) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare OOB remove:\n%1\nQuery:\n%2")
+                .arg(query.lastError().text())
+                .arg(statement));
+    } else {
+        foreach (const QVariant &name, keyNames) {
+            query.addBindValue(name);
+        }
+
+        if (!query.exec()) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to query OOB: %1")
+                    .arg(query.lastError().text()));
+        } else {
+            if (!commitTransaction()) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to commit database after removing OOB"));
+                return false;
+            }
+            return true;
+        }
+    }
+
+    rollbackTransaction();
+
+    return false;
+}
+
 QMap<int, QString> contextTypes()
 {
     QMap<int, QString> rv;

@@ -1137,6 +1137,54 @@ bool ContactsEngine::storeSyncContacts(const QString &syncTarget, const QDateTim
 }
 #endif
 
+bool ContactsEngine::fetchOOB(const QString &scope, const QString &key, QVariant *value)
+{
+    QMap<QString, QVariant> values;
+    if (reader()->fetchOOB(scope, QStringList() << key, &values)) {
+        *value = values[key];
+        return true;
+    }
+
+    return false;
+}
+
+bool ContactsEngine::fetchOOB(const QString &scope, const QStringList &keys, QMap<QString, QVariant> *values)
+{
+    return reader()->fetchOOB(scope, keys, values);
+}
+
+bool ContactsEngine::fetchOOB(const QString &scope, QMap<QString, QVariant> *values)
+{
+    return reader()->fetchOOB(scope, QStringList(), values);
+}
+
+bool ContactsEngine::storeOOB(const QString &scope, const QString &key, const QVariant &value)
+{
+    QMap<QString, QVariant> values;
+    values.insert(key, value);
+    return writer()->storeOOB(scope, values);
+}
+
+bool ContactsEngine::storeOOB(const QString &scope, const QMap<QString, QVariant> &values)
+{
+    return writer()->storeOOB(scope, values);
+}
+
+bool ContactsEngine::removeOOB(const QString &scope, const QString &key)
+{
+    return writer()->removeOOB(scope, QStringList() << key);
+}
+
+bool ContactsEngine::removeOOB(const QString &scope, const QStringList &keys)
+{
+    return writer()->removeOOB(scope, keys);
+}
+
+bool ContactsEngine::removeOOB(const QString &scope)
+{
+    return writer()->removeOOB(scope, QStringList());
+}
+
 bool ContactsEngine::setContactDisplayLabel(QContact *contact, const QString &label)
 {
     QContactDisplayLabel detail(contact->detail<QContactDisplayLabel>());
