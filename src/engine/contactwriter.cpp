@@ -2349,12 +2349,10 @@ static QContactManager::Error enforceDetailConstraints(QContact *contact)
 
     QHash<ContactWriter::DetailList::value_type, int> detailCounts;
 
-    // look for unsupported detail data.  XXX TODO: this is really slow, due to string comparison.
-    // We could simply ignore all unsupported data during save, which would save quite some time.
+    // look for unsupported detail data.
     foreach (const QContactDetail &det, contact->details()) {
-        QString typeName(detailTypeName(det));
         if (!detailListContains(supported, det)) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Invalid detail type: %1 %2").arg(typeName).arg(det.type()));
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Invalid detail type: %1 %2").arg(detailTypeName(det)).arg(det.type()));
             return QContactManager::InvalidDetailError;
         } else {
             ++detailCounts[detailType(det)];
