@@ -151,7 +151,7 @@ public:
 
     void execute(ContactReader *, WriterProxy &writer)
     {
-        m_error = writer->save(&m_contacts, m_definitionMask, 0, &m_errorMap, false, false);
+        m_error = writer->save(&m_contacts, m_definitionMask, 0, &m_errorMap, false, false, false);
     }
 
     void updateState(QContactAbstractRequest::State state)
@@ -940,7 +940,7 @@ bool ContactsEngine::saveContacts(
             QMap<int, QContactManager::Error> *errorMap,
             QContactManager::Error *error)
 {
-    QContactManager::Error err = writer()->save(contacts, definitionMask, 0, errorMap, false, false);
+    QContactManager::Error err = writer()->save(contacts, definitionMask, 0, errorMap, false, false, false);
 
     if (error)
         *error = err;
@@ -1114,6 +1114,27 @@ void ContactsEngine::regenerateDisplayLabel(QContact &contact) const
 
     setContactDisplayLabel(&contact, label);
 }
+
+#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
+bool ContactsEngine::fetchSyncContacts(const QString &syncTarget, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
+                                       QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
+                                       QContactManager::Error *error)
+{
+    Q_ASSERT(error);
+
+    *error = writer()->fetchSyncContacts(syncTarget, lastSync, exportedIds, syncContacts, addedContacts, deletedContactIds);
+    return (*error == QContactManager::NoError);
+}
+
+bool ContactsEngine::storeSyncContacts(const QString &syncTarget, const QDateTime &timestamp, ConflictResolutionPolicy conflictPolicy,
+                                       const QList<QPair<QContact, QContact> > &remoteChanges, QContactManager::Error *error)
+{
+    Q_ASSERT(error);
+
+    *error = writer()->updateSyncContacts(syncTarget, timestamp, conflictPolicy, remoteChanges);
+    return (*error == QContactManager::NoError);
+}
+#endif
 
 bool ContactsEngine::setContactDisplayLabel(QContact *contact, const QString &label)
 {

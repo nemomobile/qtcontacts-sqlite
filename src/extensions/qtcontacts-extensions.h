@@ -80,6 +80,8 @@ static const QContactDetail::DetailType QContactDetail__TypeStatusFlags = static
 // We support the QContactDeactivated detail type
 static const QContactDetail::DetailType QContactDetail__TypeDeactivated = static_cast<QContactDetail::DetailType>(QContactDetail::TypeVersion + 3);
 
+static const QContactDetail::DetailType QContactDetail__TypeIncidental = static_cast<QContactDetail::DetailType>(QContactDetail::TypeVersion + 4);
+
 QT_END_NAMESPACE_CONTACTS
 
 namespace QtContactsSqliteExtensions {

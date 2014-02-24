@@ -131,6 +131,15 @@ public:
 
     void regenerateDisplayLabel(QContact &contact) const;
 
+#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
+    bool fetchSyncContacts(const QString &syncTarget, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
+                           QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
+                           QContactManager::Error *error);
+
+    bool storeSyncContacts(const QString &syncTarget, const QDateTime &timestamp, ConflictResolutionPolicy conflictPolicy,
+                           const QList<QPair<QContact, QContact> > &remoteChanges, QContactManager::Error *error);
+#endif
+
     static bool setContactDisplayLabel(QContact *contact, const QString &label);
 
     static QString normalizedPhoneNumber(const QString &input);

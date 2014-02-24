@@ -76,7 +76,8 @@ static const char *createContactsTable =
         "\n hasEmailAddress BOOL DEFAULT 0,"
         "\n hasOnlineAccount BOOL DEFAULT 0,"
         "\n isOnline BOOL DEFAULT 0,"
-        "\n isDeactivated BOOL DEFAULT 0);";
+        "\n isDeactivated BOOL DEFAULT 0,"
+        "\n isIncidental BOOL DEFAULT 0);";
 
 static const char *createAddressesTable =
         "\n CREATE TABLE Addresses ("
@@ -598,15 +599,20 @@ static const char *upgradeVersion2[] = {
     "PRAGMA user_version=3",
     0 // NULL-terminated
 };
-
+static const char *upgradeVersion3[] = {
+    "ALTER TABLE Contacts ADD COLUMN isIncidental BOOL DEFAULT 0",
+    "PRAGMA user_version=4",
+    0 // NULL-terminated
+};
 
 static const char **upgradeVersions[] = {
     upgradeVersion0,
     upgradeVersion1,
     upgradeVersion2,
+    upgradeVersion3,
 };
 
-static const int currentSchemaVersion = 3;
+static const int currentSchemaVersion = 4;
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {
@@ -1223,5 +1229,6 @@ QMutex *ContactsDatabase::accessMutex()
 }
 
 #include "../extensions/qcontactdeactivated_impl.h"
+#include "../extensions/qcontactincidental_impl.h"
 #include "../extensions/qcontactoriginmetadata_impl.h"
 #include "../extensions/qcontactstatusflags_impl.h"

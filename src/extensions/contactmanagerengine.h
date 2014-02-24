@@ -44,9 +44,23 @@ class Q_DECL_EXPORT ContactManagerEngine
     Q_OBJECT
 
 public:
+    enum ConflictResolutionPolicy {
+        PreserveLocalChanges,
+        PreserveRemoteChanges
+    };
+
     ContactManagerEngine() : m_mergePresenceChanges(false) {}
 
     void setMergePresenceChanges(bool b) { m_mergePresenceChanges = b; }
+
+#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
+    virtual bool fetchSyncContacts(const QString &syncTarget, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
+                                   QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
+                                   QContactManager::Error *error) = 0;
+
+    virtual bool storeSyncContacts(const QString &syncTarget, const QDateTime &timestamp, ConflictResolutionPolicy conflictPolicy,
+                                   const QList<QPair<QContact, QContact> > &remoteChanges, QContactManager::Error *error) = 0;
+#endif
 
 Q_SIGNALS:
     void contactsPresenceChanged(const QList<QContactId> &contactsIds);
