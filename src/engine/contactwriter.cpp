@@ -3431,9 +3431,7 @@ QContactManager::Error ContactWriter::write(quint32 contactId, QContact *contact
 void ContactWriter::bindContactDetails(const QContact &contact, QSqlQuery &query, const DetailList &definitionMask, quint32 contactId)
 {
     QContactDisplayLabel label = contact.detail<QContactDisplayLabel>();
-    if (!label.isEmpty()) {
-        query.bindValue(0, label.label().trimmed());
-    }
+    query.bindValue(0, label.label().trimmed());
 
     const QContactName name = contact.detail<QContactName>();
     const QString firstName(name.value<QString>(QContactName::FieldFirstName).trimmed());
