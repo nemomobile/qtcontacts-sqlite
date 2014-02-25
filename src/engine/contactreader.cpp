@@ -494,8 +494,6 @@ static QMap<QString, int> contextTypes()
     rv.insert(QString::fromLatin1("Home"), QContactDetail::ContextHome);
     rv.insert(QString::fromLatin1("Work"), QContactDetail::ContextWork);
     rv.insert(QString::fromLatin1("Other"), QContactDetail::ContextOther);
-    rv.insert(QString::fromLatin1("Default"), QContactDetail__ContextDefault);
-    rv.insert(QString::fromLatin1("Large"), QContactDetail__ContextLarge);
 
     return rv;
 }

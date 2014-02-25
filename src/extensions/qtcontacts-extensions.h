@@ -48,10 +48,6 @@ QT_BEGIN_NAMESPACE_CONTACTS
 static const int QContactDetail__FieldProvenance = (QContactDetail::FieldLinkedDetailUris+1);
 static const int QContactDetail__FieldModifiable = (QContactDetail::FieldLinkedDetailUris+2);
 
-// In QContactDetail::contexts(), we support additional values, "Default" and "Large"
-static const int QContactDetail__ContextDefault = (QContactDetail::ContextOther+1);
-static const int QContactDetail__ContextLarge = (QContactDetail::ContextOther+2);
-
 // In QContactName, we support the customLabel property
 static const int QContactName__FieldCustomLabel = (QContactName::FieldSuffix+1);
 

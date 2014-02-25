@@ -1997,9 +1997,6 @@ QMap<int, QString> contextTypes()
     rv.insert(QContactDetail::ContextHome, QString::fromLatin1("Home"));
     rv.insert(QContactDetail::ContextWork, QString::fromLatin1("Work"));
     rv.insert(QContactDetail::ContextOther, QString::fromLatin1("Other"));
-    // TODO: the following values are obsolete
-    rv.insert(QContactDetail__ContextDefault, QString::fromLatin1("Default"));
-    rv.insert(QContactDetail__ContextLarge, QString::fromLatin1("Large"));
 
     return rv;
 }
