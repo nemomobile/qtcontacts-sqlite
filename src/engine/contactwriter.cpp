@@ -1761,10 +1761,11 @@ static bool detailValuesEqual(const QContactDetail &lhs, const QContactDetail &r
         return false;
     }
 
+    // Because of map ordering, matching fields should be in the same order in both details
     DetailMap::const_iterator lit = lhsValues.constBegin(), lend = lhsValues.constEnd();
     DetailMap::const_iterator rit = rhsValues.constBegin();
     for ( ; lit != lend; ++lit, ++rit) {
-        if (!variantEqual(*lit, *rit)) {
+        if (lit.key() != rit.key() || !variantEqual(*lit, *rit)) {
             return false;
         }
     }
@@ -2484,9 +2485,6 @@ static void promoteDetailsToLocal(const QList<QContactDetail> addDelta, const QL
             QContactDetail det(original);
             adjustDetailUrisForLocal(det);
 
-            // This is a pretty crude heuristic.  The detail equality
-            // algorithm only attempts to match values, not key/value pairs.
-            // XXX TODO: use a better heuristic to minimise duplicates.
             bool needsPromote = true;
 
             // Don't promote details already in the local, or those not originally present in the local
@@ -2783,9 +2781,6 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
             QContactDetail det(original);
             adjustDetailUrisForAggregate(det, aggId);
 
-            // This is a pretty crude heuristic.  The detail equality
-            // algorithm only attempts to match values, not key/value pairs.
-            // XXX TODO: use a better heuristic to minimise duplicates.
             bool needsPromote = true;
             foreach (const QContactDetail &ad, aggregate->details()) {
                 if (detailsEquivalent(det, ad)) {
