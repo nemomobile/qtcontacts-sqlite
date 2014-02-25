@@ -2622,6 +2622,7 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
 }
 
 typedef QPair<QString, QString> StringPair;
+typedef QPair<QContactDetail, QContactDetail> DetailPair;
 
 static QList<QPair<QContactDetail, StringPair> > contactDetails(const QContact &contact, const ContactWriter::DetailList &definitionMask = ContactWriter::DetailList())
 {
@@ -3627,7 +3628,7 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget, cons
 {
     static const ContactWriter::DetailList compositionDetailTypes(getCompositionDetailTypes());
 
-    QMap<quint32, QList<QPair<StringPair, QPair<QContactDetail, QContactDetail> > > > contactModifications;
+    QMap<quint32, QList<QPair<StringPair, DetailPair> > > contactModifications;
     QMap<quint32, QList<QContactDetail> > contactAdditions;
     QMap<quint32, QList<StringPair> > contactRemovals;
 
@@ -3777,11 +3778,11 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget, cons
             // Apply the changes for this contact
             QSet<StringPair> removals(contactRemovals.value(contactId).toSet());
 
-            QMap<StringPair, QPair<QContactDetail, QContactDetail> > modifications;
-            QMap<QContactDetail::DetailType, QPair<QContactDetail, QContactDetail> > composedModifications;
+            QMap<StringPair, DetailPair> modifications;
+            QMap<QContactDetail::DetailType, DetailPair> composedModifications;
 
-            const QList<QPair<StringPair, QPair<QContactDetail, QContactDetail> > > &mods(contactModifications.value(contactId));
-            QList<QPair<StringPair, QPair<QContactDetail, QContactDetail> > >::const_iterator mit = mods.constBegin(), mend = mods.constEnd();
+            const QList<QPair<StringPair, DetailPair> > &mods(contactModifications.value(contactId));
+            QList<QPair<StringPair, DetailPair> >::const_iterator mit = mods.constBegin(), mend = mods.constEnd();
             for ( ; mit != mend; ++mit) {
                 const StringPair identity((*mit).first);
                 if (identity.first.isEmpty()) {
@@ -3796,7 +3797,7 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget, cons
                 const QString provenance(detail.value(QContactDetail__FieldProvenance).toString());
 
                 if (provenance.isEmpty()) {
-                    QMap<QContactDetail::DetailType, QPair<QContactDetail, QContactDetail> >::iterator cit = composedModifications.find(detailType(detail));
+                    QMap<QContactDetail::DetailType, DetailPair>::iterator cit = composedModifications.find(detailType(detail));
                     if (cit != composedModifications.end()) {
                         // Apply this modification
                         modifyContactDetail((*cit).first, (*cit).second, conflictPolicy, &detail);
@@ -3814,7 +3815,7 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget, cons
 
                         removals.erase(rit);
                     } else {
-                        QMap<StringPair, QPair<QContactDetail, QContactDetail> >::iterator mit = modifications.find(detailIdentity);
+                        QMap<StringPair, DetailPair>::iterator mit = modifications.find(detailIdentity);
                         if (mit != modifications.end()) {
                             // Apply the modification to this contact's detail
                             modifyContactDetail((*mit).first, (*mit).second, conflictPolicy, &detail);
@@ -3830,7 +3831,7 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget, cons
                 // Is there anything that can be done here, for PreserveRemoteChanges?
             }
             if (!modifications.isEmpty()) {
-                QMap<StringPair, QPair<QContactDetail, QContactDetail> >::const_iterator mit = modifications.constBegin(), mend = modifications.constEnd();
+                QMap<StringPair, DetailPair>::const_iterator mit = modifications.constBegin(), mend = modifications.constEnd();
                 for ( ; mit != mend; ++mit) {
                     const StringPair identity(mit.key());
                     if (conflictPolicy == QtContactsSqliteExtensions::ContactManagerEngine::PreserveRemoteChanges) {
@@ -3841,7 +3842,7 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget, cons
                 }
             }
             if (!composedModifications.isEmpty()) {
-                QMap<QContactDetail::DetailType, QPair<QContactDetail, QContactDetail> >::const_iterator cit = composedModifications.constBegin(), cend = composedModifications.constEnd();
+                QMap<QContactDetail::DetailType, DetailPair>::const_iterator cit = composedModifications.constBegin(), cend = composedModifications.constEnd();
                 for ( ; cit != cend; ++cit) {
                     // Apply these modifications to empty details, and add to the contact
                     QContactDetail detail = contact.detail(cit.key());
