@@ -2639,7 +2639,6 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
         saveRelationshipList.append(makeRelationship(relationshipString(QContactRelationship::Aggregates), contact->id(), writeList.at(0).id()));
         writeError = save(saveRelationshipList, &errorMap, withinTransaction);
         if (writeError != QContactManager::NoError) {
-            // TODO: remove unaggregated contact
             // if the aggregation relationship fails, the entire save has failed.
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to save aggregation relationship for new local contact!"));
             return writeError;
@@ -2741,10 +2740,9 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
                 aname.setValue(QContactName__FieldCustomLabel, cname.value(QContactName__FieldCustomLabel));
             aggregate->saveDetail(&aname);
         } else if (detailType(original) == detailType<QContactTimestamp>()) {
-            // timestamp involves composition
-            // XXX TODO: how do we handle creation timestamps?
-            // From some sync sources, the creation timestamp
-            // will precede the existence of the local device.
+            // timestamp involves composition; an incidental local contact must be given the
+            // created timestamp from the aggregate from which it is derived to preserve the aggregate timestamp
+            // Note: From some sync sources, the creation timestamp will precede the existence of the local device.
             QContactTimestamp cts(original);
             QContactTimestamp ats(aggregate->detail<QContactTimestamp>());
             if (cts.lastModified().isValid() && (!ats.lastModified().isValid() || cts.lastModified() > ats.lastModified())) {
@@ -3200,7 +3198,7 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
     m_heuristicallyMatchData.finish();
 
     // whether it's an existing or new contact, we promote details.
-    // XXX TODO: promote relationships!
+    // TODO: promote non-Aggregates relationships!
     promoteDetailsToAggregate(*contact, &matchingAggregate, definitionMask);
     if (!found) {
         // need to create an aggregating contact first.
