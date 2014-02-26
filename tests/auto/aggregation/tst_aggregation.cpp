@@ -5113,6 +5113,80 @@ void tst_Aggregation::storeSyncContacts()
 
     QCOMPARE(pa.details<QContactPhoneNumber>().count(), 1);
     QCOMPARE(pa.detail<QContactPhoneNumber>().number(), pn.number());
+
+    QDateTime nextTime = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
+    QTest::qWait(1000);
+
+    // Create another local contact that we can export
+    QContact alc;
+
+    QContactName n3;
+    n3.setFirstName("Niels");
+    n3.setLastName("Bohr");
+    alc.saveDetail(&n3);
+
+    alc.saveDetail(&t);
+
+    QVERIFY(m_cm->saveContact(&alc));
+    alc = m_cm->contact(alc.id());
+
+    QList<QContact> addedContacts;
+
+    syncContacts.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", nextTime, exportedIds, &syncContacts, &addedContacts, 0, &err));
+    QCOMPARE(addedContacts.count(), 1);
+    QCOMPARE(addedContacts.at(0).id(), alc.id());
+
+    // Make changes to this contact
+    pa = addedContacts.at(0);
+    mpa = pa;
+
+    QContactTag t3 = mpa.detail<QContactTag>();
+    t3.setTag("Danish Physicist");
+    mpa.saveDetail(&t3);
+
+    QContactHobby h3;
+    h3.setHobby("Football");
+    mpa.saveDetail(&h3);
+
+    modifications.clear();
+    modifications.append(qMakePair(pa, mpa));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
+
+    // The tag should have been modified in the original local contact
+    alc = m_cm->contact(alc.id());
+
+    QCOMPARE(alc.details<QContactTag>().count(), 1);
+    QCOMPARE(alc.details<QContactTag>().at(0).tag(), t3.tag());
+
+    QCOMPARE(alc.details<QContactHobby>().count(), 0);
+
+    // A new contact should have been created to contain the hobby
+    QCOMPARE(alc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
+
+    QContact a2 = m_cm->contact(alc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id());
+    QCOMPARE(a2.relatedContacts(aggregatesRelationship, QContactRelationship::Second).count(), 2);
+
+    QContactId stId;
+    if (a2.relatedContacts(aggregatesRelationship, QContactRelationship::Second).at(0).id() == alc.id()) {
+        stId = a2.relatedContacts(aggregatesRelationship, QContactRelationship::Second).at(1).id();
+    } else {
+        stId = a2.relatedContacts(aggregatesRelationship, QContactRelationship::Second).at(0).id();
+    }
+
+    QContact stc2 = m_cm->contact(stId);
+
+    n2 = stc2.detail<QContactName>();
+    QCOMPARE(n2.prefix(), n3.prefix());
+    QCOMPARE(n2.firstName(), n3.firstName());
+    QCOMPARE(n2.middleName(), n3.middleName());
+    QCOMPARE(n2.lastName(), n3.lastName());
+    QCOMPARE(n2.suffix(), n3.suffix());
+
+    QCOMPARE(stc2.details<QContactTag>().count(), 0);
+
+    QCOMPARE(stc2.details<QContactHobby>().count(), 1);
+    QCOMPARE(stc2.details<QContactHobby>().at(0).hobby(), h3.hobby());
 }
 
 void tst_Aggregation::testOOB()

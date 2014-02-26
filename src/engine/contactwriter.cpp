@@ -4037,13 +4037,53 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
                 }
             }
 
-            // Store any additions to the contact
-            foreach (QContactDetail detail, contactAdditions.value(contactId)) {
-                if (cst == syncTarget) {
+            // Store any remaining additions to the contact
+            const QList<QContactDetail> &additionDetails = contactAdditions.value(contactId);
+            if (!additionDetails.isEmpty()) {
+                QContact *contactForAdditions = &contact;
+                QContact stContact;
+
+                if (cst != syncTarget) {
+                    // We need to create a new constituent of this contact, to contain the remote additions
+                    QContactSyncTarget nst;
+                    nst.setSyncTarget(syncTarget);
+                    stContact.saveDetail(&nst);
+
+                    // Copy some identifying detail to the new constituent
+                    QContactName nameDetail = contact.detail<QContactName>();
+                    bool copyName = (!nameDetail.firstName().isEmpty() || !nameDetail.lastName().isEmpty());
+                    if (!copyName) {
+                        // This name fails to adequately identify the contact - copy a nickname instead, if available
+                        copyName = (!nameDetail.prefix().isEmpty() || !nameDetail.middleName().isEmpty() || !nameDetail.suffix().isEmpty());
+                        foreach (QContactNickname nick, contact.details<QContactNickname>()) {
+                            if (!nick.nickname().isEmpty()) {
+                                adjustDetailUrisForLocal(nick);
+                                nick.setValue(QContactDetail__FieldModifiable, true);
+                                stContact.saveDetail(&nick);
+
+                                // We have found a usable nickname - ignore the name detail
+                                copyName = false;
+                                break;
+                            }
+                        }
+                    }
+                    if (copyName) {
+                        adjustDetailUrisForLocal(nameDetail);
+                        stContact.saveDetail(&nameDetail);
+                    }
+
+                    contactForAdditions = &stContact;
+                }
+
+                foreach (QContactDetail detail, additionDetails) {
                     // Sync contact details should be modifiable
                     detail.setValue(QContactDetail__FieldModifiable, true);
+                    contactForAdditions->saveDetail(&detail);
                 }
-                contact.saveDetail(&detail);
+
+                if (contactForAdditions == &stContact) {
+                    modifiedContacts.append(stContact);
+                }
             }
 
             modifiedContacts.append(contact);
