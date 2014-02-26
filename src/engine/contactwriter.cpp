@@ -2229,7 +2229,7 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
 
             // Copy some identifying detail to the local
             QContactName lcn = contact->detail<QContactName>();
-            bool copyName = (lcn.firstName().isEmpty() && lcn.lastName().isEmpty());
+            bool copyName = (!lcn.firstName().isEmpty() || !lcn.lastName().isEmpty());
             if (!copyName) {
                 // This name fails to adequately identify the contact - copy a nickname instead, if available
                 copyName = (!lcn.prefix().isEmpty() || !lcn.middleName().isEmpty() || !lcn.suffix().isEmpty());
