@@ -31,9 +31,6 @@
 
 #define QT_STATICPLUGIN
 
-// Needed for access to the QContactManager's internal engine
-#include "private/qcontactmanager_p.h"
-
 #include "../../util.h"
 
 #define TRIM_MSECS(t) t.addMSecs(0 - t.msec())
@@ -3885,8 +3882,7 @@ void tst_Aggregation::deactivationMultiple()
 
 void tst_Aggregation::fetchSyncContacts()
 {
-    typedef QtContactsSqliteExtensions::ContactManagerEngine EngineType;
-    EngineType *cme = qobject_cast<EngineType *>(QContactManagerData::managerData(m_cm)->m_engine);
+    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(*m_cm);
 
     QSignalSpy syncSpy(cme, SIGNAL(syncContactsChanged(QStringList)));
 
@@ -4458,8 +4454,7 @@ void tst_Aggregation::fetchSyncContacts()
 
 void tst_Aggregation::storeSyncContacts()
 {
-    typedef QtContactsSqliteExtensions::ContactManagerEngine EngineType;
-    EngineType *cme = qobject_cast<EngineType *>(QContactManagerData::managerData(m_cm)->m_engine);
+    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(*m_cm);
 
     QSignalSpy syncSpy(cme, SIGNAL(syncContactsChanged(QStringList)));
 
@@ -5191,8 +5186,7 @@ void tst_Aggregation::storeSyncContacts()
 
 void tst_Aggregation::testOOB()
 {
-    typedef QtContactsSqliteExtensions::ContactManagerEngine EngineType;
-    EngineType *cme = qobject_cast<EngineType *>(QContactManagerData::managerData(m_cm)->m_engine);
+    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(*m_cm);
 
     const QString &scope(QString::fromLatin1("tst_Aggregation"));
 

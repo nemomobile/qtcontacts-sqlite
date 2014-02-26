@@ -99,6 +99,9 @@ enum { DefaultMaximumPhoneNumberCharacters = 8 };
 QString normalizePhoneNumber(const QString &input, NormalizePhoneNumberFlags flags);
 QString minimizePhoneNumber(const QString &input, int maxCharacters = DefaultMaximumPhoneNumberCharacters);
 
+class ContactManagerEngine;
+ContactManagerEngine *contactManagerEngine(QContactManager &manager);
+
 }
 
 Q_DECLARE_OPERATORS_FOR_FLAGS(QtContactsSqliteExtensions::NormalizePhoneNumberFlags)

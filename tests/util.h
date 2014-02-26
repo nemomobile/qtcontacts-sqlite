@@ -51,8 +51,8 @@
 
 #include "contactid_p.h"
 
-#include "../../../src/extensions/qtcontacts-extensions.h"
-#include "../../../src/extensions/contactmanagerengine.h"
+#include "../../../src/extensions/qtcontacts-extensions_impl.h"
+#include "../../../src/extensions/qtcontacts-extensions_manager_impl.h"
 
 #include "../../../src/extensions/qcontactdeactivated.h"
 #include "../../../src/extensions/qcontactdeactivated_impl.h"

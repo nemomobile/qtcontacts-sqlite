@@ -1669,8 +1669,8 @@ void tst_QContactManager::presenceReporting()
 
     // The contactsPresenceChanged signal is not exported by QContactManager, so we
     // need to find it from the manager's engine object
-    typedef QtContactsSqliteExtensions::ContactManagerEngine EngineType;
-    EngineType *cme = qobject_cast<EngineType *>(QContactManagerData::managerData(cm.data())->m_engine);
+    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(*cm.data());
+
     QSignalSpy presenceChangedSpy(cme, contactsPresenceChangedSignal);
 
     QContact a;
