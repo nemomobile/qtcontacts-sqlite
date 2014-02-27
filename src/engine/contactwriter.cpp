@@ -1453,7 +1453,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactId> &contactIds
     if (boundNonAggregatesToRemove.size() > 0) {
         m_removeContact.bindValue(QLatin1String(":contactId"), boundNonAggregatesToRemove);
         if (!m_removeContact.execBatch()) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to removed non-aggregate contacts:\n%1")
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to remove non-aggregate contacts:\n%1")
                     .arg(m_removeContact.lastError().text()));
             if (!withinTransaction) {
                 // only rollback the transaction if we created it
@@ -1497,7 +1497,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactId> &contactIds
         // remove the aggregates + the aggregated
         m_removeContact.bindValue(QLatin1String(":contactId"), boundAggregatesToRemove);
         if (!m_removeContact.execBatch()) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to removed aggregate contacts (and the contacts they aggregate):\n%1")
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to remove aggregate contacts (and the contacts they aggregate):\n%1")
                     .arg(m_removeContact.lastError().text()));
             if (!withinTransaction) {
                 // only rollback the transaction if we created it
@@ -3822,6 +3822,9 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
 
     QSet<quint32> compositionModificationIds;
 
+    QList<QContact> contactsToAdd;
+    QSet<quint32> contactsToRemove;
+
     // For each pair of contacts, determine the changes to be applied
     QList<QPair<QContact, QContact> >::const_iterator cit = remoteChanges.constBegin(), cend = remoteChanges.constEnd();
     for ( ; cit != cend; ++cit) {
@@ -3833,10 +3836,29 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
         const quint32 contactId(ContactId::databaseId(original.id()));
         const quint32 updatedId(ContactId::databaseId(updated.id()));
 
-        if (updatedId != contactId) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Mismatch on sync contact ids:\n%1 != %2")
-                    .arg(updatedId).arg(contactId));
-            return QContactManager::UnspecifiedError;
+        if (original.isEmpty()) {
+            if (updatedId != 0) {
+                QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Invalid ID for new contact: %1").arg(updatedId));
+            }
+            contactsToAdd.append(updated);
+            continue;
+        } else if (updated.isEmpty()) {
+            if (contactId == 0) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Invalid ID for contact deletion: %1").arg(contactId));
+                return QContactManager::UnspecifiedError;
+            }
+            contactsToRemove.insert(contactId);
+            continue;
+        } else {
+            if (contactId == 0) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Invalid ID for contact update: %1").arg(contactId));
+                return QContactManager::UnspecifiedError;
+            }
+            if (updatedId != contactId) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Mismatch on sync contact ids:\n%1 != %2")
+                        .arg(updatedId).arg(contactId));
+                return QContactManager::UnspecifiedError;
+            }
         }
 
         // Extract the details from these contacts
@@ -3932,161 +3954,200 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
         m_localConstituentIds.finish();
     }
 
-    QList<quint32> affectedContactIds(contactModifications.keys() + contactAdditions.keys() + contactRemovals.keys());
-    std::sort(affectedContactIds.begin(), affectedContactIds.end());
-    QList<quint32>::iterator newEnd = std::unique(affectedContactIds.begin(), affectedContactIds.end());
-    affectedContactIds.erase(newEnd, affectedContactIds.end());
+    QSet<quint32> affectedContactIds((contactModifications.keys() + contactAdditions.keys() + contactRemovals.keys()).toSet());
+
+    QSet<quint32>::iterator rit = contactsToRemove.begin();
+    while (rit != contactsToRemove.end()) {
+        if (affectedContactIds.contains(*rit)) {
+            // This contact is to be modified - don't remove it
+            rit = contactsToRemove.erase(rit);
+        } else {
+            // Add this contact to the fetch set
+            affectedContactIds.insert(*rit);
+            ++rit;
+        }
+    }
 
     // Fetch all the contacts we want to apply modifications to
-    if (!affectedContactIds.isEmpty()) {
-        QContactFetchHint hint;
-        hint.setOptimizationHints(QContactFetchHint::NoRelationships);
-
-        QList<QContact> readList;
-        QContactManager::Error readError = m_reader->readContacts(QLatin1String("syncUpdate"), &readList, affectedContactIds, hint);
-        if (readError != QContactManager::NoError || readList.size() != affectedContactIds.size()) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to read contacts for sync update"));
-            return QContactManager::UnspecifiedError;
-        }
-
+    if (!affectedContactIds.isEmpty() || !contactsToAdd.isEmpty()) {
         QList<QContact> modifiedContacts;
+        QVariantList removeIds;
 
-        // Create updated versions of the affected contacts
-        foreach (QContact contact, readList) {
-            const quint32 contactId(ContactId::databaseId(contact.id()));
+        if (!affectedContactIds.isEmpty()) {
+            QContactFetchHint hint;
+            hint.setOptimizationHints(QContactFetchHint::NoRelationships);
 
-            const QString cst(contact.detail<QContactSyncTarget>().syncTarget());
-            if (cst != syncTarget && cst != localSyncTarget && cst != wasLocalSyncTarget) {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Invalid update constituent syncTarget for sync update: %1").arg(cst));
+            QList<QContact> readList;
+            QContactManager::Error readError = m_reader->readContacts(QLatin1String("syncUpdate"), &readList, affectedContactIds.toList(), hint);
+            if (readError != QContactManager::NoError || readList.size() != affectedContactIds.size()) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to read contacts for sync update"));
                 return QContactManager::UnspecifiedError;
             }
 
-            // Apply the changes for this contact
-            QSet<StringPair> removals(contactRemovals.value(contactId).toSet());
+            // Create updated versions of the affected contacts
+            foreach (QContact contact, readList) {
+                const quint32 contactId(ContactId::databaseId(contact.id()));
 
-            QMap<StringPair, DetailPair> modifications;
-            QMap<QContactDetail::DetailType, DetailPair> composedModifications;
-
-            const QList<QPair<StringPair, DetailPair> > &mods(contactModifications.value(contactId));
-            QList<QPair<StringPair, DetailPair> >::const_iterator mit = mods.constBegin(), mend = mods.constEnd();
-            for ( ; mit != mend; ++mit) {
-                const StringPair identity((*mit).first);
-                if (identity.first.isEmpty()) {
-                    const QContactDetail::DetailType type(detailType((*mit).second.second));
-                    composedModifications.insert(type, (*mit).second);
-                } else {
-                    modifications.insert(identity, (*mit).second);
+                const QString cst(contact.detail<QContactSyncTarget>().syncTarget());
+                if (cst != syncTarget && cst != localSyncTarget && cst != wasLocalSyncTarget) {
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Invalid update constituent syncTarget for sync update: %1").arg(cst));
+                    return QContactManager::UnspecifiedError;
                 }
-            }
 
-            foreach (QContactDetail detail, contact.details()) {
-                const QString provenance(detail.value(QContactDetail__FieldProvenance).toString());
-
-                if (provenance.isEmpty()) {
-                    QMap<QContactDetail::DetailType, DetailPair>::iterator cit = composedModifications.find(detailType(detail));
-                    if (cit != composedModifications.end()) {
-                        // Apply this modification
-                        modifyContactDetail((*cit).first, (*cit).second, conflictPolicy, &detail);
-                        contact.saveDetail(&detail);
-
-                        composedModifications.erase(cit);
-                    }
-                } else {
-                    const StringPair detailIdentity(qMakePair(provenance, detailTypeName(detail)));
-
-                    QSet<StringPair>::iterator rit = removals.find(detailIdentity);
-                    if (rit != removals.end()) {
-                        // Remove this detail from the contact
-                        contact.removeDetail(&detail);
-
-                        removals.erase(rit);
+                if (contactsToRemove.contains(contactId)) {
+                    // This contact should be removed, only if it has our syncTarget
+                    if (cst != syncTarget) {
+                        QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Ignoring constituent removal for %1 with invalid sync target: %2")
+                                .arg(contactId).arg(cst));
                     } else {
-                        QMap<StringPair, DetailPair>::iterator mit = modifications.find(detailIdentity);
-                        if (mit != modifications.end()) {
-                            // Apply the modification to this contact's detail
-                            modifyContactDetail((*mit).first, (*mit).second, conflictPolicy, &detail);
+                        removeIds.append(contactId);
+                    }
+                    continue;
+                }
+
+                // Apply the changes for this contact
+                QSet<StringPair> removals(contactRemovals.value(contactId).toSet());
+
+                QMap<StringPair, DetailPair> modifications;
+                QMap<QContactDetail::DetailType, DetailPair> composedModifications;
+
+                const QList<QPair<StringPair, DetailPair> > &mods(contactModifications.value(contactId));
+                QList<QPair<StringPair, DetailPair> >::const_iterator mit = mods.constBegin(), mend = mods.constEnd();
+                for ( ; mit != mend; ++mit) {
+                    const StringPair identity((*mit).first);
+                    if (identity.first.isEmpty()) {
+                        const QContactDetail::DetailType type(detailType((*mit).second.second));
+                        composedModifications.insert(type, (*mit).second);
+                    } else {
+                        modifications.insert(identity, (*mit).second);
+                    }
+                }
+
+                foreach (QContactDetail detail, contact.details()) {
+                    const QString provenance(detail.value(QContactDetail__FieldProvenance).toString());
+
+                    if (provenance.isEmpty()) {
+                        QMap<QContactDetail::DetailType, DetailPair>::iterator cit = composedModifications.find(detailType(detail));
+                        if (cit != composedModifications.end()) {
+                            // Apply this modification
+                            modifyContactDetail((*cit).first, (*cit).second, conflictPolicy, &detail);
                             contact.saveDetail(&detail);
 
-                            modifications.erase(mit);
+                            composedModifications.erase(cit);
                         }
-                    }
-                }
-            }
+                    } else {
+                        const StringPair detailIdentity(qMakePair(provenance, detailTypeName(detail)));
 
-            if (!removals.isEmpty()) {
-                // Is there anything that can be done here, for PreserveRemoteChanges?
-            }
-            if (!modifications.isEmpty()) {
-                QMap<StringPair, DetailPair>::const_iterator mit = modifications.constBegin(), mend = modifications.constEnd();
-                for ( ; mit != mend; ++mit) {
-                    const StringPair identity(mit.key());
-                    if (conflictPolicy == QtContactsSqliteExtensions::ContactManagerEngine::PreserveRemoteChanges) {
-                        // Handle the updated value as an addition
-                        QContactDetail updated(mit.value().second);
-                        contact.saveDetail(&updated);
-                    }
-                }
-            }
-            if (!composedModifications.isEmpty()) {
-                QMap<QContactDetail::DetailType, DetailPair>::const_iterator cit = composedModifications.constBegin(), cend = composedModifications.constEnd();
-                for ( ; cit != cend; ++cit) {
-                    // Apply these modifications to empty details, and add to the contact
-                    QContactDetail detail = contact.detail(cit.key());
-                    modifyContactDetail((*cit).first, (*cit).second, conflictPolicy, &detail);
-                    contact.saveDetail(&detail);
-                }
-            }
+                        QSet<StringPair>::iterator rit = removals.find(detailIdentity);
+                        if (rit != removals.end()) {
+                            // Remove this detail from the contact
+                            contact.removeDetail(&detail);
 
-            // Store any remaining additions to the contact
-            const QList<QContactDetail> &additionDetails = contactAdditions.value(contactId);
-            if (!additionDetails.isEmpty()) {
-                QContact *contactForAdditions = &contact;
-                QContact stContact;
+                            removals.erase(rit);
+                        } else {
+                            QMap<StringPair, DetailPair>::iterator mit = modifications.find(detailIdentity);
+                            if (mit != modifications.end()) {
+                                // Apply the modification to this contact's detail
+                                modifyContactDetail((*mit).first, (*mit).second, conflictPolicy, &detail);
+                                contact.saveDetail(&detail);
 
-                if (cst != syncTarget) {
-                    // We need to create a new constituent of this contact, to contain the remote additions
-                    QContactSyncTarget nst;
-                    nst.setSyncTarget(syncTarget);
-                    stContact.saveDetail(&nst);
-
-                    // Copy some identifying detail to the new constituent
-                    QContactName nameDetail = contact.detail<QContactName>();
-                    bool copyName = (!nameDetail.firstName().isEmpty() || !nameDetail.lastName().isEmpty());
-                    if (!copyName) {
-                        // This name fails to adequately identify the contact - copy a nickname instead, if available
-                        copyName = (!nameDetail.prefix().isEmpty() || !nameDetail.middleName().isEmpty() || !nameDetail.suffix().isEmpty());
-                        foreach (QContactNickname nick, contact.details<QContactNickname>()) {
-                            if (!nick.nickname().isEmpty()) {
-                                adjustDetailUrisForLocal(nick);
-                                nick.setValue(QContactDetail__FieldModifiable, true);
-                                stContact.saveDetail(&nick);
-
-                                // We have found a usable nickname - ignore the name detail
-                                copyName = false;
-                                break;
+                                modifications.erase(mit);
                             }
                         }
                     }
-                    if (copyName) {
-                        adjustDetailUrisForLocal(nameDetail);
-                        stContact.saveDetail(&nameDetail);
+                }
+
+                if (!removals.isEmpty()) {
+                    // Is there anything that can be done here, for PreserveRemoteChanges?
+                }
+                if (!modifications.isEmpty()) {
+                    QMap<StringPair, DetailPair>::const_iterator mit = modifications.constBegin(), mend = modifications.constEnd();
+                    for ( ; mit != mend; ++mit) {
+                        const StringPair identity(mit.key());
+                        if (conflictPolicy == QtContactsSqliteExtensions::ContactManagerEngine::PreserveRemoteChanges) {
+                            // Handle the updated value as an addition
+                            QContactDetail updated(mit.value().second);
+                            contact.saveDetail(&updated);
+                        }
+                    }
+                }
+                if (!composedModifications.isEmpty()) {
+                    QMap<QContactDetail::DetailType, DetailPair>::const_iterator cit = composedModifications.constBegin(), cend = composedModifications.constEnd();
+                    for ( ; cit != cend; ++cit) {
+                        // Apply these modifications to empty details, and add to the contact
+                        QContactDetail detail = contact.detail(cit.key());
+                        modifyContactDetail((*cit).first, (*cit).second, conflictPolicy, &detail);
+                        contact.saveDetail(&detail);
+                    }
+                }
+
+                // Store any remaining additions to the contact
+                const QList<QContactDetail> &additionDetails = contactAdditions.value(contactId);
+                if (!additionDetails.isEmpty()) {
+                    QContact *contactForAdditions = &contact;
+                    QContact stContact;
+
+                    if (cst != syncTarget) {
+                        // We need to create a new constituent of this contact, to contain the remote additions
+                        QContactSyncTarget stDetail;
+                        stDetail.setSyncTarget(syncTarget);
+                        stContact.saveDetail(&stDetail);
+
+                        // Copy some identifying detail to the new constituent
+                        QContactName nameDetail = contact.detail<QContactName>();
+                        bool copyName = (!nameDetail.firstName().isEmpty() || !nameDetail.lastName().isEmpty());
+                        if (!copyName) {
+                            // This name fails to adequately identify the contact - copy a nickname instead, if available
+                            copyName = (!nameDetail.prefix().isEmpty() || !nameDetail.middleName().isEmpty() || !nameDetail.suffix().isEmpty());
+                            foreach (QContactNickname nick, contact.details<QContactNickname>()) {
+                                if (!nick.nickname().isEmpty()) {
+                                    adjustDetailUrisForLocal(nick);
+                                    nick.setValue(QContactDetail__FieldModifiable, true);
+                                    stContact.saveDetail(&nick);
+
+                                    // We have found a usable nickname - ignore the name detail
+                                    copyName = false;
+                                    break;
+                                }
+                            }
+                        }
+                        if (copyName) {
+                            adjustDetailUrisForLocal(nameDetail);
+                            stContact.saveDetail(&nameDetail);
+                        }
+
+                        contactForAdditions = &stContact;
                     }
 
-                    contactForAdditions = &stContact;
+                    foreach (QContactDetail detail, additionDetails) {
+                        // Sync contact details should be modifiable
+                        detail.setValue(QContactDetail__FieldModifiable, true);
+                        contactForAdditions->saveDetail(&detail);
+                    }
+
+                    if (contactForAdditions == &stContact) {
+                        modifiedContacts.append(stContact);
+                    }
                 }
 
-                foreach (QContactDetail detail, additionDetails) {
-                    // Sync contact details should be modifiable
-                    detail.setValue(QContactDetail__FieldModifiable, true);
-                    contactForAdditions->saveDetail(&detail);
-                }
+                modifiedContacts.append(contact);
+            }
+        }
 
-                if (contactForAdditions == &stContact) {
-                    modifiedContacts.append(stContact);
-                }
+        foreach (const QContact &addContact, contactsToAdd) {
+            // Rebuild this contact to our specifications
+            QContact newContact;
+
+            QContactSyncTarget stDetail;
+            stDetail.setSyncTarget(syncTarget);
+            newContact.saveDetail(&stDetail);
+
+            foreach (QContactDetail detail, addContact.details()) {
+                detail.setValue(QContactDetail__FieldModifiable, true);
+                newContact.saveDetail(&detail);
             }
 
-            modifiedContacts.append(contact);
+            modifiedContacts.append(newContact);
         }
 
         // Store the changes we've accumulated
@@ -4096,6 +4157,16 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to save contact changes for sync update"));
             return writeError;
         }
+
+        // Remove any contacts that should no longer exist
+        m_removeContact.bindValue(QLatin1String(":contactId"), removeIds);
+        if (!m_removeContact.execBatch()) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to remove sync target constituents:\n%1")
+                    .arg(m_removeContact.lastError().text()));
+            m_removeContact.finish();
+            return QContactManager::UnspecifiedError;
+        }
+        m_removeContact.finish();
     }
 
     return QContactManager::NoError;

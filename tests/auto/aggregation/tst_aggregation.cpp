@@ -4473,34 +4473,33 @@ void tst_Aggregation::storeSyncContacts()
     n.setFirstName("Albert");
     n.setLastName("Einstein");
 
-    QContactSyncTarget stTarget;
-    stTarget.setSyncTarget("sync-test");
-
     QContact stc;
     stc.saveDetail(&n);
-    stc.saveDetail(&stTarget);
 
     QContactEmailAddress e;
     e.setEmailAddress("albert.einstein@example.org");
-    e.setValue(QContactDetail__FieldModifiable, true);
     stc.saveDetail(&e);
 
     QContactEmailAddress e2;
     e2.setEmailAddress("theoretical.physicist@example.org");
-    e2.setValue(QContactDetail__FieldModifiable, true);
     stc.saveDetail(&e2);
 
     QContactHobby h;
     h.setHobby("Kickboxing");
-    h.setValue(QContactDetail__FieldModifiable, true);
     stc.saveDetail(&h);
 
-    QVERIFY(m_cm->saveContact(&stc));
+    modifications.append(qMakePair(QContact(), stc));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
 
-    QTRY_COMPARE(syncSpy.count(), 1);
-    syncSpy.clear();
+    // The syncTarget should not be reported as updated by storeSyncContacts
+    QVERIFY(!syncSpy.wait(1000));
 
-    stc = m_cm->contact(retrievalId(stc));
+    QList<QContactId> exportedIds;
+    QList<QContact> syncContacts;
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
+    QCOMPARE(syncContacts.count(), 1);
+
+    stc = m_cm->contact(retrievalId(syncContacts.at(0)));
 
     // Verify that the contact properties are as we expect
     QContactName n2 = stc.detail<QContactName>();
@@ -4513,12 +4512,14 @@ void tst_Aggregation::storeSyncContacts()
     QCOMPARE(stc.details<QContactEmailAddress>().count(), 2);
     QSet<QString> emailAddresses;
     foreach (const QContactEmailAddress &e, stc.details<QContactEmailAddress>()) {
+        QCOMPARE(e.value(QContactDetail__FieldModifiable).toBool(), true);
         emailAddresses.insert(e.emailAddress());
     }
     QCOMPARE(emailAddresses, (QStringList() << e.emailAddress() << e2.emailAddress()).toSet());
 
     QCOMPARE(stc.details<QContactHobby>().count(), 1);
     QCOMPARE(stc.details<QContactHobby>().at(0).hobby(), h.hobby());
+    QCOMPARE(stc.details<QContactHobby>().at(0).value(QContactDetail__FieldModifiable).toBool(), true);
 
     QCOMPARE(stc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
 
@@ -4542,8 +4543,7 @@ void tst_Aggregation::storeSyncContacts()
     QCOMPARE(a.details<QContactHobby>().at(0).hobby(), h.hobby());
 
     // Fetch the partial aggregate for this contact
-    QList<QContactId> exportedIds;
-    QList<QContact> syncContacts;
+    syncContacts.clear();
     QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
     QCOMPARE(syncContacts.count(), 1);
 
@@ -4585,6 +4585,7 @@ void tst_Aggregation::storeSyncContacts()
 
     mpa.removeDetail(&e5);
 
+    modifications.clear();
     modifications.append(qMakePair(pa, mpa));
     QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
 
@@ -4660,7 +4661,13 @@ void tst_Aggregation::storeSyncContacts()
     QVERIFY(m_cm->saveContact(&lc));
 
     QTRY_COMPARE(syncSpy.count(), 1);
+    QVariantList signalArgs(syncSpy.takeFirst());
     syncSpy.clear();
+    QCOMPARE(syncSpy.count(), 0);
+    QCOMPARE(signalArgs.count(), 1);
+    QStringList changedSyncTargets(signalArgs.first().value<QStringList>());
+    QCOMPARE(changedSyncTargets.count(), 1);
+    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("sync-test"));
 
     lc = m_cm->contact(retrievalId(lc));
 
@@ -4865,7 +4872,13 @@ void tst_Aggregation::storeSyncContacts()
     QVERIFY(m_cm->saveContact(&dstc));
 
     QTRY_COMPARE(syncSpy.count(), 1);
+    signalArgs = syncSpy.takeFirst();
     syncSpy.clear();
+    QCOMPARE(syncSpy.count(), 0);
+    QCOMPARE(signalArgs.count(), 1);
+    changedSyncTargets = signalArgs.first().value<QStringList>();
+    QCOMPARE(changedSyncTargets.count(), 1);
+    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("different-sync-target"));
 
     dstc = m_cm->contact(retrievalId(dstc));
 
@@ -4896,10 +4909,10 @@ void tst_Aggregation::storeSyncContacts()
 
     // A sync-target that was not the subject of this update should be reported as having changed
     QTRY_COMPARE(syncSpy.count(), 1);
-    QVariantList signalArgs(syncSpy.takeFirst());
+    signalArgs = syncSpy.takeFirst();
     QCOMPARE(syncSpy.count(), 0);
     QCOMPARE(signalArgs.count(), 1);
-    QStringList changedSyncTargets(signalArgs.first().value<QStringList>());
+    changedSyncTargets = signalArgs.first().value<QStringList>();
     QCOMPARE(changedSyncTargets.count(), 1);
     QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("different-sync-target"));
 
@@ -5182,6 +5195,37 @@ void tst_Aggregation::storeSyncContacts()
 
     QCOMPARE(stc2.details<QContactHobby>().count(), 1);
     QCOMPARE(stc2.details<QContactHobby>().at(0).hobby(), h3.hobby());
+
+    // Both contacts should now be reported by their sync-target IDs
+    syncContacts.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
+    QCOMPARE(syncContacts.count(), 2);
+    QCOMPARE((QList<QContactId>() << syncContacts.at(0).id() << syncContacts.at(1).id()).toSet(), (QList<QContactId>() << stc.id() << stc2.id()).toSet());
+
+    // Report both contacts as remotely-deleted
+    modifications.clear();
+    modifications.append(qMakePair(syncContacts.at(0), QContact()));
+    modifications.append(qMakePair(syncContacts.at(1), QContact()));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
+
+    QContactDetailFilter allSyncTargets;
+    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
+
+    QList<QContactId> contactIds = m_cm->contactIds(allSyncTargets);
+
+    // The sync target constituents should be removed
+    QVERIFY(!contactIds.contains(stc.id()));
+    QVERIFY(!contactIds.contains(stc2.id()));
+
+    // The local constituents and those from other sync targets should remain
+    QVERIFY(contactIds.contains(lc.id()));
+    QVERIFY(contactIds.contains(alc.id()));
+    QVERIFY(contactIds.contains(dstc.id()));
+
+    // The next fetch should not return the deleted contacts
+    syncContacts.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
+    QCOMPARE(syncContacts.count(), 0);
 }
 
 void tst_Aggregation::testOOB()
