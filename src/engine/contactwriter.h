@@ -206,8 +206,10 @@ private:
     QSqlQuery m_modifiableDetails;
     QSqlQuery m_selfContactId;
     QSqlQuery m_syncContactIds;
+    QSqlQuery m_exportContactIds;
     QSqlQuery m_aggregateContactIds;
     QSqlQuery m_constituentContactDetails;
+    QSqlQuery m_localConstituentForAggregate;
     QSqlQuery m_heuristicallyMatchData;
     QSqlQuery m_syncTargetConstituentIds;
     QSqlQuery m_affectedSyncTargets;
