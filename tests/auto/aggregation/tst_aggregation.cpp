@@ -4521,6 +4521,8 @@ void tst_Aggregation::storeSyncContacts()
     QCOMPARE(stc.details<QContactHobby>().at(0).hobby(), h.hobby());
     QCOMPARE(stc.details<QContactHobby>().at(0).value(QContactDetail__FieldModifiable).toBool(), true);
 
+    QCOMPARE(stc.details<QContactGuid>().count(), 0);
+
     QCOMPARE(stc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
 
     QContact a = m_cm->contact(stc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id());
@@ -4541,6 +4543,8 @@ void tst_Aggregation::storeSyncContacts()
 
     QCOMPARE(a.details<QContactHobby>().count(), 1);
     QCOMPARE(a.details<QContactHobby>().at(0).hobby(), h.hobby());
+
+    QCOMPARE(a.details<QContactGuid>().count(), 0);
 
     // Fetch the partial aggregate for this contact
     syncContacts.clear();
@@ -4689,6 +4693,8 @@ void tst_Aggregation::storeSyncContacts()
     QCOMPARE(lc.details<QContactPhoneNumber>().at(0).number(), pn.number());
     QCOMPARE(lc.details<QContactPhoneNumber>().at(0).subTypes(), pn.subTypes());
 
+    QCOMPARE(lc.details<QContactGuid>().count(), 1);
+
     QCOMPARE(lc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
     QCOMPARE(lc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id(), a.id());
 
@@ -4722,6 +4728,8 @@ void tst_Aggregation::storeSyncContacts()
     QCOMPARE(a.details<QContactPhoneNumber>().at(0).number(), pn.number());
     QCOMPARE(a.details<QContactPhoneNumber>().at(0).subTypes(), pn.subTypes());
 
+    QCOMPARE(a.details<QContactGuid>().count(), 0);
+
     QCOMPARE(a.relatedContacts(aggregatesRelationship, QContactRelationship::Second).count(), 2);
 
     syncContacts.clear();
@@ -4731,6 +4739,9 @@ void tst_Aggregation::storeSyncContacts()
     pa = syncContacts.at(0);
     QCOMPARE(pa.id(), stc.id());
     QCOMPARE(pa.details<QContactEmailAddress>().count(), 3);
+
+    // The local's GUID is not present
+    QCOMPARE(pa.details<QContactGuid>().count(), 0);
 
     // Make changes that will affect both constituents
     mpa = QContact(pa);
@@ -4769,6 +4780,10 @@ void tst_Aggregation::storeSyncContacts()
 
     QContactHobby h2 = mpa.detail<QContactHobby>();
     mpa.removeDetail(&h2);
+
+    QContactGuid guid;
+    guid.setGuid("I am a unique snowflake");
+    mpa.saveDetail(&guid);
 
     // Include changes to context and subtype fields
     t = mpa.detail<QContactTag>();
@@ -4809,6 +4824,9 @@ void tst_Aggregation::storeSyncContacts()
     QCOMPARE(stc.details<QContactNickname>().count(), 1);
     QCOMPARE(stc.details<QContactNickname>().at(0).nickname(), nn.nickname());
 
+    QCOMPARE(stc.details<QContactGuid>().count(), 1);
+    QCOMPARE(stc.details<QContactGuid>().at(0).guid(), guid.guid());
+
     lc = m_cm->contact(retrievalId(lc));
     QCOMPARE(lc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
     QCOMPARE(lc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id(), a.id());
@@ -4830,6 +4848,9 @@ void tst_Aggregation::storeSyncContacts()
     QCOMPARE(lc.details<QContactPhoneNumber>().count(), 1);
     QCOMPARE(lc.details<QContactPhoneNumber>().at(0).number(), pn.number());
     QCOMPARE(lc.details<QContactPhoneNumber>().at(0).subTypes(), pn.subTypes());
+
+    QCOMPARE(lc.details<QContactGuid>().count(), 1);
+    QVERIFY(lc.details<QContactGuid>().at(0).guid() != guid.guid());
 
     a = m_cm->contact(retrievalId(a));
 
@@ -4859,6 +4880,18 @@ void tst_Aggregation::storeSyncContacts()
     QCOMPARE(a.details<QContactPhoneNumber>().count(), 1);
     QCOMPARE(a.details<QContactPhoneNumber>().at(0).number(), pn.number());
     QCOMPARE(a.details<QContactPhoneNumber>().at(0).subTypes(), pn.subTypes());
+
+    QCOMPARE(a.details<QContactGuid>().count(), 0);
+
+    // The sync target partial agregate should contain the sync target GUID
+    syncContacts.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
+    QCOMPARE(syncContacts.count(), 1);
+
+    pa = syncContacts.at(0);
+    QCOMPARE(pa.id(), stc.id());
+    QCOMPARE(pa.details<QContactGuid>().count(), 1);
+    QCOMPARE(pa.detail<QContactGuid>().guid(), stc.detail<QContactGuid>().guid());
 
     // Link a constituent from a different sync target
     QContact dstc;
@@ -5138,15 +5171,22 @@ void tst_Aggregation::storeSyncContacts()
     QVERIFY(m_cm->saveContact(&alc));
     alc = m_cm->contact(alc.id());
 
+    QCOMPARE(alc.details<QContactGuid>().count(), 1);
+
     QList<QContact> addedContacts;
 
     syncContacts.clear();
     QVERIFY(cme->fetchSyncContacts("sync-test", nextTime, exportedIds, &syncContacts, &addedContacts, 0, &err));
     QCOMPARE(addedContacts.count(), 1);
-    QCOMPARE(addedContacts.at(0).id(), alc.id());
+
+    pa = addedContacts.at(0);
+    QCOMPARE(pa.id(), alc.id());
+
+    // The GUID is promoted into the the partial aggregate
+    QCOMPARE(pa.details<QContactGuid>().count(), 1);
+    QCOMPARE(pa.detail<QContactGuid>().guid(), alc.detail<QContactGuid>().guid());
 
     // Make changes to this contact
-    pa = addedContacts.at(0);
     mpa = pa;
 
     QContactTag t3 = mpa.detail<QContactTag>();
@@ -5201,6 +5241,8 @@ void tst_Aggregation::storeSyncContacts()
     QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
     QCOMPARE(syncContacts.count(), 2);
     QCOMPARE((QList<QContactId>() << syncContacts.at(0).id() << syncContacts.at(1).id()).toSet(), (QList<QContactId>() << stc.id() << stc2.id()).toSet());
+
+    QCOMPARE(alc.details<QContactGuid>().count(), 1);
 
     // Report both contacts as remotely-deleted
     modifications.clear();

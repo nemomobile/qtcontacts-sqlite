@@ -1659,6 +1659,18 @@ static ContactWriter::DetailList getUnpromotedDetailTypes()
     return rv;
 }
 
+static ContactWriter::DetailList getAbsolutelyUnpromotedDetailTypes()
+{
+    // The list of types for details that are not promoted to an aggregate, even if promotion is forced
+    ContactWriter::DetailList rv;
+    rv << detailType<QContactDisplayLabel>();
+    rv << detailType<QContactGlobalPresence>();
+    rv << detailType<QContactStatusFlags>();
+    rv << detailType<QContactDeactivated>();
+    rv << detailType<QContactIncidental>();
+    return rv;
+}
+
 static ContactWriter::DetailList getCompositionDetailTypes()
 {
     // The list of types for details that are composed to form aggregates
@@ -2697,14 +2709,16 @@ static void adjustDetailUrisForAggregate(QContactDetail &currDet, quint32 aggId)
     Note that QContactSyncTarget and QContactGuid details will NOT be promoted,
     nor will QContactDisplayLabel or QContactType details.
 */
-static void promoteDetailsToAggregate(const QContact &contact, QContact *aggregate, const ContactWriter::DetailList &definitionMask)
+static void promoteDetailsToAggregate(const QContact &contact, QContact *aggregate, const ContactWriter::DetailList &definitionMask, bool forcePromotion)
 {
     static const ContactWriter::DetailList unpromotedDetailTypes(getUnpromotedDetailTypes());
+    static const ContactWriter::DetailList absolutelyUnpromotedDetailTypes(getAbsolutelyUnpromotedDetailTypes());
 
     const quint32 aggId = ContactId::databaseId(*aggregate);
 
     foreach (const QContactDetail &original, contact.details()) {
-        if (unpromotedDetailTypes.contains(detailType(original))) {
+        if ((!forcePromotion && unpromotedDetailTypes.contains(detailType(original))) ||
+            (forcePromotion && absolutelyUnpromotedDetailTypes.contains(detailType(original)))) {
             // don't promote this detail.
             continue;
         }
@@ -2807,23 +2821,29 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
 typedef QPair<QString, QString> StringPair;
 typedef QPair<QContactDetail, QContactDetail> DetailPair;
 
-static QList<QPair<QContactDetail, StringPair> > contactDetails(const QContact &contact, const ContactWriter::DetailList &definitionMask = ContactWriter::DetailList())
+static QList<QPair<QContactDetail, StringPair> > contactDetails(const QContact &contact, bool forcePromotion = false, const ContactWriter::DetailList &definitionMask = ContactWriter::DetailList())
 {
     static const ContactWriter::DetailList unpromotedDetailTypes(getUnpromotedDetailTypes());
+    static const ContactWriter::DetailList absolutelyUnpromotedDetailTypes(getAbsolutelyUnpromotedDetailTypes());
 
     QList<QPair<QContactDetail, StringPair> > rv;
 
     foreach (const QContactDetail &original, contact.details()) {
-        if (!unpromotedDetailTypes.contains(detailType(original)) &&
-            (definitionMask.isEmpty() || detailListContains(definitionMask, original))) {
-            // Make mutable copies of the contacts' detail (without Irremovable|Readonly flags)
-            QContactDetail copy(original);
-            QContactManagerEngine::setDetailAccessConstraints(&copy, QContactDetail::NoConstraint);
-
-            const QString provenance(original.value<QString>(QContactDetail__FieldProvenance));
-            const StringPair identity(qMakePair(provenance, detailTypeName(original)));
-            rv.append(qMakePair(copy, identity));
+        if ((!forcePromotion && unpromotedDetailTypes.contains(detailType(original))) ||
+            (forcePromotion && absolutelyUnpromotedDetailTypes.contains(detailType(original)))) {
+            continue;
         }
+        if (!definitionMask.isEmpty() && !detailListContains(definitionMask, original)) {
+            continue;
+        }
+
+        // Make mutable copies of the contacts' detail (without Irremovable|Readonly flags)
+        QContactDetail copy(original);
+        QContactManagerEngine::setDetailAccessConstraints(&copy, QContactDetail::NoConstraint);
+
+        const QString provenance(original.value<QString>(QContactDetail__FieldProvenance));
+        const StringPair identity(qMakePair(provenance, detailTypeName(original)));
+        rv.append(qMakePair(copy, identity));
     }
 
     return rv;
@@ -3191,7 +3211,7 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
 
     // whether it's an existing or new contact, we promote details.
     // TODO: promote non-Aggregates relationships!
-    promoteDetailsToAggregate(*contact, &matchingAggregate, definitionMask);
+    promoteDetailsToAggregate(*contact, &matchingAggregate, definitionMask, false);
     if (!found) {
         // need to create an aggregating contact first.
         QContactSyncTarget cst;
@@ -3373,7 +3393,7 @@ QContactManager::Error ContactWriter::regenerateAggregates(const QList<quint32> 
             }
 
             // need to promote this contact's details to the aggregate
-            promoteDetailsToAggregate(curr, &aggregateContact, definitionMask);
+            promoteDetailsToAggregate(curr, &aggregateContact, definitionMask, false);
         }
 
         // we save the updated aggregates to database all in a batch at the end.
@@ -3481,6 +3501,7 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
                                                 QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds)
 {
     static const DetailList unpromotedDetailTypes(getUnpromotedDetailTypes());
+    static const DetailList absolutelyUnpromotedDetailTypes(getAbsolutelyUnpromotedDetailTypes());
 
     const QDateTime since(lastSync.isValid() ? lastSync : epochDateTime());
 
@@ -3587,14 +3608,12 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
             }
             m_constituentContactDetails.finish();
 
-            QMap<quint32, quint32> completeAggregateIds;
             QMap<quint32, quint32> partialBaseAggregateIds;
             QSet<quint32> requiredConstituentIds;
 
             // For each aggregate - can we return the existing complete aggregate or do we need to generate a limited version?
             QMap<quint32, QList<QPair<quint32, QString> > >::const_iterator it = constituentDetails.constBegin(), end = constituentDetails.constEnd();
             for ( ; it != end; ++it) {
-                bool regenerate = false;
                 quint32 syncTargetConstituentId = 0;
                 QList<quint32> inclusions;
 
@@ -3611,15 +3630,11 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
                         if (cst == syncTarget) {
                             if (syncTargetConstituentId != 0) {
                                 // We need to generate partial aggregates for each syncTarget constituent
-                                regenerate = true;
                                 partialBaseAggregateIds.insert(cid, aggId);
                             } else {
                                 syncTargetConstituentId = cid;
                             }
                         }
-                    } else {
-                        // Some elements of the complete aggregate must be excluded
-                        regenerate = true;
                     }
                 }
 
@@ -3631,18 +3646,14 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
                     baseId = syncTargetConstituentId;
                 }
 
-                if (regenerate) {
-                    partialBaseAggregateIds.insert(baseId, aggId);
-                    foreach (quint32 id, inclusions) {
-                        requiredConstituentIds.insert(id);
-                    }
-                } else {
-                    completeAggregateIds.insert(aggId, baseId);
+                partialBaseAggregateIds.insert(baseId, aggId);
+                foreach (quint32 id, inclusions) {
+                    requiredConstituentIds.insert(id);
                 }
             }
 
             // Fetch all the contacts we need - either aggregates to return, or constituents to build partial aggregates from
-            QList<quint32> readIds(completeAggregateIds.keys() + requiredConstituentIds.toList());
+            QList<quint32> readIds(requiredConstituentIds.toList());
             if (!readIds.isEmpty()) {
                 QContactFetchHint hint;
                 hint.setOptimizationHints(QContactFetchHint::NoRelationships);
@@ -3659,23 +3670,8 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
                 foreach (const QContact &contact, readList) {
                     const quint32 dbId(ContactId::databaseId(contact.id()));
 
-                    QMap<quint32, quint32>::const_iterator ait = completeAggregateIds.find(dbId);
-                    if (ait != completeAggregateIds.end()) {
-                        const quint32 baseId(*ait);
-
-                        // Return this aggregate contact, with the ID set to the base from which it is derived
-                        QContact aggregate(contact);
-                        aggregate.setId(ContactId::apiId(baseId));
-
-                        if (addedAggregateIds.contains(dbId)) {
-                            addedContacts->append(aggregate);
-                        } else {
-                            syncContacts->append(aggregate);
-                        }
-                    } else {
-                        // We need this contact to build the partial aggregates
-                        constituentContacts.insert(dbId, &contact);
-                    }
+                    // We need this contact to build the partial aggregates
+                    constituentContacts.insert(dbId, &contact);
                 }
 
                 // Build partial aggregates - keep in sync with related logic in regenerateAggregates
@@ -3692,7 +3688,9 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
                     if (localId) {
                         if (const QContact *localConstituent = constituentContacts[localId]) {
                             foreach (const QContactDetail &detail, localConstituent->details()) {
-                                if (!detailListContains(unpromotedDetailTypes, detail)) {
+                                const bool forcePromotion(localId == baseId);
+                                if ((!forcePromotion && !detailListContains(unpromotedDetailTypes, detail)) ||
+                                    (forcePromotion && !detailListContains(absolutelyUnpromotedDetailTypes, detail))) {
                                     // promote this detail to the aggregate.
                                     QContactDetail copy(detail);
                                     adjustDetailUrisForAggregate(copy, aggId);
@@ -3722,7 +3720,8 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
                                 }
                             }
                             if (const QContact *constituent = constituentContacts[cid]) {
-                                promoteDetailsToAggregate(*constituent, &partialAggregate, DetailList());
+                                const bool forcePromotion(cid == baseId);
+                                promoteDetailsToAggregate(*constituent, &partialAggregate, DetailList(), forcePromotion);
                             } else {
                                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to promote details from missing constitutent: %1").arg(cid));
                                 return QContactManager::UnspecifiedError;
@@ -3862,8 +3861,8 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
         }
 
         // Extract the details from these contacts
-        QList<QPair<QContactDetail, StringPair> > originalDetails(contactDetails(original));
-        QList<QPair<QContactDetail, StringPair> > updatedDetails(contactDetails(updated));
+        QList<QPair<QContactDetail, StringPair> > originalDetails(contactDetails(original, true));
+        QList<QPair<QContactDetail, StringPair> > updatedDetails(contactDetails(updated, true));
 
         // Remove any details that are equivalent in both contacts
         removeEquivalentDetails(originalDetails, updatedDetails);
