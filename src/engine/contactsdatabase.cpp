@@ -321,7 +321,7 @@ static const char *createRemoveTrigger =
         "\n BEFORE DELETE"
         "\n ON Contacts"
         "\n BEGIN"
-        "\n  INSERT INTO DeletedContacts (contactId, syncTarget, deleted) VALUES (old.contactId, old.syncTarget, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'));"
+        "\n  INSERT INTO DeletedContacts (contactId, syncTarget, deleted) VALUES (old.contactId, old.syncTarget, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));"
         "\n  DELETE FROM Addresses WHERE contactId = old.contactId;"
         "\n  DELETE FROM Anniversaries WHERE contactId = old.contactId;"
         "\n  DELETE FROM Avatars WHERE contactId = old.contactId;"

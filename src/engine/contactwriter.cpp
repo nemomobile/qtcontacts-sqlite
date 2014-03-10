@@ -70,10 +70,9 @@ namespace {
 
         for (int i = 0; i < contacts->size(); ++i) {
             const QContactTimestamp &ts(contacts->at(i).detail<QContactTimestamp>());
-            if (ts.lastModified().isValid() && (ts.lastModified() > *prevMaxSyncTimestamp || !prevMaxSyncTimestamp->isValid())) {
-                *prevMaxSyncTimestamp = ts.lastModified();
-            } else if (ts.created().isValid() && (ts.created() > *prevMaxSyncTimestamp || !prevMaxSyncTimestamp->isValid())) {
-                *prevMaxSyncTimestamp = ts.created();
+            const QDateTime contactTimestamp(ts.lastModified().isValid() ? ts.lastModified() : ts.created());
+            if (contactTimestamp.isValid() && (contactTimestamp > *prevMaxSyncTimestamp || !prevMaxSyncTimestamp->isValid())) {
+                *prevMaxSyncTimestamp = contactTimestamp;
             }
         }
     }
@@ -3587,6 +3586,12 @@ static QDateTime epochDateTime()
     return rv;
 }
 
+// Input must be UTC
+static QString dateTimeString(const QDateTime &qdt)
+{
+    return qdt.toString(QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz"));
+}
+
 struct ConstituentDetails {
     quint32 id;
     QString syncTarget;
@@ -3600,8 +3605,10 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
     static const DetailList unpromotedDetailTypes(getUnpromotedDetailTypes());
     static const DetailList absolutelyUnpromotedDetailTypes(getAbsolutelyUnpromotedDetailTypes());
 
-    const QDateTime since(lastSync.isValid() ? lastSync : epochDateTime());
-    *maxTimestamp = since; // fall back to current sync timestamp if no data found.
+    const QDateTime sinceTime((lastSync.isValid() ? lastSync : epochDateTime()).toUTC());
+    *maxTimestamp = sinceTime; // fall back to current sync timestamp if no data found.
+
+    const QString since(dateTimeString(sinceTime));
 
     const bool exportUpdate(syncTarget == exportSyncTarget);
 
@@ -4939,8 +4946,8 @@ void ContactWriter::bindContactDetails(const QContact &contact, QSqlQuery &query
     query.bindValue(9, syncTarget);
 
     const QContactTimestamp timestamp = contact.detail<QContactTimestamp>();
-    query.bindValue(10, timestamp.value<QDateTime>(QContactTimestamp::FieldCreationTimestamp).toUTC());
-    query.bindValue(11, timestamp.value<QDateTime>(QContactTimestamp::FieldModificationTimestamp).toUTC());
+    query.bindValue(10, dateTimeString(timestamp.value<QDateTime>(QContactTimestamp::FieldCreationTimestamp).toUTC()));
+    query.bindValue(11, dateTimeString(timestamp.value<QDateTime>(QContactTimestamp::FieldModificationTimestamp).toUTC()));
 
     const QContactGender gender = contact.detail<QContactGender>();
     const QString gv(gender.gender() == QContactGender::GenderFemale ? QString::fromLatin1("Female") :
@@ -5067,7 +5074,7 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactGlobalPres
     typedef QContactGlobalPresence T;
     m_insertGlobalPresence.bindValue(0, contactId);
     m_insertGlobalPresence.bindValue(1, detailValue(detail, T::FieldPresenceState));
-    m_insertGlobalPresence.bindValue(2, detailValue(detail, T::FieldTimestamp));
+    m_insertGlobalPresence.bindValue(2, dateTimeString(detail.value<QDateTime>(T::FieldTimestamp).toUTC()));
     m_insertGlobalPresence.bindValue(3, detail.value<QString>(T::FieldNickname).trimmed());
     m_insertGlobalPresence.bindValue(4, detail.value<QString>(T::FieldCustomMessage).trimmed());
     return m_insertGlobalPresence;
@@ -5154,7 +5161,7 @@ QSqlQuery &ContactWriter::bindDetail(quint32 contactId, const QContactPresence &
     typedef QContactPresence T;
     m_insertPresence.bindValue(0, contactId);
     m_insertPresence.bindValue(1, detailValue(detail, T::FieldPresenceState));
-    m_insertPresence.bindValue(2, detailValue(detail, T::FieldTimestamp));
+    m_insertPresence.bindValue(2, dateTimeString(detail.value<QDateTime>(T::FieldTimestamp).toUTC()));
     m_insertPresence.bindValue(3, detail.value<QString>(T::FieldNickname).trimmed());
     m_insertPresence.bindValue(4, detail.value<QString>(T::FieldCustomMessage).trimmed());
     return m_insertPresence;

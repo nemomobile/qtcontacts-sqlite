@@ -97,6 +97,19 @@ static void registerTypes()
     }
 }
 
+// Input must be UTC
+static QString dateTimeString(const QDateTime &qdt)
+{
+    return qdt.toString(QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz"));
+}
+
+static QDateTime fromDateTimeString(const QString &s)
+{
+    QDateTime rv(QDateTime::fromString(s, QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz")));
+    rv.setTimeSpec(Qt::UTC);
+    return rv;
+}
+
 TwoWayContactSyncAdapterPrivate::TwoWayContactSyncAdapterPrivate(const QString &syncTarget, const QMap<QString, QString> &params)
     : m_manager(new QContactManager(QStringLiteral("org.nemomobile.contacts.sqlite"), params))
     , m_engine(contactManagerEngine(*m_manager))
@@ -193,12 +206,12 @@ bool TwoWayContactSyncAdapter::readSyncStateData(QDateTime *remoteSince, const Q
     QString sinceStr = values.value(QStringLiteral("remoteSince")).toString();
     d->m_stateData[accountId].m_remoteSince = sinceStr.isEmpty()
                                             ? QDateTime()
-                                            : QDateTime::fromString(sinceStr, Qt::ISODate);
+                                            : fromDateTimeString(sinceStr);
 
     sinceStr = values.value(QStringLiteral("localSince")).toString();
     d->m_stateData[accountId].m_localSince = sinceStr.isEmpty()
                                            ? QDateTime()
-                                           : QDateTime::fromString(sinceStr, Qt::ISODate);
+                                           : fromDateTimeString(sinceStr);
 
     QByteArray cdata = values.value(QStringLiteral("prevRemote")).toByteArray();
     QDataStream readPrevRemote(cdata);
@@ -529,8 +542,8 @@ bool TwoWayContactSyncAdapter::storeSyncStateData(const QString &accountId)
     values.insert(QStringLiteral("exportedIds"), QVariant(cdata));
 
     // finally, store the new local and remote since timestamps to the OOB db
-    values.insert(QStringLiteral("remoteSince"), QVariant(d->m_stateData[accountId].m_newRemoteSince));
-    values.insert(QStringLiteral("localSince"), QVariant(d->m_stateData[accountId].m_newLocalSince));
+    values.insert(QStringLiteral("remoteSince"), QVariant(dateTimeString(d->m_stateData[accountId].m_newRemoteSince)));
+    values.insert(QStringLiteral("localSince"), QVariant(dateTimeString(d->m_stateData[accountId].m_newLocalSince)));
 
     // perform the store operation to the oob db.
     if (!d->m_engine->storeOOB(d->m_stateData[accountId].m_oobScope, values)) {
@@ -542,7 +555,7 @@ bool TwoWayContactSyncAdapter::storeSyncStateData(const QString &accountId)
     // finished the sync process successfully.
     d->m_stateData[accountId].m_status = TwoWayContactSyncAdapterPrivate::Finished;
     qWarning() << Q_FUNC_INFO << "Sync process succeeded at"
-               << QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+               << dateTimeString(QDateTime::currentDateTimeUtc());
     d->clear(accountId); // this actually sets state back to Inactive as required.
     return true;
 }

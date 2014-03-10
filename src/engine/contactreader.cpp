@@ -753,17 +753,16 @@ static QString convertFilterValueToString(const QContactDetailFilter &filter, co
     return defaultValue;
 }
 
-static QString dateString(bool dateOnly, const QDateTime &qdt)
+// Input must be UTC
+static QString dateTimeString(const QDateTime &qdt)
 {
-    if (dateOnly) {
-        //return QString(QLatin1String("date('%1')")).arg(qdt.toUTC().toString(Qt::ISODate));
-        return qdt.toUTC().toString(Qt::ISODate).mid(0, 10); // 'yyyy-MM-dd'
-    }
+    return qdt.toString(QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz"));
+}
 
-    // note: quoting (via QString("'%1'").arg(...)) causes unit test failures
-    // because we bind the resultant value rather than use substring replacement
-    // and a bound string value is quoted by Qt.
-    return qdt.toUTC().toString(Qt::ISODate);
+// Input must be UTC
+static QString dateString(const QDateTime &qdt)
+{
+    return qdt.toString(QStringLiteral("yyyy-MM-dd"));
 }
 
 static QString dateString(const DetailInfo &detail, const QDateTime &qdt)
@@ -771,12 +770,18 @@ static QString dateString(const DetailInfo &detail, const QDateTime &qdt)
     if (detail.detail == QContactBirthday::Type
             || detail.detail == QContactAnniversary::Type) {
         // just interested in the date, not the whole date time
-        return dateString(true, qdt);
+        return dateString(qdt.toUTC());
     }
 
-    return dateString(false, qdt);
+    return dateTimeString(qdt.toUTC());
 }
 
+static QDateTime fromDateTimeString(const QString &s)
+{
+    QDateTime rv(QDateTime::fromString(s, QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz")));
+    rv.setTimeSpec(Qt::UTC);
+    return rv;
+}
 
 static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bindings, bool *failed)
 {
@@ -1164,7 +1169,7 @@ static QString buildWhere(const QContactRelationshipFilter &filter, QVariantList
 static QString buildWhere(const QContactChangeLogFilter &filter, QVariantList *bindings, bool *failed)
 {
     static const QString statement(QLatin1String("Contacts.%1 >= ?"));
-    bindings->append(dateString(false, filter.since()));
+    bindings->append(dateTimeString(filter.since().toUTC()));
     switch (filter.eventType()) {
         case QContactChangeLogFilter::EventAdded:
             return statement.arg(QLatin1String("created"));
@@ -1861,8 +1866,8 @@ QContactManager::Error ContactReader::queryContacts(
                 contact.saveDetail(&starget);
 
             QContactTimestamp timestamp;
-            setValue(&timestamp, QContactTimestamp::FieldCreationTimestamp    , query.value(11));
-            setValue(&timestamp, QContactTimestamp::FieldModificationTimestamp, query.value(12));
+            setValue(&timestamp, QContactTimestamp::FieldCreationTimestamp    , fromDateTimeString(query.value(11).toString()));
+            setValue(&timestamp, QContactTimestamp::FieldModificationTimestamp, fromDateTimeString(query.value(12).toString()));
             if (!timestamp.isEmpty())
                 contact.saveDetail(&timestamp);
 
@@ -2042,7 +2047,7 @@ QContactManager::Error ContactReader::readDeletedContactIds(
     QVariantList bindings;
     if (!since.isNull()) {
         restrictions.append(QString::fromLatin1("deleted >= ?"));
-        bindings.append(since);
+        bindings.append(dateTimeString(since.toUTC()));
     }
     if (!syncTarget.isNull()) {
         restrictions.append(QString::fromLatin1("syncTarget = ?"));

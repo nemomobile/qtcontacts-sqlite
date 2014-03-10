@@ -34,10 +34,6 @@
 #include "../../util.h"
 #include "testsyncadapter.h"
 
-#define TRIM_MSECS(t) t.addMSecs(0 - t.msec())
-#define TRIM_DT_MSECS(dt) dt.addMSecs(0 - dt.time().msec())
-#define DT_BETWEEN(dt, lower, upper) QVERIFY(TRIM_DT_MSECS(dt) >= TRIM_DT_MSECS(lower) && TRIM_DT_MSECS(dt) <= TRIM_DT_MSECS(upper))
-
 static const QString aggregatesRelationship(relationshipString(QContactRelationship::Aggregates));
 
 namespace {
@@ -1664,8 +1660,6 @@ void tst_Aggregation::uniquenessConstraints()
     // Timestamp is a bit special, since if no values exist, we don't synthesise it,
     // even though it exists in the main table.
     QDateTime testDt = QDateTime::currentDateTime();
-    QTime testDtTime = testDt.time();
-    testDt.setTime(TRIM_MSECS(testDtTime));
     bool hasCreatedTs = false;
     if (aggregateAlice.details<QContactTimestamp>().size() == 0) {
         QContactTimestamp firstTs;
@@ -1691,7 +1685,8 @@ void tst_Aggregation::uniquenessConstraints()
     aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
 
     QVERIFY(aggregateAlice.details<QContactTimestamp>().size() == 1);
-    DT_BETWEEN(aggregateAlice.detail<QContactTimestamp>().lastModified(), beforeWrite, QDateTime::currentDateTimeUtc());
+    QVERIFY(aggregateAlice.detail<QContactTimestamp>().lastModified() >= beforeWrite);
+    QVERIFY(aggregateAlice.detail<QContactTimestamp>().lastModified() <= QDateTime::currentDateTimeUtc());
     if (hasCreatedTs) {
         QCOMPARE(aggregateAlice.detail<QContactTimestamp>().created(), testDt);
     }
@@ -3351,13 +3346,12 @@ void tst_Aggregation::changeLogFiltering()
 {
     // The qtcontacts-sqlite engine automatically adds creation timestamp
     // if not already set.  It always clobbers (updates) modification timestamp.
-    // NOTE: sqlite doesn't store milliseconds!
 
-    QTest::qWait(2000); // wait two seconds, to ensure unique timestamps for saved contacts.
-    QDateTime startTime = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
-    QDateTime minus5 = TRIM_DT_MSECS(startTime.addDays(-5));
-    QDateTime minus3 = TRIM_DT_MSECS(startTime.addDays(-3));
-    QDateTime minus2 = TRIM_DT_MSECS(startTime.addDays(-2));
+    QTest::qWait(1); // wait for millisecond change, to ensure unique timestamps for saved contacts.
+    QDateTime startTime = QDateTime::currentDateTimeUtc();
+    QDateTime minus5 = startTime.addDays(-5);
+    QDateTime minus3 = startTime.addDays(-3);
+    QDateTime minus2 = startTime.addDays(-2);
 
     // 1) if provided, creation timestamp should not be overwritten.
     //    if not provided, modification timestamp should be set by the backend.
@@ -3369,69 +3363,75 @@ void tst_Aggregation::changeLogFiltering()
     at.setCreated(minus5);
     a.saveDetail(&at);
 
-    QTest::qWait(1001);
-    QDateTime justPrior = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
+    QTest::qWait(1);
+    QDateTime justPrior = QDateTime::currentDateTimeUtc();
     QVERIFY(m_cm->saveContact(&a));
     a = m_cm->contact(retrievalId(a));
     at = a.detail<QContactTimestamp>();
     QCOMPARE(at.created(), minus5);
-    DT_BETWEEN(at.lastModified(), justPrior, QDateTime::currentDateTimeUtc());
+    QVERIFY(at.lastModified() >= justPrior);
+    QVERIFY(at.lastModified() <= QDateTime::currentDateTimeUtc());
 
     // 2) even if modified timestamp is provided, it should be updated by the  backend.
     at.setLastModified(minus2);
     a.saveDetail(&at);
-    QTest::qWait(1001);
-    justPrior = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
+    QTest::qWait(1);
+    justPrior = QDateTime::currentDateTimeUtc();
     QVERIFY(m_cm->saveContact(&a));
     a = m_cm->contact(retrievalId(a));
     at = a.detail<QContactTimestamp>();
     QCOMPARE(at.created(), minus5);
-    DT_BETWEEN(at.lastModified(), justPrior, QDateTime::currentDateTimeUtc());
+    QVERIFY(at.lastModified() >= justPrior);
+    QVERIFY(at.lastModified() <= QDateTime::currentDateTimeUtc());
 
     // 3) created timestamp should only be generated on creation, not normal save.
     at.setCreated(QDateTime());
     a.saveDetail(&at);
-    QTest::qWait(1001);
-    justPrior = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
+    QTest::qWait(1);
+    justPrior = QDateTime::currentDateTimeUtc();
     QVERIFY(m_cm->saveContact(&a));
     a = m_cm->contact(retrievalId(a));
     at = a.detail<QContactTimestamp>();
     QCOMPARE(at.created(), QDateTime());
-    DT_BETWEEN(at.lastModified(), justPrior, QDateTime::currentDateTimeUtc());
+    QVERIFY(at.lastModified() >= justPrior);
+    QVERIFY(at.lastModified() <= QDateTime::currentDateTimeUtc());
 
     // Generate a timestamp which is before b's created timestamp.
-    QTest::qWait(1001);
-    QDateTime beforeBCreated = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
+    QTest::qWait(1);
+    QDateTime beforeBCreated = QDateTime::currentDateTimeUtc();
 
     QContact b;
     QContactName bn;
     bn.setFirstName("Bob");
     b.saveDetail(&bn);
-    QTest::qWait(1001);
-    justPrior = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
+    QTest::qWait(1);
+    justPrior = QDateTime::currentDateTimeUtc();
     QVERIFY(m_cm->saveContact(&b));
     b = m_cm->contact(retrievalId(b));
     QContactTimestamp bt = b.detail<QContactTimestamp>();
-    DT_BETWEEN(bt.created(), justPrior, QDateTime::currentDateTimeUtc());
-    DT_BETWEEN(bt.lastModified(), justPrior, QDateTime::currentDateTimeUtc());
+    QVERIFY(bt.created() >= justPrior);
+    QVERIFY(bt.created() <= QDateTime::currentDateTimeUtc());
+    QVERIFY(bt.lastModified() >= justPrior);
+    QVERIFY(bt.lastModified() <= QDateTime::currentDateTimeUtc());
 
     // Generate a timestamp which is after b's lastModified timestamp but which
     // will be before a's lastModified timestamp due to the upcoming save.
-    QTest::qWait(1001);
-    QDateTime betweenTime = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
+    QTest::qWait(1);
+    QDateTime betweenTime = QDateTime::currentDateTimeUtc();
 
     // 4) ensure filtering works as expected.
     // First, ensure timestamps are filterable;
     // invalid date times are always included in filtered results.
     at.setCreated(minus5);
     a.saveDetail(&at);
-    QTest::qWait(1001);
-    justPrior = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
+    QTest::qWait(1);
+    justPrior = QDateTime::currentDateTimeUtc();
     QVERIFY(m_cm->saveContact(&a));
     a = m_cm->contact(retrievalId(a));
     at = a.detail<QContactTimestamp>();
     QCOMPARE(at.created(), minus5);
-    DT_BETWEEN(at.lastModified(), justPrior, QDateTime::currentDateTimeUtc());
+    QVERIFY(at.lastModified() >= justPrior);
+    QVERIFY(at.lastModified() <= QDateTime::currentDateTimeUtc());
 
     QContactIntersectionFilter cif;
     QContactDetailFilter stf;
@@ -3492,8 +3492,8 @@ void tst_Aggregation::changeLogFiltering()
     QContactId idA(removalId(a));
     QVERIFY(m_cm->removeContact(idA));
 
-    QTest::qWait(1001);
-    QDateTime postDeleteTime = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
+    QTest::qWait(1);
+    QDateTime postDeleteTime = QDateTime::currentDateTimeUtc();
 
     QContactId idB(removalId(b));
     QVERIFY(m_cm->removeContact(idB));
@@ -3894,9 +3894,9 @@ void tst_Aggregation::fetchSyncContacts()
     QList<QContactId> syncExportedIds;
     QList<QContactId> deletedIds;
 
-    QDateTime initialTime = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
+    QDateTime initialTime = QDateTime::currentDateTimeUtc();
     QDateTime updatedSyncTime;
-    QTest::qWait(1000);
+    QTest::qWait(1);
 
     // Initial test - ensure that nothing is reported for sync
     QContactManager::Error err;
@@ -4286,8 +4286,8 @@ void tst_Aggregation::fetchSyncContacts()
     QVERIFY(addresses.contains(astc.detail<QContactEmailAddress>().emailAddress()));
 
     // Create a time boundary here
-    QDateTime nextTime = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
-    QTest::qWait(1000);
+    QDateTime nextTime = QDateTime::currentDateTimeUtc();
+    QTest::qWait(1);
 
     // Add an new local contact, which is unrelated
     QContact nlc;
@@ -4362,8 +4362,8 @@ void tst_Aggregation::fetchSyncContacts()
     syncExportedIds.append(pa.id());
 
     // Create a time boundary here
-    QDateTime afterAdditionTime = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
-    QTest::qWait(1000);
+    QDateTime afterAdditionTime = QDateTime::currentDateTimeUtc();
+    QTest::qWait(1);
 
     // Test the timestamp filtering - fetch using nextTime
     syncContacts.clear();
@@ -4494,8 +4494,8 @@ void tst_Aggregation::fetchSyncContacts()
     QVERIFY(addresses.contains(nlc.detail<QContactEmailAddress>().emailAddress()));
     QVERIFY(!addresses.contains(nastc.detail<QContactEmailAddress>().emailAddress()));
 
-    QDateTime finalAdditionTime = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
-    QTest::qWait(1000);
+    QDateTime finalAdditionTime = QDateTime::currentDateTimeUtc();
+    QTest::qWait(1);
 
     // The contact is reported as modified for export
     syncContacts.clear();
@@ -4759,8 +4759,8 @@ void tst_Aggregation::storeSyncContacts()
 
     QSignalSpy syncSpy(cme, SIGNAL(syncContactsChanged(QStringList)));
 
-    QDateTime initialTime = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
-    QTest::qWait(1000);
+    QDateTime initialTime = QDateTime::currentDateTimeUtc();
+    QTest::qWait(1);
 
     // Check for no errors with no input
     QList<QPair<QContact, QContact> > modifications;
@@ -5464,8 +5464,8 @@ void tst_Aggregation::storeSyncContacts()
     QCOMPARE(pa.details<QContactPhoneNumber>().count(), 1);
     QCOMPARE(pa.detail<QContactPhoneNumber>().number(), pn.number());
 
-    QDateTime nextTime = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
-    QTest::qWait(1000);
+    QDateTime nextTime = QDateTime::currentDateTimeUtc();
+    QTest::qWait(1);
 
     // Create another local contact that we can export
     QContact alc;
@@ -5659,8 +5659,8 @@ void tst_Aggregation::storeSyncContacts()
     QCOMPARE(pa.details<QContactHobby>().count(), 2);
     QCOMPARE((QSet<QString>() << pa.details<QContactHobby>().at(0).hobby() << pa.details<QContactHobby>().at(1).hobby()), (QSet<QString>() << h3.hobby() << h4.hobby()));
 
-    QDateTime modificationTime = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
-    QTest::qWait(1000);
+    QDateTime modificationTime = QDateTime::currentDateTimeUtc();
+    QTest::qWait(1);
 
     // Make modifications to the original details from the export contacts
     mpa = pa;
@@ -6008,8 +6008,8 @@ void tst_Aggregation::storeSyncContacts()
 
     // Now ensure that if the sync target constituent is the only constituent,
     // removing it via storeSyncContacts() will result in the aggregate being removed.
-    QDateTime finalTime = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
-    QTest::qWait(1000);
+    QDateTime finalTime = QDateTime::currentDateTimeUtc();
+    QTest::qWait(1);
 
     // Create a final sync target contact, with no linked constituents
     QContactName n5;
@@ -6311,7 +6311,7 @@ void tst_Aggregation::testSyncAdapter()
                                 QString(), QStringLiteral("jennifer@tsafour.com")));
 
     // remove some contacts remotely, ensure the removals are downsynced.
-    QTest::qWait(1001);
+    QTest::qWait(1);
     tsa.removeRemoteContact(accountId, QStringLiteral("Bob"), QStringLiteral("TsaTwo"));
     QVERIFY(tsa.remoteContact(accountId, QStringLiteral("Bob"), QStringLiteral("TsaTwo")) == QContact());
     tsa.removeRemoteContact(accountId, QStringLiteral("Jennifer"), QStringLiteral("TsaFour"));
