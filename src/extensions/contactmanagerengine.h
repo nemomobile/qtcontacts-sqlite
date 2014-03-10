@@ -44,12 +44,38 @@ class Q_DECL_EXPORT ContactManagerEngine
     Q_OBJECT
 
 public:
+    enum ConflictResolutionPolicy {
+        PreserveLocalChanges,
+        PreserveRemoteChanges
+    };
+
     ContactManagerEngine() : m_mergePresenceChanges(false) {}
 
     void setMergePresenceChanges(bool b) { m_mergePresenceChanges = b; }
 
+#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
+    virtual bool fetchSyncContacts(const QString &syncTarget, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
+                                   QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
+                                   QContactManager::Error *error) = 0;
+
+    virtual bool storeSyncContacts(const QString &syncTarget, ConflictResolutionPolicy conflictPolicy,
+                                   const QList<QPair<QContact, QContact> > &remoteChanges, QContactManager::Error *error) = 0;
+#endif
+
+    virtual bool fetchOOB(const QString &scope, const QString &key, QVariant *value) = 0;
+    virtual bool fetchOOB(const QString &scope, const QStringList &keys, QMap<QString, QVariant> *values) = 0;
+    virtual bool fetchOOB(const QString &scope, QMap<QString, QVariant> *values) = 0;
+
+    virtual bool storeOOB(const QString &scope, const QString &key, const QVariant &value) = 0;
+    virtual bool storeOOB(const QString &scope, const QMap<QString, QVariant> &values) = 0;
+
+    virtual bool removeOOB(const QString &scope, const QString &key) = 0;
+    virtual bool removeOOB(const QString &scope, const QStringList &keys) = 0;
+    virtual bool removeOOB(const QString &scope) = 0;
+
 Q_SIGNALS:
     void contactsPresenceChanged(const QList<QContactId> &contactsIds);
+    void syncContactsChanged(const QStringList &syncTargets);
 
 protected:
     bool m_mergePresenceChanges;

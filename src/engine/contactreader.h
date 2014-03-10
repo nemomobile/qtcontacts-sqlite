@@ -62,6 +62,13 @@ public:
             const QList<QContactId> &contactIds,
             const QContactFetchHint &fetchHint);
 
+    QContactManager::Error readContacts(
+            const QString &table,
+            QList<QContact> *contacts,
+            const QList<quint32> &databaseIds,
+            const QContactFetchHint &fetchHint,
+            bool relaxConstraints = false);
+
     QContactManager::Error readContactIds(
             QList<QContactId> *contactIds,
             const QContactFilter &filter,
@@ -76,19 +83,22 @@ public:
             const QContactId &first,
             const QContactId &second);
 
+    bool fetchOOB(const QString &scope, const QStringList &keys, QMap<QString, QVariant> *values);
+
 protected:
     QContactManager::Error readDeletedContactIds(
             QList<QContactId> *contactIds,
             const QContactFilter &filter);
 
     QContactManager::Error queryContacts(
-            const QString &table, QList<QContact> *contacts, const QContactFetchHint &fetchHint);
+            const QString &table, QList<QContact> *contacts, const QContactFetchHint &fetchHint, bool relaxConstraints = false);
 
     virtual void contactsAvailable(const QList<QContact> &contacts);
     virtual void contactIdsAvailable(const QList<QContactId> &contactIds);
 
 private:
     QSqlDatabase m_database;
+    QSqlQuery m_identityId;
     QMap<QString, QMap<QString, QSqlQuery> > m_cachedDetailTableQueries;
 };
 

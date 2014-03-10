@@ -1,3 +1,4 @@
+include(../aggregate.pri)
 include(../config.pri)
 
 QT += testlib

@@ -48,10 +48,6 @@ QT_BEGIN_NAMESPACE_CONTACTS
 static const int QContactDetail__FieldProvenance = (QContactDetail::FieldLinkedDetailUris+1);
 static const int QContactDetail__FieldModifiable = (QContactDetail::FieldLinkedDetailUris+2);
 
-// In QContactDetail::contexts(), we support additional values, "Default" and "Large"
-static const int QContactDetail__ContextDefault = (QContactDetail::ContextOther+1);
-static const int QContactDetail__ContextLarge = (QContactDetail::ContextOther+2);
-
 // In QContactName, we support the customLabel property
 static const int QContactName__FieldCustomLabel = (QContactName::FieldSuffix+1);
 
@@ -80,6 +76,8 @@ static const QContactDetail::DetailType QContactDetail__TypeStatusFlags = static
 // We support the QContactDeactivated detail type
 static const QContactDetail::DetailType QContactDetail__TypeDeactivated = static_cast<QContactDetail::DetailType>(QContactDetail::TypeVersion + 3);
 
+static const QContactDetail::DetailType QContactDetail__TypeIncidental = static_cast<QContactDetail::DetailType>(QContactDetail::TypeVersion + 4);
+
 QT_END_NAMESPACE_CONTACTS
 
 namespace QtContactsSqliteExtensions {
@@ -100,6 +98,9 @@ enum { DefaultMaximumPhoneNumberCharacters = 8 };
 
 QString normalizePhoneNumber(const QString &input, NormalizePhoneNumberFlags flags);
 QString minimizePhoneNumber(const QString &input, int maxCharacters = DefaultMaximumPhoneNumberCharacters);
+
+class ContactManagerEngine;
+ContactManagerEngine *contactManagerEngine(QContactManager &manager);
 
 }
 

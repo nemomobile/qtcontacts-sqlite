@@ -65,6 +65,22 @@
 class Job
 {
 public:
+    struct WriterProxy {
+        const ContactsEngine &engine;
+        QSqlDatabase &database;
+        ContactReader &reader;
+        mutable ContactWriter *writer;
+
+        WriterProxy(const ContactsEngine &e, QSqlDatabase &db, ContactReader &r) : engine(e), database(db), reader(r), writer(0) {}
+
+        ContactWriter *operator->() const {
+            if (!writer) {
+                writer = new ContactWriter(engine, database, &reader);
+            }
+            return writer;
+        }
+    };
+
     Job()
     {
     }
@@ -76,7 +92,7 @@ public:
     virtual QContactAbstractRequest *request() = 0;
     virtual void clear() = 0;
 
-    virtual void execute(const ContactsEngine &engine, QSqlDatabase &database, ContactReader *reader, ContactWriter *&writer) = 0;
+    virtual void execute(ContactReader *reader, WriterProxy &writer) = 0;
     virtual void update(QMutex *) {}
     virtual void updateState(QContactAbstractRequest::State state) = 0;
     virtual void setError(QContactManager::Error) {}
@@ -133,11 +149,9 @@ public:
     {
     }
 
-    void execute(const ContactsEngine &engine, QSqlDatabase &database, ContactReader *reader, ContactWriter *&writer)
+    void execute(ContactReader *, WriterProxy &writer)
     {
-        if (!writer)
-            writer = new ContactWriter(engine, database, reader);
-        m_error = writer->save(&m_contacts, m_definitionMask, 0, &m_errorMap, false, false);
+        m_error = writer->save(&m_contacts, m_definitionMask, 0, &m_errorMap, false, false, false);
     }
 
     void updateState(QContactAbstractRequest::State state)
@@ -170,10 +184,8 @@ public:
     {
     }
 
-    void execute(const ContactsEngine &engine, QSqlDatabase &database, ContactReader *reader, ContactWriter *&writer)
+    void execute(ContactReader *, WriterProxy &writer)
     {
-        if (!writer)
-            writer = new ContactWriter(engine, database, reader);
         m_errorMap.clear();
         m_error = writer->remove(m_contactIds, &m_errorMap, false);
     }
@@ -212,7 +224,7 @@ public:
     {
     }
 
-    void execute(const ContactsEngine &, QSqlDatabase &, ContactReader *reader, ContactWriter *&)
+    void execute(ContactReader *reader, WriterProxy &)
     {
         QList<QContact> contacts;
         m_error = reader->readContacts(
@@ -269,7 +281,7 @@ public:
     {
     }
 
-    void execute(const ContactsEngine &, QSqlDatabase &, ContactReader *reader, ContactWriter *&)
+    void execute(ContactReader *reader, WriterProxy &)
     {
         QList<QContactId> contactIds;
         m_error = reader->readContactIds(&contactIds, m_filter, m_sorting);
@@ -322,7 +334,7 @@ public:
     {
     }
 
-    void execute(const ContactsEngine &, QSqlDatabase &, ContactReader *reader, ContactWriter *&)
+    void execute(ContactReader *reader, WriterProxy &)
     {
         QList<QContact> contacts;
         m_error = reader->readContacts(
@@ -387,10 +399,8 @@ public:
     {
     }
 
-    void execute(const ContactsEngine &engine, QSqlDatabase &database, ContactReader *reader, ContactWriter *&writer)
+    void execute(ContactReader *, WriterProxy &writer)
     {
-        if (!writer)
-            writer = new ContactWriter(engine, database, reader);
         m_error = writer->save(m_relationships, &m_errorMap, false);
     }
 
@@ -420,10 +430,8 @@ public:
     {
     }
 
-    void execute(const ContactsEngine &engine, QSqlDatabase &database, ContactReader *reader, ContactWriter *&writer)
+    void execute(ContactReader *, WriterProxy &writer)
     {
-        if (!writer)
-            writer = new ContactWriter(engine, database, reader);
         m_error = writer->remove(m_relationships, &m_errorMap, false);
     }
 
@@ -455,7 +463,7 @@ public:
     {
     }
 
-    void execute(const ContactsEngine &, QSqlDatabase &, ContactReader *reader, ContactWriter *&)
+    void execute(ContactReader *reader, WriterProxy &)
     {
         m_error = reader->readRelationships(
                 &m_relationships,
@@ -741,7 +749,7 @@ void JobThread::run()
     }
 
     JobContactReader reader(database, this);
-    ContactWriter *writer = 0;
+    Job::WriterProxy writer(*m_engine, database, reader);
 
     QMutexLocker locker(&m_mutex);
 
@@ -751,11 +759,14 @@ void JobThread::run()
         } else {
             m_currentJob = m_pendingJobs.takeFirst();
             locker.unlock();
+
             QElapsedTimer timer;
             timer.start();
-            m_currentJob->execute(*m_engine, database, &reader, writer);
+
+            m_currentJob->execute(&reader, writer);
             QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Job executed in %1 ms : %2 : error = %3")
                     .arg(timer.elapsed()).arg(m_currentJob->description()).arg(m_currentJob->error()));
+
             locker.relock();
             m_finishedJobs.append(m_currentJob);
             m_currentJob = 0;
@@ -811,6 +822,7 @@ QContactManager::Error ContactsEngine::open()
         ContactNotifier::connect("contactsAdded", "au", this, SLOT(_q_contactsAdded(QVector<quint32>)));
         ContactNotifier::connect("contactsChanged", "au", this, SLOT(_q_contactsChanged(QVector<quint32>)));
         ContactNotifier::connect("contactsPresenceChanged", "au", this, SLOT(_q_contactsPresenceChanged(QVector<quint32>)));
+        ContactNotifier::connect("syncContactsChanged", "as", this, SLOT(_q_syncContactsChanged(QStringList)));
         ContactNotifier::connect("contactsRemoved", "au", this, SLOT(_q_contactsRemoved(QVector<quint32>)));
         ContactNotifier::connect("selfContactIdChanged", "uu", this, SLOT(_q_selfContactIdChanged(quint32,quint32)));
         ContactNotifier::connect("relationshipsAdded", "au", this, SLOT(_q_relationshipsAdded(QVector<quint32>)));
@@ -842,12 +854,9 @@ QList<QContactId> ContactsEngine::contactIds(
             const QList<QContactSortOrder> &sortOrders,
             QContactManager::Error* error) const
 {
-    if (!m_synchronousReader)
-        m_synchronousReader = new ContactReader(m_database);
-
     QList<QContactId> contactIds;
 
-    QContactManager::Error err = m_synchronousReader->readContactIds(&contactIds, filter, sortOrders);
+    QContactManager::Error err = reader()->readContactIds(&contactIds, filter, sortOrders);
     if (error)
         *error = err;
     return contactIds;
@@ -859,12 +868,9 @@ QList<QContact> ContactsEngine::contacts(
             const QContactFetchHint &fetchHint,
             QContactManager::Error* error) const
 {
-    if (!m_synchronousReader)
-        m_synchronousReader = new ContactReader(m_database);
-
     QList<QContact> contacts;
 
-    QContactManager::Error err = m_synchronousReader->readContacts(
+    QContactManager::Error err = reader()->readContacts(
                 QLatin1String("SynchronousFilter"),
                 &contacts,
                 filter,
@@ -894,12 +900,10 @@ QList<QContact> ContactsEngine::contacts(
             QContactManager::Error *error) const
 {
     Q_UNUSED(errorMap);
-    if (!m_synchronousReader)
-        m_synchronousReader = new ContactReader(m_database);
 
     QList<QContact> contacts;
 
-    QContactManager::Error err = m_synchronousReader->readContacts(
+    QContactManager::Error err = reader()->readContacts(
                 QLatin1String("SynchronousIds"),
                 &contacts,
                 localIds,
@@ -937,14 +941,7 @@ bool ContactsEngine::saveContacts(
             QMap<int, QContactManager::Error> *errorMap,
             QContactManager::Error *error)
 {
-    if (!m_synchronousWriter) {
-        if (!m_synchronousReader) {
-            m_synchronousReader = new ContactReader(m_database);
-        }
-        m_synchronousWriter = new ContactWriter(*this, m_database, m_synchronousReader);
-    }
-
-    QContactManager::Error err = m_synchronousWriter->save(contacts, definitionMask, 0, errorMap, false, false);
+    QContactManager::Error err = writer()->save(contacts, definitionMask, 0, errorMap, false, false, false);
 
     if (error)
         *error = err;
@@ -963,14 +960,7 @@ bool ContactsEngine::removeContacts(
             QMap<int, QContactManager::Error> *errorMap,
             QContactManager::Error* error)
 {
-    if (!m_synchronousWriter) {
-        if (!m_synchronousReader) {
-            m_synchronousReader = new ContactReader(m_database);
-        }
-        m_synchronousWriter = new ContactWriter(*this, m_database, m_synchronousReader);
-    }
-
-    QContactManager::Error err = m_synchronousWriter->remove(contactIds, errorMap, false);
+    QContactManager::Error err = writer()->remove(contactIds, errorMap, false);
     if (error)
         *error = err;
     return err == QContactManager::NoError;
@@ -978,11 +968,8 @@ bool ContactsEngine::removeContacts(
 
 QContactId ContactsEngine::selfContactId(QContactManager::Error* error) const
 {
-    if (!m_synchronousReader)
-        m_synchronousReader = new ContactReader(m_database);
-
     QContactId contactId;
-    QContactManager::Error err = m_synchronousReader->getIdentity(
+    QContactManager::Error err = reader()->getIdentity(
             ContactsDatabase::SelfContactId, &contactId);
     if (error)
         *error = err;
@@ -1002,9 +989,6 @@ QList<QContactRelationship> ContactsEngine::relationships(
         QContactRelationship::Role role,
         QContactManager::Error *error) const
 {
-    if (!m_synchronousReader)
-        m_synchronousReader = new ContactReader(m_database);
-
     QContactId first = ContactId::apiId(participant);
     QContactId second;
 
@@ -1012,7 +996,7 @@ QList<QContactRelationship> ContactsEngine::relationships(
         qSwap(first, second);
 
     QList<QContactRelationship> relationships;
-    QContactManager::Error err = m_synchronousReader->readRelationships(
+    QContactManager::Error err = reader()->readRelationships(
                 &relationships, relationshipType, first, second);
     if (error)
         *error = err;
@@ -1024,14 +1008,7 @@ bool ContactsEngine::saveRelationships(
         QMap<int, QContactManager::Error> *errorMap,
         QContactManager::Error *error)
 {
-    if (!m_synchronousWriter) {
-        if (!m_synchronousReader) {
-            m_synchronousReader = new ContactReader(m_database);
-        }
-        m_synchronousWriter = new ContactWriter(*this, m_database, m_synchronousReader);
-    }
-
-    QContactManager::Error err = m_synchronousWriter->save(*relationships, errorMap, false);
+    QContactManager::Error err = writer()->save(*relationships, errorMap, false);
     if (error)
         *error = err;
 
@@ -1047,14 +1024,7 @@ bool ContactsEngine::removeRelationships(
         QMap<int, QContactManager::Error> *errorMap,
         QContactManager::Error *error)
 {
-    if (!m_synchronousWriter) {
-        if (!m_synchronousReader) {
-            m_synchronousReader = new ContactReader(m_database);
-        }
-        m_synchronousWriter = new ContactWriter(*this, m_database, m_synchronousReader);
-    }
-
-    QContactManager::Error err = m_synchronousWriter->remove(relationships, errorMap, false);
+    QContactManager::Error err = writer()->remove(relationships, errorMap, false);
     if (error)
         *error = err;
     return err == QContactManager::NoError;
@@ -1144,6 +1114,75 @@ void ContactsEngine::regenerateDisplayLabel(QContact &contact) const
     }
 
     setContactDisplayLabel(&contact, label);
+}
+
+#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
+bool ContactsEngine::fetchSyncContacts(const QString &syncTarget, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
+                                       QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
+                                       QContactManager::Error *error)
+{
+    Q_ASSERT(error);
+
+    *error = writer()->fetchSyncContacts(syncTarget, lastSync, exportedIds, syncContacts, addedContacts, deletedContactIds);
+    return (*error == QContactManager::NoError);
+}
+
+bool ContactsEngine::storeSyncContacts(const QString &syncTarget, ConflictResolutionPolicy conflictPolicy,
+                                       const QList<QPair<QContact, QContact> > &remoteChanges, QContactManager::Error *error)
+{
+    Q_ASSERT(error);
+
+    *error = writer()->updateSyncContacts(syncTarget, conflictPolicy, remoteChanges);
+    return (*error == QContactManager::NoError);
+}
+#endif
+
+bool ContactsEngine::fetchOOB(const QString &scope, const QString &key, QVariant *value)
+{
+    QMap<QString, QVariant> values;
+    if (reader()->fetchOOB(scope, QStringList() << key, &values)) {
+        *value = values[key];
+        return true;
+    }
+
+    return false;
+}
+
+bool ContactsEngine::fetchOOB(const QString &scope, const QStringList &keys, QMap<QString, QVariant> *values)
+{
+    return reader()->fetchOOB(scope, keys, values);
+}
+
+bool ContactsEngine::fetchOOB(const QString &scope, QMap<QString, QVariant> *values)
+{
+    return reader()->fetchOOB(scope, QStringList(), values);
+}
+
+bool ContactsEngine::storeOOB(const QString &scope, const QString &key, const QVariant &value)
+{
+    QMap<QString, QVariant> values;
+    values.insert(key, value);
+    return writer()->storeOOB(scope, values);
+}
+
+bool ContactsEngine::storeOOB(const QString &scope, const QMap<QString, QVariant> &values)
+{
+    return writer()->storeOOB(scope, values);
+}
+
+bool ContactsEngine::removeOOB(const QString &scope, const QString &key)
+{
+    return writer()->removeOOB(scope, QStringList() << key);
+}
+
+bool ContactsEngine::removeOOB(const QString &scope, const QStringList &keys)
+{
+    return writer()->removeOOB(scope, keys);
+}
+
+bool ContactsEngine::removeOOB(const QString &scope)
+{
+    return writer()->removeOOB(scope, QStringList());
 }
 
 bool ContactsEngine::setContactDisplayLabel(QContact *contact, const QString &label)
@@ -1249,6 +1288,11 @@ void ContactsEngine::_q_contactsPresenceChanged(const QVector<quint32> &contactI
     }
 }
 
+void ContactsEngine::_q_syncContactsChanged(const QStringList &syncTargets)
+{
+    emit syncContactsChanged(syncTargets);
+}
+
 void ContactsEngine::_q_contactsRemoved(const QVector<quint32> &contactIds)
 {
     emit contactsRemoved(idList(contactIds));
@@ -1268,3 +1312,20 @@ void ContactsEngine::_q_relationshipsRemoved(const QVector<quint32> &contactIds)
 {
     emit relationshipsRemoved(idList(contactIds));
 }
+
+ContactReader *ContactsEngine::reader() const
+{
+    if (!m_synchronousReader) {
+        m_synchronousReader = new ContactReader(m_database);
+    }
+    return m_synchronousReader;
+}
+
+ContactWriter *ContactsEngine::writer()
+{
+    if (!m_synchronousWriter) {
+        m_synchronousWriter = new ContactWriter(*this, m_database, reader());
+    }
+    return m_synchronousWriter;
+}
+

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Jolla Ltd. <mattthew.vogt@jollamobile.com>
+ * Copyright (C) 2014 Jolla Ltd. <mattthew.vogt@jollamobile.com>
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -29,47 +29,18 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
  */
 
-#ifndef QCONTACTSTATUSFLAGS_H
-#define QCONTACTSTATUSFLAGS_H
+#ifndef QCONTACTINCIDENTAL_H
+#define QCONTACTINCIDENTAL_H
 
 #include <QContactDetail>
-#include <QContactDetailFilter>
 
 QT_BEGIN_NAMESPACE_CONTACTS
 
-class QContactStatusFlags : public QContactDetail
+class QContactIncidental : public QContactDetail
 {
 public:
-    Q_DECLARE_CUSTOM_CONTACT_DETAIL(QContactStatusFlags)
-
-    enum {
-        FieldFlags = 0
-    };
-
-    enum Flag {
-        HasPhoneNumber = (1 << 0),
-        HasEmailAddress = (1 << 1),
-        HasOnlineAccount = (1 << 2),
-        IsOnline = (1 << 3),
-        IsDeactivated = (1 << 4),
-        IsIncidental = (1 << 5),
-    };
-    Q_DECLARE_FLAGS(Flags, Flag)
-
-    void setFlag(Flag flag, bool b);
-    void setFlags(Flags flags);
-    Flags flags() const;
-
-    void setFlagsValue(quint64 value);
-    quint64 flagsValue() const;
-
-    bool testFlag(Flag flag) const;
-
-    static QContactDetailFilter matchFlag(Flag flag, QContactFilter::MatchFlags matchFlags = QContactFilter::MatchContains);
-    static QContactDetailFilter matchFlags(Flags flags, QContactFilter::MatchFlags matchFlags = QContactFilter::MatchContains);
+    Q_DECLARE_CUSTOM_CONTACT_DETAIL(QContactIncidental)
 };
-
-Q_DECLARE_OPERATORS_FOR_FLAGS(QContactStatusFlags::Flags)
 
 QT_END_NAMESPACE_CONTACTS
 

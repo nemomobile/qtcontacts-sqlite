@@ -117,6 +117,11 @@ private slots:
     void deactivationSingle();
     void deactivationMultiple();
 
+    void fetchSyncContacts();
+    void storeSyncContacts();
+
+    void testOOB();
+
 private:
     void waitForSignalPropagation();
 
@@ -1398,6 +1403,14 @@ void tst_Aggregation::promotionToSingleLocal()
     QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
     QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(syncAlice.id()));
 
+    // the created local contact is incidental; the others are not
+    QVERIFY(!localAlice.details<QContactIncidental>().isEmpty());
+    QVERIFY(localAlice.detail<QContactStatusFlags>().testFlag(QContactStatusFlags::IsIncidental));
+    QVERIFY(syncAlice.details<QContactIncidental>().isEmpty());
+    QVERIFY(!syncAlice.detail<QContactStatusFlags>().testFlag(QContactStatusFlags::IsIncidental));
+    QVERIFY(aggregateAlice.details<QContactIncidental>().isEmpty());
+    QVERIFY(!aggregateAlice.detail<QContactStatusFlags>().testFlag(QContactStatusFlags::IsIncidental));
+
     // finally, save a phone number in the aggregate.
     // this should get downpromoted to the local.
     // no more local contacts should be generated.
@@ -1589,7 +1602,7 @@ void tst_Aggregation::uniquenessConstraints()
     QVERIFY(!m_cm->saveContact(&aggregateAlice)); // should fail, uniqueness.
     QVERIFY(aggregateAlice.removeDetail(&anotherBd));
     QVERIFY(m_cm->saveContact(&aggregateAlice)); // back to just one, should succeed.
-    QVERIFY(m_cm->contact(retrievalId(aggregateAlice)).detail<QContactBirthday>().dateTime() == aliceBirthday);
+    QVERIFY(m_cm->contact(retrievalId(aggregateAlice)).detail<QContactBirthday>().date() == aliceBirthday.date());
     // now save a different birthday in another contact aggregated into alice.
     QContact testsyncAlice;
     QContactSyncTarget tsst;
@@ -1608,7 +1621,7 @@ void tst_Aggregation::uniquenessConstraints()
     QVERIFY(m_cm->saveContact(&testsyncAlice)); // should get aggregated into aggregateAlice.
     aggregateAlice = m_cm->contact(retrievalId(aggregateAlice)); // reload
     QCOMPARE(aggregateAlice.details<QContactBirthday>().size(), 1); // should still only have one birthday - local should take precedence.
-    QVERIFY(aggregateAlice.detail<QContactBirthday>().dateTime() == aliceBirthday);
+    QVERIFY(aggregateAlice.detail<QContactBirthday>().date() == aliceBirthday.date());
     aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
 
     // test uniqueness constraint of name detail.
@@ -2670,6 +2683,25 @@ void tst_Aggregation::aggregationHeuristic_data()
     QTest::newRow("nickname match with lastname") << false
         << "" << "" << "Gumboots" << "Freddy" << "unspecified" << "" << "" << ""
         << "" << "" << "" << "Freddy" << "unspecified" << "" << "" << "";
+
+    QTest::newRow("partial using phonenumber") << true
+        << "Frederick" << "" << "" << "" << "unspecified" << "111992888337" << "" << ""
+        << "Fred" << "" << "" << "" << "unspecified" << "111992888337" << "" << "";
+    QTest::newRow("partial using multiple phonenumbers") << true
+        << "Frederick" << "" << "" << "" << "unspecified" << "111992888337" << "" << ""
+        << "Fred" << "" << "" << "" << "unspecified" << "111992888338|111992888337" << "" << "";
+    QTest::newRow("partial using email address") << true
+        << "Frederick" << "" << "" << "" << "unspecified" << "" << "gumboots@test.com" << ""
+        << "Fred" << "" << "" << "" << "unspecified" << "" << "gumboots@test.com" << "";
+    QTest::newRow("partial using multiple email addresses") << true
+        << "Frederick" << "" << "" << "" << "unspecified" << "" << "gumboots@test.com" << ""
+        << "Fred" << "" << "" << "" << "unspecified" << "" << "wellingtons@test.com|gumboots@test.com" << "";
+    QTest::newRow("partial using account uri") << true
+        << "Frederick" << "" << "" << "" << "unspecified" << "" << "" << "freddy00001@socialaccount"
+        << "Fred" << "" << "" << "" << "unspecified" << "" << "" << "freddy00001@socialaccount";
+    QTest::newRow("partial using multiple account uris") << true
+        << "Frederick" << "" << "" << "" << "unspecified" << "" << "" << "freddy00001@socialaccount"
+        << "Fred" << "" << "" << "" << "unspecified" << "" << "" << "freddy11111@socialaccount|freddy00001@socialaccount";
 }
 
 void tst_Aggregation::aggregationHeuristic()
@@ -2761,18 +2793,27 @@ void tst_Aggregation::aggregationHeuristic()
         }
 
         if (!bPhoneNumber.isEmpty()) {
-            bphn.setNumber(bPhoneNumber);
-            b.saveDetail(&bphn);
+            foreach (QString number, bPhoneNumber.split(QString::fromLatin1("|"))){
+                bphn = QContactPhoneNumber();
+                bphn.setNumber(number);
+                b.saveDetail(&bphn);
+            }
         }
 
         if (!bEmailAddress.isEmpty()) {
-            bem.setEmailAddress(bEmailAddress);
-            b.saveDetail(&bem);
+            foreach (QString address, bEmailAddress.split(QString::fromLatin1("|"))){
+                bem = QContactEmailAddress();
+                bem.setEmailAddress(address);
+                b.saveDetail(&bem);
+            }
         }
 
         if (!bOnlineAccount.isEmpty()) {
-            boa.setAccountUri(bOnlineAccount);
-            b.saveDetail(&boa);
+            foreach (QString address, bOnlineAccount.split(QString::fromLatin1("|"))){
+                bphn = QContactOnlineAccount();
+                boa.setAccountUri(address);
+                b.saveDetail(&boa);
+            }
         }
 
         // Now perform the saves and see if we get some aggregation as required.
@@ -3184,6 +3225,9 @@ void tst_Aggregation::correctDetails()
 
 void tst_Aggregation::batchSemantics()
 {
+    // TODO: the following comment is no longer true; we still apply batch semantics rules
+    // for simplification of possible cases, however
+
     // for performance reasons, the engine assumes:
     // 1) sync targets of all contacts in a batch save must be the same
     // 2) no two contacts from the same sync target should be aggregated together
@@ -3834,6 +3878,1456 @@ void tst_Aggregation::deactivationMultiple()
     QVERIFY(contactIds.contains(ContactId::apiId(syncAlice)));
     QVERIFY(contactIds.contains(ContactId::apiId(otherAlice)));
     QVERIFY(contactIds.contains(ContactId::apiId(aggregateAlice)));
+}
+
+void tst_Aggregation::fetchSyncContacts()
+{
+    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(*m_cm);
+
+    QSignalSpy syncSpy(cme, SIGNAL(syncContactsChanged(QStringList)));
+
+    QList<QContact> syncContacts;
+    QList<QContact> addedContacts;
+    QList<QContactId> exportedIds;
+    QList<QContactId> deletedIds;
+
+    QDateTime initialTime = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
+    QTest::qWait(1000);
+
+    // Initial test - ensure that nothing is reported for sync
+    QContactManager::Error err;
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    QCOMPARE(err, QContactManager::NoError);
+    QCOMPARE(syncContacts.count(), 0);
+    QCOMPARE(addedContacts.count(), 0);
+    QCOMPARE(deletedIds.count(), 0);
+    QCOMPARE(syncSpy.count(), 0);
+
+    // Store a sync target contact originating at this service
+    QContactName n;
+    n.setFirstName("Mad");
+    n.setLastName("Hatter");
+
+    QContactSyncTarget stTarget;
+    stTarget.setSyncTarget("sync-test");
+
+    QContact stc;
+    stc.saveDetail(&n);
+    stc.saveDetail(&stTarget);
+
+    QContactEmailAddress e;
+    e.setEmailAddress("mad.hatter@example.org");
+    stc.saveDetail(&e);
+
+    QVERIFY(m_cm->saveContact(&stc));
+
+    QTRY_COMPARE(syncSpy.count(), 1);
+    QVariantList signalArgs(syncSpy.takeFirst());
+    QCOMPARE(syncSpy.count(), 0);
+    QCOMPARE(signalArgs.count(), 1);
+    QStringList changedSyncTargets(signalArgs.first().value<QStringList>());
+    QCOMPARE(changedSyncTargets.count(), 1);
+    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("sync-test"));
+
+    stc = m_cm->contact(retrievalId(stc));
+
+    QCOMPARE(stc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
+    QContactId a1 = stc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id();
+
+    syncContacts.clear();
+    addedContacts.clear();
+    deletedIds.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    QCOMPARE(err, QContactManager::NoError);
+    QCOMPARE(syncContacts.count(), 1);
+    QCOMPARE(addedContacts.count(), 0);
+    QCOMPARE(deletedIds.count(), 0);
+
+    // The partial aggregate should have the same ID as the constituent it was derived from
+    QContact pa = syncContacts.at(0);
+    QCOMPARE(pa.id(), stc.id());
+    QCOMPARE(pa.details<QContactEmailAddress>().count(), 1);
+
+    // Invalid since time is equivalent to not having a time limitation
+    syncContacts.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", QDateTime(), exportedIds, &syncContacts, 0, 0, &err));
+    QCOMPARE(err, QContactManager::NoError);
+    QVERIFY(syncContacts.count() >= 1);
+
+    // Create a local contact which is merged with the test contact
+    QContact lc;
+    lc.saveDetail(&n);
+
+    e.setEmailAddress("cheshire.cat@example.org");
+    lc.saveDetail(&e);
+
+    QVERIFY(m_cm->saveContact(&lc));
+
+    QTRY_COMPARE(syncSpy.count(), 1);
+    signalArgs = syncSpy.takeFirst();
+    QCOMPARE(syncSpy.count(), 0);
+    QCOMPARE(signalArgs.count(), 1);
+    changedSyncTargets = signalArgs.first().value<QStringList>();
+    QCOMPARE(changedSyncTargets.count(), 1);
+    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("sync-test"));
+
+    lc = m_cm->contact(retrievalId(lc));
+
+    QCOMPARE(lc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
+    QCOMPARE(lc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id(), a1);
+
+    syncContacts.clear();
+    addedContacts.clear();
+    deletedIds.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    QCOMPARE(err, QContactManager::NoError);
+    QCOMPARE(syncContacts.count(), 1);
+    QCOMPARE(addedContacts.count(), 0);
+    QCOMPARE(deletedIds.count(), 0);
+
+    pa = syncContacts.at(0);
+    QCOMPARE(pa.id(), stc.id());
+    QCOMPARE(pa.details<QContactEmailAddress>().count(), 2);
+    QSet<QString> addresses;
+    foreach (const QContactEmailAddress &addr, pa.details<QContactEmailAddress>()) {
+        addresses.insert(addr.emailAddress());
+    }
+    QVERIFY(addresses.contains(stc.detail<QContactEmailAddress>().emailAddress()));
+    QVERIFY(addresses.contains(lc.detail<QContactEmailAddress>().emailAddress()));
+
+    // Create another local contact which is merged with the test contact (the first local becomes was_local)
+    QContact alc;
+    alc.saveDetail(&n);
+
+    e.setEmailAddress("white.rabbit@example.org");
+    alc.saveDetail(&e);
+
+    QVERIFY(m_cm->saveContact(&alc));
+
+    QTRY_COMPARE(syncSpy.count(), 1);
+    signalArgs = syncSpy.takeFirst();
+    QCOMPARE(syncSpy.count(), 0);
+    QCOMPARE(signalArgs.count(), 1);
+    changedSyncTargets = signalArgs.first().value<QStringList>();
+    QCOMPARE(changedSyncTargets.count(), 1);
+    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("sync-test"));
+
+    alc = m_cm->contact(retrievalId(alc));
+
+    QCOMPARE(alc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
+    QCOMPARE(alc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id(), a1);
+
+    syncContacts.clear();
+    addedContacts.clear();
+    deletedIds.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    QCOMPARE(err, QContactManager::NoError);
+    QCOMPARE(syncContacts.count(), 1);
+    QCOMPARE(addedContacts.count(), 0);
+    QCOMPARE(deletedIds.count(), 0);
+
+    pa = syncContacts.at(0);
+    QCOMPARE(pa.id(), stc.id());
+    QCOMPARE(pa.details<QContactEmailAddress>().count(), 3);
+    addresses.clear();
+    foreach (const QContactEmailAddress &addr, pa.details<QContactEmailAddress>()) {
+        addresses.insert(addr.emailAddress());
+    }
+    QVERIFY(addresses.contains(stc.detail<QContactEmailAddress>().emailAddress()));
+    QVERIFY(addresses.contains(lc.detail<QContactEmailAddress>().emailAddress()));
+    QVERIFY(addresses.contains(alc.detail<QContactEmailAddress>().emailAddress()));
+
+    // Create a different sync target contact which is merged with the test contact
+    QContact dstc;
+    dstc.saveDetail(&n);
+
+    e.setEmailAddress("lewis.carroll@example.org");
+    dstc.saveDetail(&e);
+
+    QContactSyncTarget dstTarget;
+    dstTarget.setSyncTarget("different-sync-target");
+    dstc.saveDetail(&dstTarget);
+
+    QVERIFY(m_cm->saveContact(&dstc));
+
+    QTRY_COMPARE(syncSpy.count(), 1);
+    signalArgs = syncSpy.takeFirst();
+    QCOMPARE(syncSpy.count(), 0);
+    QCOMPARE(signalArgs.count(), 1);
+    changedSyncTargets = signalArgs.first().value<QStringList>();
+    QCOMPARE(changedSyncTargets.count(), 1);
+    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("different-sync-target"));
+
+    dstc = m_cm->contact(retrievalId(dstc));
+
+    QCOMPARE(dstc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
+    QCOMPARE(dstc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id(), a1);
+
+    syncContacts.clear();
+    addedContacts.clear();
+    deletedIds.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    QCOMPARE(err, QContactManager::NoError);
+    QCOMPARE(syncContacts.count(), 1);
+    QCOMPARE(addedContacts.count(), 0);
+    QCOMPARE(deletedIds.count(), 0);
+
+    // Data from the other sync target should not be be returned here
+    pa = syncContacts.at(0);
+    QCOMPARE(pa.id(), stc.id());
+    QCOMPARE(pa.details<QContactEmailAddress>().count(), 3);
+    addresses.clear();
+    foreach (const QContactEmailAddress &addr, pa.details<QContactEmailAddress>()) {
+        addresses.insert(addr.emailAddress());
+    }
+    QVERIFY(addresses.contains(stc.detail<QContactEmailAddress>().emailAddress()));
+    QVERIFY(addresses.contains(lc.detail<QContactEmailAddress>().emailAddress()));
+    QVERIFY(addresses.contains(alc.detail<QContactEmailAddress>().emailAddress()));
+    QVERIFY(!addresses.contains(dstc.detail<QContactEmailAddress>().emailAddress()));
+
+    // Store an additional sync target contact originating at this service, merged into the same aggregate
+    QContact astc;
+    astc.saveDetail(&n);
+    astc.saveDetail(&stTarget);
+
+    e.setEmailAddress("march.hare@example.org");
+    astc.saveDetail(&e);
+
+    QVERIFY(m_cm->saveContact(&astc));
+
+    QTRY_COMPARE(syncSpy.count(), 1);
+    signalArgs = syncSpy.takeFirst();
+    QCOMPARE(syncSpy.count(), 0);
+    QCOMPARE(signalArgs.count(), 1);
+    changedSyncTargets = signalArgs.first().value<QStringList>();
+    QCOMPARE(changedSyncTargets.count(), 1);
+    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("sync-test"));
+
+    astc = m_cm->contact(retrievalId(astc));
+
+    QCOMPARE(astc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
+    QCOMPARE(astc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id(), a1);
+
+    // We should have two partial aggregates now
+    syncContacts.clear();
+    addedContacts.clear();
+    deletedIds.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    QCOMPARE(err, QContactManager::NoError);
+    QCOMPARE(syncContacts.count(), 2);
+    QCOMPARE(addedContacts.count(), 0);
+    QCOMPARE(deletedIds.count(), 0);
+
+    QVERIFY(syncContacts.at(0).id() != syncContacts.at(1).id());
+    for (int i = 0; i < 2; ++i) {
+        // Each partial aggregate should contain their own data, plus any shared local/was_local data
+        pa = syncContacts.at(i);
+        if (pa.id() == stc.id()) {
+            QCOMPARE(pa.details<QContactEmailAddress>().count(), 3);
+            addresses.clear();
+            foreach (const QContactEmailAddress &addr, pa.details<QContactEmailAddress>()) {
+                addresses.insert(addr.emailAddress());
+            }
+            QVERIFY(addresses.contains(stc.detail<QContactEmailAddress>().emailAddress()));
+            QVERIFY(addresses.contains(lc.detail<QContactEmailAddress>().emailAddress()));
+            QVERIFY(addresses.contains(alc.detail<QContactEmailAddress>().emailAddress()));
+        } else {
+            QCOMPARE(pa.id(), astc.id());
+            QCOMPARE(pa.details<QContactEmailAddress>().count(), 3);
+            addresses.clear();
+            foreach (const QContactEmailAddress &addr, pa.details<QContactEmailAddress>()) {
+                addresses.insert(addr.emailAddress());
+            }
+            QVERIFY(addresses.contains(astc.detail<QContactEmailAddress>().emailAddress()));
+            QVERIFY(addresses.contains(lc.detail<QContactEmailAddress>().emailAddress()));
+            QVERIFY(addresses.contains(alc.detail<QContactEmailAddress>().emailAddress()));
+        }
+    }
+
+    // Create a time boundary here
+    QDateTime nextTime = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
+    QTest::qWait(1000);
+
+    // Add an new local contact, which is unrelated
+    QContact nlc;
+
+    QContactName n2;
+    n2.setFirstName("The Queen");
+    n2.setLastName("of Hearts");
+    nlc.saveDetail(&n2);
+
+    e.setEmailAddress("her.majesty@example.org");
+    nlc.saveDetail(&e);
+
+    QVERIFY(m_cm->saveContact(&nlc));
+
+    // No sync target is affected by this store
+    QVERIFY(!syncSpy.wait(1000));
+
+    nlc = m_cm->contact(retrievalId(nlc));
+
+    QCOMPARE(nlc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
+    QVERIFY(nlc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id() != a1);
+    QContactId a2 = nlc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id();
+
+    // The new contact will be reported as newly added
+    syncContacts.clear();
+    addedContacts.clear();
+    deletedIds.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    QCOMPARE(err, QContactManager::NoError);
+    QCOMPARE(syncContacts.count(), 2);
+    QCOMPARE(addedContacts.count(), 1);
+    QCOMPARE(deletedIds.count(), 0);
+
+    pa = syncContacts.at(0);
+    QVERIFY(pa.id() == stc.id() || pa.id() == astc.id());
+    pa = syncContacts.at(1);
+    QVERIFY(pa.id() == stc.id() || pa.id() == astc.id());
+
+    // Added contacts return the IDs of their local constituents
+    pa = addedContacts.at(0);
+    QCOMPARE(pa.id(), nlc.id());
+    QCOMPARE(pa.details<QContactEmailAddress>().count(), 1);
+    addresses.clear();
+    foreach (const QContactEmailAddress &addr, pa.details<QContactEmailAddress>()) {
+        addresses.insert(addr.emailAddress());
+    }
+    QVERIFY(addresses.contains(nlc.detail<QContactEmailAddress>().emailAddress()));
+
+    // Create a time boundary here
+    QDateTime afterAdditionTime = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
+    QTest::qWait(1000);
+
+    // Test the timestamp filtering - fetch using nextTime
+    syncContacts.clear();
+    addedContacts.clear();
+    deletedIds.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", nextTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    QCOMPARE(err, QContactManager::NoError);
+    QCOMPARE(syncContacts.count(), 0);
+    QCOMPARE(addedContacts.count(), 1);
+    QCOMPARE(deletedIds.count(), 0);
+
+    pa = addedContacts.at(0);
+    QCOMPARE(pa.id(), nlc.id());
+
+    // Fetch with afterAddition
+    syncContacts.clear();
+    addedContacts.clear();
+    deletedIds.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", afterAdditionTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    QCOMPARE(err, QContactManager::NoError);
+    QCOMPARE(syncContacts.count(), 0);
+    QCOMPARE(addedContacts.count(), 0);
+    QCOMPARE(deletedIds.count(), 0);
+
+    // Report the added contact in the previously-exported list, as being of relevance
+    exportedIds.append(nlc.id());
+
+    syncContacts.clear();
+    addedContacts.clear();
+    deletedIds.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", afterAdditionTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    QCOMPARE(err, QContactManager::NoError);
+    QCOMPARE(syncContacts.count(), 0);
+    QCOMPARE(addedContacts.count(), 0);
+    QCOMPARE(deletedIds.count(), 0);
+
+    syncContacts.clear();
+    addedContacts.clear();
+    deletedIds.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    QCOMPARE(err, QContactManager::NoError);
+    QCOMPARE(syncContacts.count(), 3);
+    QCOMPARE(addedContacts.count(), 0);
+    QCOMPARE(deletedIds.count(), 0);
+
+    // The added contact is now in our sync set
+    QSet<QContactId> paIds;
+    foreach (const QContact &pac, syncContacts) {
+        paIds.insert(pac.id());
+    }
+    QCOMPARE(paIds, (QList<QContactId>() << stc.id() << astc.id() << nlc.id()).toSet());
+
+    // Merge another contact into the extraneous contact, from a different sync target
+    QContact nastc;
+    nastc.saveDetail(&n2);
+
+    nastc.saveDetail(&dstTarget);
+
+    e.setEmailAddress("caterpillar@example.org");
+    nastc.saveDetail(&e);
+
+    QVERIFY(m_cm->saveContact(&nastc));
+
+    QTRY_COMPARE(syncSpy.count(), 1);
+    signalArgs = syncSpy.takeFirst();
+    QCOMPARE(syncSpy.count(), 0);
+    QCOMPARE(signalArgs.count(), 1);
+    changedSyncTargets = signalArgs.first().value<QStringList>();
+    QCOMPARE(changedSyncTargets.count(), 1);
+    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("different-sync-target"));
+
+    nastc = m_cm->contact(retrievalId(nastc));
+
+    QCOMPARE(nastc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
+    QCOMPARE(nastc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id(), a2);
+
+    QContact na = m_cm->contact(a2);
+    QCOMPARE(na.details<QContactEmailAddress>().count(), 2);
+    addresses.clear();
+    foreach (const QContactEmailAddress &addr, na.details<QContactEmailAddress>()) {
+        addresses.insert(addr.emailAddress());
+    }
+    QVERIFY(addresses.contains(nlc.detail<QContactEmailAddress>().emailAddress()));
+    QVERIFY(addresses.contains(nastc.detail<QContactEmailAddress>().emailAddress()));
+
+    // Filter so only this contact is included
+    syncContacts.clear();
+    addedContacts.clear();
+    deletedIds.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", afterAdditionTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    QCOMPARE(err, QContactManager::NoError);
+    QCOMPARE(syncContacts.count(), 1);
+    QCOMPARE(addedContacts.count(), 0);
+    QCOMPARE(deletedIds.count(), 0);
+
+    // The data from the other sync target is excluded
+    pa = syncContacts.at(0);
+    QCOMPARE(pa.id(), nlc.id());
+    QCOMPARE(pa.details<QContactEmailAddress>().count(), 1);
+    addresses.clear();
+    foreach (const QContactEmailAddress &addr, pa.details<QContactEmailAddress>()) {
+        addresses.insert(addr.emailAddress());
+    }
+    QVERIFY(addresses.contains(nlc.detail<QContactEmailAddress>().emailAddress()));
+    QVERIFY(!addresses.contains(nastc.detail<QContactEmailAddress>().emailAddress()));
+
+    QDateTime finalAdditionTime = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
+    QTest::qWait(1000);
+
+    // Create a final new contact, with a different sync target
+    QContact fstc;
+
+    QContactName n3;
+    n3.setFirstName("Mock");
+    n3.setLastName("Turtle");
+    fstc.saveDetail(&n3);
+
+    fstc.saveDetail(&dstTarget);
+
+    QVERIFY(m_cm->saveContact(&fstc));
+
+    QTRY_COMPARE(syncSpy.count(), 1);
+    signalArgs = syncSpy.takeFirst();
+    QCOMPARE(syncSpy.count(), 0);
+    QCOMPARE(signalArgs.count(), 1);
+    changedSyncTargets = signalArgs.first().value<QStringList>();
+    QCOMPARE(changedSyncTargets.count(), 1);
+    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("different-sync-target"));
+
+    fstc = m_cm->contact(retrievalId(fstc));
+
+    QCOMPARE(fstc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
+    QVERIFY(fstc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id() != a1);
+    QVERIFY(fstc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id() != a2);
+    QContactId a3 = fstc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id();
+
+    // This contact should not be reported to us, because of the sync target
+    syncContacts.clear();
+    addedContacts.clear();
+    deletedIds.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", finalAdditionTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    QCOMPARE(err, QContactManager::NoError);
+    QCOMPARE(syncContacts.count(), 0);
+    QCOMPARE(addedContacts.count(), 0);
+    QCOMPARE(deletedIds.count(), 0);
+
+    // Now make the aggregate a favorite, which will cause the incidental creation of a local
+    QContact fa = m_cm->contact(a3);
+
+    QContactFavorite f = fa.detail<QContactFavorite>();
+    f.setFavorite(true);
+    QVERIFY(fa.saveDetail(&f));
+    QVERIFY(m_cm->saveContact(&fa));
+
+    QTRY_COMPARE(syncSpy.count(), 1);
+    signalArgs = syncSpy.takeFirst();
+    QCOMPARE(syncSpy.count(), 0);
+    QCOMPARE(signalArgs.count(), 1);
+    changedSyncTargets = signalArgs.first().value<QStringList>();
+    QCOMPARE(changedSyncTargets.count(), 1);
+    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("different-sync-target"));
+
+    fa = m_cm->contact(a3);
+
+    QVERIFY(fa.detail<QContactFavorite>().isFavorite());
+    QCOMPARE(fa.relatedContacts(aggregatesRelationship, QContactRelationship::Second).count(), 2);
+
+    QContact flc;
+    if (fa.relatedContacts(aggregatesRelationship, QContactRelationship::Second).at(0).id() == fstc.id()) {
+        flc = m_cm->contact(fa.relatedContacts(aggregatesRelationship, QContactRelationship::Second).at(1).id());
+    } else {
+        QVERIFY(fa.relatedContacts(aggregatesRelationship, QContactRelationship::Second).at(1).id() == fstc.id());
+        flc = m_cm->contact(fa.relatedContacts(aggregatesRelationship, QContactRelationship::Second).at(0).id());
+    }
+
+    // The created local constituent is incidental
+    QVERIFY(!flc.details<QContactIncidental>().isEmpty());
+    QVERIFY(fstc.details<QContactIncidental>().isEmpty());
+
+    // Although we created a local, it isn't reported as added since it is incidental
+    syncContacts.clear();
+    addedContacts.clear();
+    deletedIds.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", finalAdditionTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    QCOMPARE(err, QContactManager::NoError);
+    QCOMPARE(syncContacts.count(), 0);
+    QCOMPARE(addedContacts.count(), 0);
+    QCOMPARE(deletedIds.count(), 0);
+
+    // Modify a contact locally, and affected sync targets should be reported
+    QContact ac = m_cm->contact(a1);
+
+    QContactHobby h;
+    h.setHobby("Croquet");
+    ac.saveDetail(&h);
+
+    QVERIFY(m_cm->saveContact(&ac));
+
+    QTRY_COMPARE(syncSpy.count(), 1);
+    signalArgs = syncSpy.takeFirst();
+    QCOMPARE(syncSpy.count(), 0);
+    QCOMPARE(signalArgs.count(), 1);
+    changedSyncTargets = signalArgs.first().value<QStringList>();
+    QCOMPARE(changedSyncTargets.count(), 2);
+    QCOMPARE(changedSyncTargets.toSet(), (QSet<QString>() << "sync-test" << "different-sync-target"));
+
+    QContactDetailFilter allSyncTargets;
+    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
+
+    QList<QContactId> contactIds = m_cm->contactIds(allSyncTargets);
+    QVERIFY(contactIds.contains(stc.id()));
+    QVERIFY(contactIds.contains(lc.id()));
+    QVERIFY(contactIds.contains(alc.id()));
+    QVERIFY(contactIds.contains(dstc.id()));
+    QVERIFY(contactIds.contains(astc.id()));
+    QVERIFY(contactIds.contains(a1));
+    QVERIFY(contactIds.contains(nlc.id()));
+    QVERIFY(contactIds.contains(nastc.id()));
+    QVERIFY(contactIds.contains(a2));
+    QVERIFY(contactIds.contains(fstc.id()));
+    QVERIFY(contactIds.contains(flc.id()));
+    QVERIFY(contactIds.contains(a3));
+
+    // Now remove all contacts
+    QVERIFY(m_cm->removeContacts(QList<QContactId>() << a1 << a2 << a3));
+
+    contactIds = m_cm->contactIds(allSyncTargets);
+    QVERIFY(!contactIds.contains(stc.id()));
+    QVERIFY(!contactIds.contains(lc.id()));
+    QVERIFY(!contactIds.contains(alc.id()));
+    QVERIFY(!contactIds.contains(dstc.id()));
+    QVERIFY(!contactIds.contains(astc.id()));
+    QVERIFY(!contactIds.contains(a1));
+    QVERIFY(!contactIds.contains(nlc.id()));
+    QVERIFY(!contactIds.contains(nastc.id()));
+    QVERIFY(!contactIds.contains(a2));
+    QVERIFY(!contactIds.contains(fstc.id()));
+    QVERIFY(!contactIds.contains(flc.id()));
+    QVERIFY(!contactIds.contains(a3));
+
+    // The IDs previously reported to us as sync or added contacts should be reported as deleted
+    syncContacts.clear();
+    addedContacts.clear();
+    deletedIds.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", afterAdditionTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    QCOMPARE(err, QContactManager::NoError);
+    QCOMPARE(syncContacts.count(), 0);
+    QCOMPARE(addedContacts.count(), 0);
+    QCOMPARE(deletedIds.count(), 3);
+    QVERIFY(deletedIds.contains(stc.id()));
+    QVERIFY(deletedIds.contains(astc.id()));
+    QVERIFY(deletedIds.contains(nlc.id()));
+}
+
+void tst_Aggregation::storeSyncContacts()
+{
+    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(*m_cm);
+
+    QSignalSpy syncSpy(cme, SIGNAL(syncContactsChanged(QStringList)));
+
+    QDateTime initialTime = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
+    QTest::qWait(1000);
+
+    // Check for no errors with no input
+    QList<QPair<QContact, QContact> > modifications;
+    QContactManager::Error err;
+    QtContactsSqliteExtensions::ContactManagerEngine::ConflictResolutionPolicy policy(QtContactsSqliteExtensions::ContactManagerEngine::PreserveLocalChanges);
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
+    QCOMPARE(err, QContactManager::NoError);
+
+    // Store a sync target contact originating at this service
+    QContactName n;
+    n.setFirstName("Albert");
+    n.setLastName("Einstein");
+
+    QContact stc;
+    stc.saveDetail(&n);
+
+    QContactEmailAddress e;
+    e.setEmailAddress("albert.einstein@example.org");
+    stc.saveDetail(&e);
+
+    QContactEmailAddress e2;
+    e2.setEmailAddress("theoretical.physicist@example.org");
+    stc.saveDetail(&e2);
+
+    QContactHobby h;
+    h.setHobby("Kickboxing");
+    stc.saveDetail(&h);
+
+    modifications.append(qMakePair(QContact(), stc));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
+
+    // The syncTarget should not be reported as updated by storeSyncContacts
+    QVERIFY(!syncSpy.wait(1000));
+
+    QList<QContactId> exportedIds;
+    QList<QContact> syncContacts;
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
+    QCOMPARE(syncContacts.count(), 1);
+
+    stc = m_cm->contact(retrievalId(syncContacts.at(0)));
+
+    // Verify that the contact properties are as we expect
+    QContactName n2 = stc.detail<QContactName>();
+    QCOMPARE(n2.prefix(), n.prefix());
+    QCOMPARE(n2.firstName(), n.firstName());
+    QCOMPARE(n2.middleName(), n.middleName());
+    QCOMPARE(n2.lastName(), n.lastName());
+    QCOMPARE(n2.suffix(), n.suffix());
+
+    QCOMPARE(stc.details<QContactEmailAddress>().count(), 2);
+    QSet<QString> emailAddresses;
+    foreach (const QContactEmailAddress &e, stc.details<QContactEmailAddress>()) {
+        QCOMPARE(e.value(QContactDetail__FieldModifiable).toBool(), true);
+        emailAddresses.insert(e.emailAddress());
+    }
+    QCOMPARE(emailAddresses, (QStringList() << e.emailAddress() << e2.emailAddress()).toSet());
+
+    QCOMPARE(stc.details<QContactHobby>().count(), 1);
+    QCOMPARE(stc.details<QContactHobby>().at(0).hobby(), h.hobby());
+    QCOMPARE(stc.details<QContactHobby>().at(0).value(QContactDetail__FieldModifiable).toBool(), true);
+
+    QCOMPARE(stc.details<QContactGuid>().count(), 0);
+
+    QCOMPARE(stc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
+
+    QContact a = m_cm->contact(stc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id());
+
+    n2 = a.detail<QContactName>();
+    QCOMPARE(n2.prefix(), n.prefix());
+    QCOMPARE(n2.firstName(), n.firstName());
+    QCOMPARE(n2.middleName(), n.middleName());
+    QCOMPARE(n2.lastName(), n.lastName());
+    QCOMPARE(n2.suffix(), n.suffix());
+
+    QCOMPARE(a.details<QContactEmailAddress>().count(), 2);
+    emailAddresses.clear();
+    foreach (const QContactEmailAddress &e, a.details<QContactEmailAddress>()) {
+        emailAddresses.insert(e.emailAddress());
+    }
+    QCOMPARE(emailAddresses, (QStringList() << e.emailAddress() << e2.emailAddress()).toSet());
+
+    QCOMPARE(a.details<QContactHobby>().count(), 1);
+    QCOMPARE(a.details<QContactHobby>().at(0).hobby(), h.hobby());
+
+    QCOMPARE(a.details<QContactGuid>().count(), 0);
+
+    // Fetch the partial aggregate for this contact
+    syncContacts.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
+    QCOMPARE(syncContacts.count(), 1);
+
+    QContact pa = syncContacts.at(0);
+    QCOMPARE(pa.id(), stc.id());
+    QCOMPARE(pa.details<QContactEmailAddress>().count(), 2);
+
+    // Effect some changes to the partial aggregate
+    QContact mpa(pa);
+
+    n.setPrefix("Doctor");
+    n.setFirstName("Alberto");
+
+    n2 = mpa.detail<QContactName>();
+    n2.setPrefix(n.prefix());
+    n2.setFirstName(n.firstName());
+    mpa.saveDetail(&n2);
+
+    QContactNickname nn;
+    nn.setNickname("Smartypants");
+    nn.setValue(QContactDetail__FieldModifiable, true);
+    mpa.saveDetail(&nn);
+
+    QContactEmailAddress e3;
+    e3.setEmailAddress("smartypants@example.org");
+    e3.setValue(QContactDetail__FieldModifiable, true);
+    mpa.saveDetail(&e3);
+
+    QContactEmailAddress e4 = mpa.details<QContactEmailAddress>().at(0);
+    QContactEmailAddress e5 = mpa.details<QContactEmailAddress>().at(1);
+    if (e4.emailAddress() != e.emailAddress()) {
+        e4 = mpa.details<QContactEmailAddress>().at(1);
+        e5 = mpa.details<QContactEmailAddress>().at(0);
+    }
+
+    e4.setEmailAddress("alberto.einstein@example.org");
+    e4.setValue(QContactDetail__FieldModifiable, true);
+    mpa.saveDetail(&e4);
+
+    mpa.removeDetail(&e5);
+
+    modifications.clear();
+    modifications.append(qMakePair(pa, mpa));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
+
+    // The syncTarget should not be reported as updated by storeSyncContacts
+    QVERIFY(!syncSpy.wait(1000));
+
+    // Verify that the expected changes occurred
+    stc = m_cm->contact(retrievalId(stc));
+    QCOMPARE(stc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
+    QCOMPARE(stc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id(), a.id());
+
+    n2 = stc.detail<QContactName>();
+    QCOMPARE(n2.prefix(), n.prefix());
+    QCOMPARE(n2.firstName(), n.firstName());
+    QCOMPARE(n2.middleName(), n.middleName());
+    QCOMPARE(n2.lastName(), n.lastName());
+    QCOMPARE(n2.suffix(), n.suffix());
+
+    QCOMPARE(stc.details<QContactEmailAddress>().count(), 2);
+    emailAddresses.clear();
+    foreach (const QContactEmailAddress &e, stc.details<QContactEmailAddress>()) {
+        emailAddresses.insert(e.emailAddress());
+    }
+    QCOMPARE(emailAddresses, (QStringList() << e3.emailAddress() << e4.emailAddress()).toSet());
+
+    QCOMPARE(stc.details<QContactHobby>().count(), 1);
+    QCOMPARE(stc.details<QContactHobby>().at(0).hobby(), h.hobby());
+
+    QCOMPARE(stc.details<QContactNickname>().count(), 1);
+    QCOMPARE(stc.details<QContactNickname>().at(0).nickname(), nn.nickname());
+
+    a = m_cm->contact(retrievalId(a));
+
+    n2 = a.detail<QContactName>();
+    QCOMPARE(n2.prefix(), n.prefix());
+    QCOMPARE(n2.firstName(), n.firstName());
+    QCOMPARE(n2.middleName(), n.middleName());
+    QCOMPARE(n2.lastName(), n.lastName());
+    QCOMPARE(n2.suffix(), n.suffix());
+
+    QCOMPARE(a.details<QContactEmailAddress>().count(), 2);
+    emailAddresses.clear();
+    foreach (const QContactEmailAddress &e, a.details<QContactEmailAddress>()) {
+        emailAddresses.insert(e.emailAddress());
+    }
+    QCOMPARE(emailAddresses, (QStringList() << e3.emailAddress() << e4.emailAddress()).toSet());
+
+    QCOMPARE(a.details<QContactHobby>().count(), 1);
+    QCOMPARE(a.details<QContactHobby>().at(0).hobby(), h.hobby());
+
+    QCOMPARE(a.details<QContactNickname>().count(), 1);
+    QCOMPARE(a.details<QContactNickname>().at(0).nickname(), nn.nickname());
+
+    // Link a local constituent to the sync-test contact
+    QContact lc;
+
+    lc.saveDetail(&n);
+
+    QContactEmailAddress e6;
+    e6.setEmailAddress("aeinstein1879@example.org");
+    lc.saveDetail(&e6);
+
+    QContactTag t;
+    t.setContexts(QContactDetail::ContextWork);
+    t.setTag("Physicist");
+    lc.saveDetail(&t);
+
+    QContactPhoneNumber pn;
+    pn.setNumber("555-PHYSICS");
+    pn.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypeMobile);
+    lc.saveDetail(&pn);
+
+    QVERIFY(m_cm->saveContact(&lc));
+
+    QTRY_COMPARE(syncSpy.count(), 1);
+    QVariantList signalArgs(syncSpy.takeFirst());
+    syncSpy.clear();
+    QCOMPARE(syncSpy.count(), 0);
+    QCOMPARE(signalArgs.count(), 1);
+    QStringList changedSyncTargets(signalArgs.first().value<QStringList>());
+    QCOMPARE(changedSyncTargets.count(), 1);
+    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("sync-test"));
+
+    lc = m_cm->contact(retrievalId(lc));
+
+    n2 = lc.detail<QContactName>();
+    QCOMPARE(n2.prefix(), n.prefix());
+    QCOMPARE(n2.firstName(), n.firstName());
+    QCOMPARE(n2.middleName(), n.middleName());
+    QCOMPARE(n2.lastName(), n.lastName());
+    QCOMPARE(n2.suffix(), n.suffix());
+
+    QCOMPARE(lc.details<QContactEmailAddress>().count(), 1);
+    QCOMPARE(lc.details<QContactEmailAddress>().at(0).emailAddress(), e6.emailAddress());
+
+    QCOMPARE(lc.details<QContactTag>().count(), 1);
+    QCOMPARE(lc.details<QContactTag>().at(0).tag(), t.tag());
+    QCOMPARE(lc.details<QContactTag>().at(0).contexts(), t.contexts());
+
+    QCOMPARE(lc.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(lc.details<QContactPhoneNumber>().at(0).number(), pn.number());
+    QCOMPARE(lc.details<QContactPhoneNumber>().at(0).subTypes(), pn.subTypes());
+
+    QCOMPARE(lc.details<QContactGuid>().count(), 1);
+
+    QCOMPARE(lc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
+    QCOMPARE(lc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id(), a.id());
+
+    a = m_cm->contact(retrievalId(a));
+
+    n2 = a.detail<QContactName>();
+    QCOMPARE(n2.prefix(), n.prefix());
+    QCOMPARE(n2.firstName(), n.firstName());
+    QCOMPARE(n2.middleName(), n.middleName());
+    QCOMPARE(n2.lastName(), n.lastName());
+    QCOMPARE(n2.suffix(), n.suffix());
+
+    QCOMPARE(a.details<QContactEmailAddress>().count(), 3);
+    emailAddresses.clear();
+    foreach (const QContactEmailAddress &e, a.details<QContactEmailAddress>()) {
+        emailAddresses.insert(e.emailAddress());
+    }
+    QCOMPARE(emailAddresses, (QStringList() << e3.emailAddress() << e4.emailAddress() << e6.emailAddress()).toSet());
+
+    QCOMPARE(a.details<QContactHobby>().count(), 1);
+    QCOMPARE(a.details<QContactHobby>().at(0).hobby(), h.hobby());
+
+    QCOMPARE(a.details<QContactNickname>().count(), 1);
+    QCOMPARE(a.details<QContactNickname>().at(0).nickname(), nn.nickname());
+
+    QCOMPARE(a.details<QContactTag>().count(), 1);
+    QCOMPARE(a.details<QContactTag>().at(0).tag(), t.tag());
+    QCOMPARE(a.details<QContactTag>().at(0).contexts(), t.contexts());
+
+    QCOMPARE(a.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(a.details<QContactPhoneNumber>().at(0).number(), pn.number());
+    QCOMPARE(a.details<QContactPhoneNumber>().at(0).subTypes(), pn.subTypes());
+
+    QCOMPARE(a.details<QContactGuid>().count(), 0);
+
+    QCOMPARE(a.relatedContacts(aggregatesRelationship, QContactRelationship::Second).count(), 2);
+
+    syncContacts.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
+    QCOMPARE(syncContacts.count(), 1);
+
+    pa = syncContacts.at(0);
+    QCOMPARE(pa.id(), stc.id());
+    QCOMPARE(pa.details<QContactEmailAddress>().count(), 3);
+
+    // The local's GUID is not present
+    QCOMPARE(pa.details<QContactGuid>().count(), 0);
+
+    // Make changes that will affect both constituents
+    mpa = QContact(pa);
+
+    n.setPrefix("Herr");
+    n.setFirstName("Albert");
+    n.setMiddleName("J.");
+
+    n2 = mpa.detail<QContactName>();
+    n2.setPrefix(n.prefix());
+    n2.setFirstName(n.firstName());
+    n2.setMiddleName(n.middleName());
+    mpa.saveDetail(&n2);
+
+    nn = mpa.detail<QContactNickname>();
+    nn.setNickname("Cleverclogs");
+    nn.setValue(QContactDetail__FieldModifiable, true);
+    mpa.saveDetail(&nn);
+
+    QContactEmailAddress e7, e8;
+    foreach (const QContactEmailAddress &e, mpa.details<QContactEmailAddress>()) {
+        if (e.emailAddress() == e4.emailAddress()) {
+            e7 = e;
+        } else if (e.emailAddress() == e6.emailAddress()) {
+            e8 = e;
+        }
+    }
+
+    e7.setEmailAddress("albert.j.einstein@example.org");
+    e7.setValue(QContactDetail__FieldModifiable, true);
+    mpa.saveDetail(&e7);
+
+    e8.setEmailAddress("ajeinstein1879@example.org");
+    e8.setValue(QContactDetail__FieldModifiable, true);
+    mpa.saveDetail(&e8);
+
+    QContactHobby h2 = mpa.detail<QContactHobby>();
+    mpa.removeDetail(&h2);
+
+    QContactGuid guid;
+    guid.setGuid("I am a unique snowflake");
+    mpa.saveDetail(&guid);
+
+    // Include changes to context and subtype fields
+    t = mpa.detail<QContactTag>();
+    t.setContexts(QContactDetail::ContextOther);
+    t.setValue(QContactDetail__FieldModifiable, true);
+    mpa.saveDetail(&t);
+
+    pn = mpa.detail<QContactPhoneNumber>();
+    pn.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypePager);
+    pn.setValue(QContactDetail__FieldModifiable, true);
+    mpa.saveDetail(&pn);
+
+    modifications.clear();
+    modifications.append(qMakePair(pa, mpa));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
+
+    // Verify that the expected changes occurred
+    stc = m_cm->contact(retrievalId(stc));
+    QCOMPARE(stc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
+    QCOMPARE(stc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id(), a.id());
+
+    n2 = stc.detail<QContactName>();
+    QCOMPARE(n2.prefix(), n.prefix());
+    QCOMPARE(n2.firstName(), n.firstName());
+    QCOMPARE(n2.middleName(), n.middleName());
+    QCOMPARE(n2.lastName(), n.lastName());
+    QCOMPARE(n2.suffix(), n.suffix());
+
+    QCOMPARE(stc.details<QContactEmailAddress>().count(), 2);
+    emailAddresses.clear();
+    foreach (const QContactEmailAddress &e, stc.details<QContactEmailAddress>()) {
+        emailAddresses.insert(e.emailAddress());
+    }
+    QCOMPARE(emailAddresses, (QStringList() << e3.emailAddress() << e7.emailAddress()).toSet());
+
+    QCOMPARE(stc.details<QContactHobby>().count(), 0);
+
+    QCOMPARE(stc.details<QContactNickname>().count(), 1);
+    QCOMPARE(stc.details<QContactNickname>().at(0).nickname(), nn.nickname());
+
+    QCOMPARE(stc.details<QContactGuid>().count(), 1);
+    QCOMPARE(stc.details<QContactGuid>().at(0).guid(), guid.guid());
+
+    lc = m_cm->contact(retrievalId(lc));
+    QCOMPARE(lc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
+    QCOMPARE(lc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id(), a.id());
+
+    n2 = lc.detail<QContactName>();
+    QCOMPARE(n2.prefix(), n.prefix());
+    QCOMPARE(n2.firstName(), n.firstName());
+    QCOMPARE(n2.middleName(), n.middleName());
+    QCOMPARE(n2.lastName(), n.lastName());
+    QCOMPARE(n2.suffix(), n.suffix());
+
+    QCOMPARE(lc.details<QContactEmailAddress>().count(), 1);
+    QCOMPARE(lc.details<QContactEmailAddress>().at(0).emailAddress(), e8.emailAddress());
+
+    QCOMPARE(lc.details<QContactTag>().count(), 1);
+    QCOMPARE(lc.details<QContactTag>().at(0).tag(), t.tag());
+    QCOMPARE(lc.details<QContactTag>().at(0).contexts(), t.contexts());
+
+    QCOMPARE(lc.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(lc.details<QContactPhoneNumber>().at(0).number(), pn.number());
+    QCOMPARE(lc.details<QContactPhoneNumber>().at(0).subTypes(), pn.subTypes());
+
+    QCOMPARE(lc.details<QContactGuid>().count(), 1);
+    QVERIFY(lc.details<QContactGuid>().at(0).guid() != guid.guid());
+
+    a = m_cm->contact(retrievalId(a));
+
+    n2 = a.detail<QContactName>();
+    QCOMPARE(n2.prefix(), n.prefix());
+    QCOMPARE(n2.firstName(), n.firstName());
+    QCOMPARE(n2.middleName(), n.middleName());
+    QCOMPARE(n2.lastName(), n.lastName());
+    QCOMPARE(n2.suffix(), n.suffix());
+
+    QCOMPARE(a.details<QContactEmailAddress>().count(), 3);
+    emailAddresses.clear();
+    foreach (const QContactEmailAddress &e, a.details<QContactEmailAddress>()) {
+        emailAddresses.insert(e.emailAddress());
+    }
+    QCOMPARE(emailAddresses, (QStringList() << e3.emailAddress() << e7.emailAddress() << e8.emailAddress()).toSet());
+
+    QCOMPARE(a.details<QContactHobby>().count(), 0);
+
+    QCOMPARE(a.details<QContactNickname>().count(), 1);
+    QCOMPARE(a.details<QContactNickname>().at(0).nickname(), nn.nickname());
+
+    QCOMPARE(a.details<QContactTag>().count(), 1);
+    QCOMPARE(a.details<QContactTag>().at(0).tag(), t.tag());
+    QCOMPARE(a.details<QContactTag>().at(0).contexts(), t.contexts());
+
+    QCOMPARE(a.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(a.details<QContactPhoneNumber>().at(0).number(), pn.number());
+    QCOMPARE(a.details<QContactPhoneNumber>().at(0).subTypes(), pn.subTypes());
+
+    QCOMPARE(a.details<QContactGuid>().count(), 0);
+
+    // The sync target partial agregate should contain the sync target GUID
+    syncContacts.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
+    QCOMPARE(syncContacts.count(), 1);
+
+    pa = syncContacts.at(0);
+    QCOMPARE(pa.id(), stc.id());
+    QCOMPARE(pa.details<QContactGuid>().count(), 1);
+    QCOMPARE(pa.detail<QContactGuid>().guid(), stc.detail<QContactGuid>().guid());
+
+    // Link a constituent from a different sync target
+    QContact dstc;
+
+    QContactSyncTarget dstTarget;
+    dstTarget.setSyncTarget("different-sync-target");
+    dstc.saveDetail(&dstTarget);
+
+    dstc.saveDetail(&n);
+
+    QVERIFY(m_cm->saveContact(&dstc));
+
+    QTRY_COMPARE(syncSpy.count(), 1);
+    signalArgs = syncSpy.takeFirst();
+    syncSpy.clear();
+    QCOMPARE(syncSpy.count(), 0);
+    QCOMPARE(signalArgs.count(), 1);
+    changedSyncTargets = signalArgs.first().value<QStringList>();
+    QCOMPARE(changedSyncTargets.count(), 1);
+    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("different-sync-target"));
+
+    dstc = m_cm->contact(retrievalId(dstc));
+
+    n2 = dstc.detail<QContactName>();
+    QCOMPARE(n2.prefix(), n.prefix());
+    QCOMPARE(n2.firstName(), n.firstName());
+    QCOMPARE(n2.middleName(), n.middleName());
+    QCOMPARE(n2.lastName(), n.lastName());
+    QCOMPARE(n2.suffix(), n.suffix());
+
+    QCOMPARE(dstc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
+    QCOMPARE(dstc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id(), a.id());
+
+    // Modify the name again
+    syncContacts.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
+    QCOMPARE(syncContacts.count(), 1);
+
+    pa = syncContacts.at(0);
+    mpa = QContact(pa);
+
+    n.setMiddleName("Q.");
+    mpa.saveDetail(&n);
+
+    modifications.clear();
+    modifications.append(qMakePair(pa, mpa));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
+
+    // A sync-target that was not the subject of this update should be reported as having changed
+    QTRY_COMPARE(syncSpy.count(), 1);
+    signalArgs = syncSpy.takeFirst();
+    QCOMPARE(syncSpy.count(), 0);
+    QCOMPARE(signalArgs.count(), 1);
+    changedSyncTargets = signalArgs.first().value<QStringList>();
+    QCOMPARE(changedSyncTargets.count(), 1);
+    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("different-sync-target"));
+
+    // Verify that the name changes occurred for the affected constituents, but not the unrelated one
+    stc = m_cm->contact(retrievalId(stc));
+    QCOMPARE(stc.detail<QContactName>().middleName(), n.middleName());
+
+    lc = m_cm->contact(retrievalId(lc));
+    QCOMPARE(lc.detail<QContactName>().middleName(), n.middleName());
+
+    a = m_cm->contact(retrievalId(a));
+    QCOMPARE(a.detail<QContactName>().middleName(), n.middleName());
+
+    dstc = m_cm->contact(retrievalId(dstc));
+    QCOMPARE(dstc.detail<QContactName>().middleName(), QString::fromLatin1("J."));
+
+    // Test conflict resolution - we currently support only PreserveLocalChanges
+    syncContacts.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
+    QCOMPARE(syncContacts.count(), 1);
+    pa = syncContacts.at(0);
+    mpa = QContact(pa);
+
+    // Composited details
+    // Change one field in only the PA, and change another in both
+    n = a.detail<QContactName>();
+    n.setSuffix("Sr.");
+    a.saveDetail(&n);
+
+    // Add conflicting composited details
+    QContactGender g = a.detail<QContactGender>();
+    g.setGender(QContactGender::GenderMale);
+    a.saveDetail(&g);
+
+    // Identified details
+    // Modify in both
+    t = a.detail<QContactTag>();
+    t.setTag("Deceased");
+    a.saveDetail(&t);
+
+    // Remove from local device, modify in sync
+    foreach (const QContactEmailAddress &e, a.details<QContactEmailAddress>()) {
+        if (e.emailAddress() == e8.emailAddress()) {
+            e8 = e;
+            a.removeDetail(&e8);
+            break;
+        }
+    }
+
+    // Remove from sync, modify in local device
+    pn = a.detail<QContactPhoneNumber>();
+    pn.setNumber("555-PSYCHIC");
+    a.saveDetail(&pn);
+
+    // Store the changes to the local device, stored via the aggregate
+    QVERIFY(m_cm->saveContact(&a));
+
+    lc = m_cm->contact(retrievalId(lc));
+
+    // Verify the changes
+    n2 = lc.detail<QContactName>();
+    QCOMPARE(n2.prefix(), n.prefix());
+    QCOMPARE(n2.firstName(), n.firstName());
+    QCOMPARE(n2.middleName(), n.middleName());
+    QCOMPARE(n2.lastName(), n.lastName());
+    QCOMPARE(n2.suffix(), n.suffix());
+
+    QCOMPARE(lc.details<QContactGender>().count(), 1);
+    QCOMPARE(lc.detail<QContactGender>().gender(), QContactGender::GenderMale);
+
+    QCOMPARE(lc.details<QContactEmailAddress>().count(), 0);
+
+    QCOMPARE(lc.details<QContactTag>().count(), 1);
+    QCOMPARE(lc.detail<QContactTag>().tag(), t.tag());
+
+    QCOMPARE(lc.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(lc.detail<QContactPhoneNumber>().number(), pn.number());
+
+    a = m_cm->contact(retrievalId(a));
+
+    n2 = a.detail<QContactName>();
+    QCOMPARE(n2.prefix(), n.prefix());
+    QCOMPARE(n2.firstName(), n.firstName());
+    QCOMPARE(n2.middleName(), n.middleName());
+    QCOMPARE(n2.lastName(), n.lastName());
+    QCOMPARE(n2.suffix(), n.suffix());
+
+    QCOMPARE(a.details<QContactGender>().count(), 1);
+    QCOMPARE(a.detail<QContactGender>().gender(), QContactGender::GenderMale);
+
+    QCOMPARE(a.details<QContactEmailAddress>().count(), 2);
+    emailAddresses.clear();
+    foreach (const QContactEmailAddress &e, a.details<QContactEmailAddress>()) {
+        emailAddresses.insert(e.emailAddress());
+    }
+    QCOMPARE(emailAddresses, (QStringList() << e3.emailAddress() << e7.emailAddress()).toSet());
+
+    QCOMPARE(a.details<QContactTag>().count(), 1);
+    QCOMPARE(a.detail<QContactTag>().tag(), t.tag());
+
+    QCOMPARE(a.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(a.detail<QContactPhoneNumber>().number(), pn.number());
+
+    // Store the conflicting sync changes
+    n = mpa.detail<QContactName>();
+    n.setSuffix("Jr.");
+    n.setMiddleName("\"Crusher\"");
+    mpa.saveDetail(&n);
+
+    g = mpa.detail<QContactGender>();
+    g.setGender(QContactGender::GenderFemale);
+    mpa.saveDetail(&g);
+
+    QContactTag t2 = mpa.detail<QContactTag>();
+    t2.setTag("Non-operational");
+    t2.setValue(QContactDetail__FieldModifiable, true);
+    mpa.saveDetail(&t2);
+
+    QContactEmailAddress e9;
+    foreach (const QContactEmailAddress &e, mpa.details<QContactEmailAddress>()) {
+        if (e.emailAddress() == e8.emailAddress()) {
+            e9 = e;
+            break;
+        }
+    }
+
+    e9.setEmailAddress("modified@example.org");
+    e9.setValue(QContactDetail__FieldModifiable, true);
+    mpa.saveDetail(&e9);
+
+    QContactPhoneNumber pn2 = mpa.detail<QContactPhoneNumber>();
+    mpa.removeDetail(&pn2);
+
+    modifications.clear();
+    modifications.append(qMakePair(pa, mpa));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
+
+    // Verify that the expected changes occurred
+    stc = m_cm->contact(retrievalId(stc));
+
+    // The composited changes will have been applied to the sync-target contact
+    n2 = stc.detail<QContactName>();
+    QCOMPARE(n2.prefix(), n.prefix());
+    QCOMPARE(n2.firstName(), n.firstName());
+    QCOMPARE(n2.middleName(), n.middleName());
+    QCOMPARE(n2.lastName(), n.lastName());
+    QCOMPARE(n2.suffix(), n.suffix());
+
+    QCOMPARE(stc.details<QContactGender>().count(), 1);
+    QCOMPARE(stc.detail<QContactGender>().gender(), QContactGender::GenderFemale);
+
+    // The aggregate will have combined changes
+    a = m_cm->contact(retrievalId(a));
+
+    n2 = a.detail<QContactName>();
+
+    // The conflict will resolve in favor of the local change
+    QCOMPARE(n2.suffix(), QString::fromLatin1("Sr."));
+
+    // The unconflicting change will be applied
+    QCOMPARE(n2.middleName(), QString::fromLatin1("\"Crusher\""));
+
+    // Gender will resolve to the local change
+    QCOMPARE(a.details<QContactGender>().count(), 1);
+    QCOMPARE(a.detail<QContactGender>().gender(), QContactGender::GenderMale);
+
+    // The conflicting edits will resolve in favor of the local change
+    QCOMPARE(a.details<QContactTag>().count(), 1);
+    QCOMPARE(a.detail<QContactTag>().tag(), t.tag());
+
+    // The locally-removed, remotely-modified detail will be absent
+    QCOMPARE(a.details<QContactEmailAddress>().count(), 2);
+    emailAddresses.clear();
+    foreach (const QContactEmailAddress &e, a.details<QContactEmailAddress>()) {
+        emailAddresses.insert(e.emailAddress());
+    }
+    QCOMPARE(emailAddresses, (QStringList() << e3.emailAddress() << e7.emailAddress()).toSet());
+
+    // The remotely-removed, locally-edited detail is still present
+    QCOMPARE(a.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(a.detail<QContactPhoneNumber>().number(), pn.number());
+
+    // Check that the partial aggregate matches the aggregate
+    syncContacts.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
+    QCOMPARE(syncContacts.count(), 1);
+
+    pa = syncContacts.at(0);
+
+    n2 = pa.detail<QContactName>();
+    QCOMPARE(n2.suffix(), QString::fromLatin1("Sr."));
+    QCOMPARE(n2.middleName(), QString::fromLatin1("\"Crusher\""));
+
+    QCOMPARE(pa.details<QContactGender>().count(), 1);
+    QCOMPARE(pa.detail<QContactGender>().gender(), QContactGender::GenderMale);
+
+    QCOMPARE(pa.details<QContactTag>().count(), 1);
+    QCOMPARE(pa.detail<QContactTag>().tag(), t.tag());
+
+    QCOMPARE(pa.details<QContactEmailAddress>().count(), 2);
+    emailAddresses.clear();
+    foreach (const QContactEmailAddress &e, pa.details<QContactEmailAddress>()) {
+        emailAddresses.insert(e.emailAddress());
+    }
+    QCOMPARE(emailAddresses, (QStringList() << e3.emailAddress() << e7.emailAddress()).toSet());
+
+    QCOMPARE(pa.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(pa.detail<QContactPhoneNumber>().number(), pn.number());
+
+    QDateTime nextTime = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
+    QTest::qWait(1000);
+
+    // Create another local contact that we can export
+    QContact alc;
+
+    QContactName n3;
+    n3.setFirstName("Niels");
+    n3.setLastName("Bohr");
+    alc.saveDetail(&n3);
+
+    alc.saveDetail(&t);
+
+    QVERIFY(m_cm->saveContact(&alc));
+    alc = m_cm->contact(alc.id());
+
+    QCOMPARE(alc.details<QContactGuid>().count(), 1);
+
+    QList<QContact> addedContacts;
+
+    syncContacts.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", nextTime, exportedIds, &syncContacts, &addedContacts, 0, &err));
+    QCOMPARE(addedContacts.count(), 1);
+
+    pa = addedContacts.at(0);
+    QCOMPARE(pa.id(), alc.id());
+
+    // The GUID is promoted into the the partial aggregate
+    QCOMPARE(pa.details<QContactGuid>().count(), 1);
+    QCOMPARE(pa.detail<QContactGuid>().guid(), alc.detail<QContactGuid>().guid());
+
+    // Make changes to this contact
+    mpa = pa;
+
+    QContactTag t3 = mpa.detail<QContactTag>();
+    t3.setTag("Danish Physicist");
+    mpa.saveDetail(&t3);
+
+    QContactHobby h3;
+    h3.setHobby("Football");
+    mpa.saveDetail(&h3);
+
+    modifications.clear();
+    modifications.append(qMakePair(pa, mpa));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
+
+    // The tag should have been modified in the original local contact
+    alc = m_cm->contact(alc.id());
+
+    QCOMPARE(alc.details<QContactTag>().count(), 1);
+    QCOMPARE(alc.details<QContactTag>().at(0).tag(), t3.tag());
+
+    QCOMPARE(alc.details<QContactHobby>().count(), 0);
+
+    // A new contact should have been created to contain the hobby
+    QCOMPARE(alc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
+
+    QContact a2 = m_cm->contact(alc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id());
+    QCOMPARE(a2.relatedContacts(aggregatesRelationship, QContactRelationship::Second).count(), 2);
+
+    QContactId stId;
+    if (a2.relatedContacts(aggregatesRelationship, QContactRelationship::Second).at(0).id() == alc.id()) {
+        stId = a2.relatedContacts(aggregatesRelationship, QContactRelationship::Second).at(1).id();
+    } else {
+        stId = a2.relatedContacts(aggregatesRelationship, QContactRelationship::Second).at(0).id();
+    }
+
+    QContact stc2 = m_cm->contact(stId);
+
+    n2 = stc2.detail<QContactName>();
+    QCOMPARE(n2.prefix(), n3.prefix());
+    QCOMPARE(n2.firstName(), n3.firstName());
+    QCOMPARE(n2.middleName(), n3.middleName());
+    QCOMPARE(n2.lastName(), n3.lastName());
+    QCOMPARE(n2.suffix(), n3.suffix());
+
+    QCOMPARE(stc2.details<QContactTag>().count(), 0);
+
+    QCOMPARE(stc2.details<QContactHobby>().count(), 1);
+    QCOMPARE(stc2.details<QContactHobby>().at(0).hobby(), h3.hobby());
+
+    // Both contacts should now be reported by their sync-target IDs
+    syncContacts.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
+    QCOMPARE(syncContacts.count(), 2);
+    QCOMPARE((QList<QContactId>() << syncContacts.at(0).id() << syncContacts.at(1).id()).toSet(), (QList<QContactId>() << stc.id() << stc2.id()).toSet());
+
+    QCOMPARE(alc.details<QContactGuid>().count(), 1);
+
+    // Report both contacts as remotely-deleted
+    modifications.clear();
+    modifications.append(qMakePair(syncContacts.at(0), QContact()));
+    modifications.append(qMakePair(syncContacts.at(1), QContact()));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
+
+    QContactDetailFilter allSyncTargets;
+    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
+
+    QList<QContactId> contactIds = m_cm->contactIds(allSyncTargets);
+
+    // The sync target constituents should be removed
+    QVERIFY(!contactIds.contains(stc.id()));
+    QVERIFY(!contactIds.contains(stc2.id()));
+
+    // The local constituents and those from other sync targets should remain
+    QVERIFY(contactIds.contains(lc.id()));
+    QVERIFY(contactIds.contains(alc.id()));
+    QVERIFY(contactIds.contains(dstc.id()));
+
+    // The next fetch should not return the deleted contacts
+    syncContacts.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
+    QCOMPARE(syncContacts.count(), 0);
+}
+
+void tst_Aggregation::testOOB()
+{
+    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(*m_cm);
+
+    const QString &scope(QString::fromLatin1("tst_Aggregation"));
+
+    // Test simple OOB fetches and stores
+    QVariant data;
+    QVERIFY(cme->fetchOOB(scope, "nonexistentData", &data));
+    QCOMPARE(data, QVariant());
+
+    QVERIFY(cme->fetchOOB(scope, "data", &data));
+    if (!data.isNull()) {
+        QVERIFY(cme->removeOOB(scope, "data"));
+    }
+
+    QVERIFY(cme->storeOOB(scope, "data", QVariant::fromValue<double>(0.123456789)));
+
+    data = QVariant();
+    QVERIFY(cme->fetchOOB(scope, "data", &data));
+    QCOMPARE(data.toDouble(), 0.123456789);
+
+    // Test overwrite
+    QVERIFY(cme->storeOOB(scope, "data", QVariant::fromValue<QString>(QLatin1String("Testing"))));
+
+    data = QVariant();
+    QVERIFY(cme->fetchOOB(scope, "data", &data));
+    QCOMPARE(data.toString(), QLatin1String("Testing"));
+
+    // Test remove
+    QVERIFY(cme->removeOOB(scope, "data"));
+    QVERIFY(cme->fetchOOB(scope, "data", &data));
+    QCOMPARE(data, QVariant());
+
+    // Test multiple items
+    QMap<QString, QVariant> values;
+    values.insert("data", 100);
+    values.insert("other", 200);
+    QVERIFY(cme->storeOOB(scope, values));
+
+    values.clear();
+    QVERIFY(cme->fetchOOB(scope, (QStringList() << "data" << "other" << "nonexistent"), &values));
+    QCOMPARE(values.count(), 2);
+    QCOMPARE(values["data"].toInt(), 100);
+    QCOMPARE(values["other"].toInt(), 200);
+
+    // Test empty lists
+    values.clear();
+    QVERIFY(cme->fetchOOB(scope, &values));
+    QCOMPARE(values.count(), 2);
+    QCOMPARE(values["data"].toInt(), 100);
+    QCOMPARE(values["other"].toInt(), 200);
+
+    QVERIFY(cme->removeOOB(scope));
+
+    values.clear();
+    QVERIFY(cme->fetchOOB(scope, &values));
+    QCOMPARE(values.count(), 0);
 }
 
 QTEST_MAIN(tst_Aggregation)

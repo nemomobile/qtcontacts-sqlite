@@ -32,7 +32,7 @@
 #ifndef QTCONTACTS_EXTENSIONS_IMPL_H
 #define QTCONTACTS_EXTENSIONS_IMPL_H
 
-#include "qtcontacts-extensions.h"
+#include <qtcontacts-extensions.h>
 
 namespace {
 

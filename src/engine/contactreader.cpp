@@ -36,6 +36,7 @@
 
 #include "../extensions/qtcontacts-extensions.h"
 #include "../extensions/qcontactdeactivated.h"
+#include "../extensions/qcontactincidental.h"
 #include "../extensions/qcontactoriginmetadata.h"
 #include "../extensions/qcontactstatusflags.h"
 
@@ -83,6 +84,11 @@ static const int ReportBatchSize = 50;
 static const QString aggregateSyncTarget(QString::fromLatin1("aggregate"));
 static const QString localSyncTarget(QString::fromLatin1("local"));
 static const QString wasLocalSyncTarget(QString::fromLatin1("was_local"));
+
+static const char *identityId =
+    "\n SELECT contactId"
+    "\n FROM Identities"
+    "\n WHERE identity = :identity";
 
 enum FieldType {
     StringField = 0,
@@ -171,7 +177,7 @@ static const FieldInfo favoriteFields[] =
 
 static const FieldInfo statusFlagsFields[] =
 {
-    // No specific field; tests hasPhoneNumber/hasEmailAddress/hasOnlineAccount/isOnline/isDeactivated
+    // No specific field; tests hasPhoneNumber/hasEmailAddress/hasOnlineAccount/isOnline/isDeactivated/isIncidental
     { QContactStatusFlags::FieldFlags, "", OtherField }
 };
 
@@ -488,8 +494,6 @@ static QMap<QString, int> contextTypes()
     rv.insert(QString::fromLatin1("Home"), QContactDetail::ContextHome);
     rv.insert(QString::fromLatin1("Work"), QContactDetail::ContextWork);
     rv.insert(QString::fromLatin1("Other"), QContactDetail::ContextOther);
-    rv.insert(QString::fromLatin1("Default"), QContactDetail__ContextDefault);
-    rv.insert(QString::fromLatin1("Large"), QContactDetail__ContextLarge);
 
     return rv;
 }
@@ -506,7 +510,7 @@ static int contextType(const QString &type)
 }
 
 template <typename T> static void readDetail(
-        quint32 contactId, QContact *contact, QSqlQuery *query, bool syncable, quint32 &currentId)
+        quint32 contactId, QContact *contact, QSqlQuery *query, bool syncable, bool relaxConstraints, quint32 &currentId)
 {
     do {
         T detail;
@@ -544,12 +548,19 @@ template <typename T> static void readDetail(
                 detail.setContexts(contexts);
             }
         }
-        QContactManagerEngine::setDetailAccessConstraints(&detail, static_cast<QContactDetail::AccessConstraints>(accessConstraints));
+
         setValue(&detail, QContactDetail__FieldProvenance, provenance);
 
         // Only report modifiable state for non-local, non-aggregate contacts
-        if (syncable)
+        if (syncable) {
             setValue(&detail, QContactDetail__FieldModifiable, modifiable);
+        }
+
+        // Constraints should be applied unless generating a partial aggregate; the partial aggregate
+        // is intended for modification, so adding constraints prevents it from being used correctly
+        if (!relaxConstraints) {
+            QContactManagerEngine::setDetailAccessConstraints(&detail, static_cast<QContactDetail::AccessConstraints>(accessConstraints));
+        }
 
         setValues(&detail, query, 8);
 
@@ -588,7 +599,7 @@ static void readRelationshipTable(quint32 contactId, QContact *contact, QSqlQuer
     QContactManagerEngine::setContactRelationships(contact, currContactRelationships);
 }
 
-typedef void (*ReadDetail)(quint32 contactId, QContact *contact, QSqlQuery *query, bool syncable, quint32 &currentId);
+typedef void (*ReadDetail)(quint32 contactId, QContact *contact, QSqlQuery *query, bool syncable, bool relaxConstraints, quint32 &currentId);
 
 struct DetailInfo
 {
@@ -788,12 +799,14 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
                                                      QContactStatusFlags::HasEmailAddress,
                                                      QContactStatusFlags::HasOnlineAccount,
                                                      QContactStatusFlags::IsOnline,
-                                                     QContactStatusFlags::IsDeactivated };
+                                                     QContactStatusFlags::IsDeactivated,
+                                                     QContactStatusFlags::IsIncidental };
                     static const char *flagColumns[] = { "hasPhoneNumber",
                                                          "hasEmailAddress",
                                                          "hasOnlineAccount",
                                                          "isOnline",
-                                                         "isDeactivated" };
+                                                         "isDeactivated",
+                                                         "isIncidental" };
 
                     quint64 flagsValue = filter.value().value<quint64>();
 
@@ -1319,8 +1332,14 @@ static void debugFilterExpansion(const QString &description, const QString &quer
     }
 }
 
+static QSqlQuery prepare(const char *statement, const QSqlDatabase &database)
+{
+    return ContactsDatabase::prepare(statement, database);
+}
+
 ContactReader::ContactReader(const QSqlDatabase &database)
     : m_database(database)
+    , m_identityId(prepare(identityId, database))
 {
 }
 
@@ -1653,14 +1672,32 @@ QContactManager::Error ContactReader::readContacts(
         const QList<QContactId> &contactIds,
         const QContactFetchHint &fetchHint)
 {
+    QList<quint32> databaseIds;
+    databaseIds.reserve(contactIds.size());
+
+    foreach (const QContactId &id, contactIds) {
+        databaseIds.append(ContactId::databaseId(id));
+    }
+
+    return readContacts(table, contacts, databaseIds, fetchHint);
+}
+
+QContactManager::Error ContactReader::readContacts(
+        const QString &table,
+        QList<QContact> *contacts,
+        const QList<quint32> &databaseIds,
+        const QContactFetchHint &fetchHint,
+        bool relaxConstraints)
+{
     QMutexLocker locker(ContactsDatabase::accessMutex());
 
     QVariantList boundIds;
-    for (int i = 0; i < contactIds.size(); ++i) {
-        boundIds.append(ContactId::databaseId(contactIds.at(i)));
+    boundIds.reserve(databaseIds.size());
+    foreach (quint32 id, databaseIds) {
+        boundIds.append(id);
     }
 
-    contacts->reserve(contactIds.size());
+    contacts->reserve(databaseIds.size());
 
     ContactsDatabase::clearTemporaryContactIdsTable(m_database, table);
 
@@ -1668,16 +1705,16 @@ QContactManager::Error ContactReader::readContacts(
     if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, table, boundIds)) {
         error = QContactManager::UnspecifiedError;
     } else {
-        error = queryContacts(table, contacts, fetchHint);
+        error = queryContacts(table, contacts, fetchHint, relaxConstraints);
     }
 
     // the ordering of the queried contacts is identical to
     // the ordering of the input contact ids list.
-    int contactIdsSize = contactIds.size();
+    int contactIdsSize = databaseIds.size();
     int contactsSize = contacts->size();
     if (contactIdsSize != contactsSize) {
         for (int i = 0; i < contactIdsSize; ++i) {
-            if (i >= contactsSize || (*contacts)[i].id() != contactIds[i]) {
+            if (i >= contactsSize || ContactId::databaseId((*contacts)[i].id()) != databaseIds[i]) {
                 // the id list contained a contact id which doesn't exist
                 contacts->insert(i, QContact());
                 contactsSize++;
@@ -1690,7 +1727,7 @@ QContactManager::Error ContactReader::readContacts(
 }
 
 QContactManager::Error ContactReader::queryContacts(
-        const QString &tableName, QList<QContact> *contacts, const QContactFetchHint &fetchHint)
+        const QString &tableName, QList<QContact> *contacts, const QContactFetchHint &fetchHint, bool relaxConstraints)
 {
     QSqlQuery query(m_database);
     query.setForwardOnly(true);
@@ -1837,12 +1874,17 @@ QContactManager::Error ContactReader::queryContacts(
             flags.setFlag(QContactStatusFlags::HasOnlineAccount, query.value(17).toBool());
             flags.setFlag(QContactStatusFlags::IsOnline, query.value(18).toBool());
             flags.setFlag(QContactStatusFlags::IsDeactivated, query.value(19).toBool());
+            flags.setFlag(QContactStatusFlags::IsIncidental, query.value(20).toBool());
             QContactManagerEngine::setDetailAccessConstraints(&flags, QContactDetail::ReadOnly | QContactDetail::Irremovable);
             contact.saveDetail(&flags);
 
             if (flags.testFlag(QContactStatusFlags::IsDeactivated)) {
                 QContactDeactivated deactivated;
                 contact.saveDetail(&deactivated);
+            }
+            if (flags.testFlag(QContactStatusFlags::IsIncidental)) {
+                QContactIncidental incidental;
+                contact.saveDetail(&incidental);
             }
 
             contacts->append(contact);
@@ -1864,7 +1906,7 @@ QContactManager::Error ContactReader::queryContacts(
                 quint32 contactId = ContactId::databaseId(contact.id());
 
                 if (table.query.isValid() && (table.currentId == contactId)) {
-                    table.read(contactId, &contact, &table.query, *sit, table.currentId);
+                    table.read(contactId, &contact, &table.query, *sit, relaxConstraints, table.currentId);
                 }
             }
         }
@@ -2103,20 +2145,19 @@ QContactManager::Error ContactReader::getIdentity(
         // we don't allow setting the self contact id, it's always static
         *contactId = ContactId::apiId(selfId);
     } else {
-        QSqlQuery query(m_database);
-        query.setForwardOnly(true);
-        query.prepare(QLatin1String(
-                "\n SELECT contactId"
-                "\n FROM Identities"
-                "\n WHERE identity = :identity"));
-        query.bindValue(0, identity);
-
-        if (query.exec() && query.next()) {
-            *contactId = ContactId::apiId(query.value(0).toUInt());
-        } else {
-            *contactId = QContactId();
+        m_identityId.bindValue(":identity", identity);
+        if (!m_identityId.exec()) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to fetch contact identity:\n%1")
+                    .arg(m_identityId.lastError().text()));
             return QContactManager::UnspecifiedError;
         }
+        if (!m_identityId.next()) {
+            *contactId = QContactId();
+            return QContactManager::UnspecifiedError;
+        } else {
+            *contactId = ContactId::apiId(m_identityId.value(0).toUInt());
+        }
+        m_identityId.finish();
     }
 
     return QContactManager::NoError;
@@ -2185,6 +2226,51 @@ QContactManager::Error ContactReader::readRelationships(
     query.finish();
 
     return QContactManager::NoError;
+}
+
+bool ContactReader::fetchOOB(const QString &scope, const QStringList &keys, QMap<QString, QVariant> *values)
+{
+    QVariantList keyNames;
+
+    QString statement(QString::fromLatin1("SELECT name, value FROM OOB WHERE name "));
+    if (keys.isEmpty()) {
+        statement.append(QString::fromLatin1("LIKE '%1:%%'").arg(scope));
+    } else {
+        const QChar colon(QChar::fromLatin1(':'));
+
+        QString keyList;
+        foreach (const QString &key, keys) {
+            keyNames.append(scope + colon + key);
+            keyList.append(QString::fromLatin1(keyList.isEmpty() ? "?" : ",?"));
+        }
+        statement.append(QString::fromLatin1("IN (%1)").arg(keyList));
+    }
+
+    QSqlQuery query(m_database);
+    query.setForwardOnly(true);
+    if (!query.prepare(statement)) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare OOB query:\n%1\nQuery:\n%2")
+                .arg(query.lastError().text())
+                .arg(statement));
+        return false;
+    }
+
+    foreach (const QVariant &name, keyNames) {
+        query.addBindValue(name);
+    }
+
+    if (!query.exec()) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to query OOB: %1")
+                .arg(query.lastError().text()));
+        return false;
+    }
+    while (query.next()) {
+        const QString type(query.value(0).toString());
+        values->insert(type.mid(scope.length() + 1), query.value(1));
+    }
+    query.finish();
+
+    return true;
 }
 
 void ContactReader::contactsAvailable(const QList<QContact> &)
