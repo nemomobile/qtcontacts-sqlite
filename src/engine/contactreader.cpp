@@ -526,9 +526,10 @@ template <typename T> static void readDetail(
         const int accessConstraints = query->value(3).toInt();
         const QString provenance = query->value(4).toString();
         const bool modifiable = query->value(5).toBool();
+        const bool nonexportable = query->value(6).toBool();
         /* Unused:
-        const quint32 detailId = query->value(6).toUInt();
-        const quint32 detailContactId = query->value(7).toUInt();
+        const quint32 detailId = query->value(7).toUInt();
+        const quint32 detailContactId = query->value(8).toUInt();
         */
 
         if (!detailUriValue.isEmpty()) {
@@ -561,16 +562,21 @@ template <typename T> static void readDetail(
             setValue(&detail, QContactDetail__FieldModifiable, modifiable);
         }
 
+        // Only include non-exportable if it is set
+        if (nonexportable) {
+            setValue(&detail, QContactDetail__FieldNonexportable, nonexportable);
+        }
+
         // Constraints should be applied unless generating a partial aggregate; the partial aggregate
         // is intended for modification, so adding constraints prevents it from being used correctly
         if (!relaxConstraints) {
             QContactManagerEngine::setDetailAccessConstraints(&detail, static_cast<QContactDetail::AccessConstraints>(accessConstraints));
         }
 
-        setValues(&detail, query, 8);
+        setValues(&detail, query, 9);
 
         contact->saveDetail(&detail);
-    } while (query->next() && (currentId = query->value(7).toUInt()) == contactId);
+    } while (query->next() && (currentId = query->value(8).toUInt()) == contactId);
 }
 
 static QContactRelationship makeRelationship(const QString &type, quint32 firstId, quint32 secondId)
@@ -1752,12 +1758,16 @@ QContactManager::Error ContactReader::queryContacts(
             "\n  Details.contexts,"
             "\n  Details.accessConstraints,"
             "\n  Details.provenance,"
-            "\n  Details.modifiable,"
+            "\n  COALESCE(Details.modifiable, 0),"
+            "\n  COALESCE(Details.nonexportable, 0),"
             "\n  %2.*"
             "\n FROM temp.%1"
             "\n  INNER JOIN %2 ON temp.%1.contactId = %2.contactId"
             "\n  LEFT JOIN Details ON %2.detailId = Details.detailId AND Details.detail = :detail"
             "\n ORDER BY temp.%1.rowId ASC;")).arg(tableName);
+
+    // This is the zero-based offset of the contact ID value in the table query above:
+    const int idValueOffset = 8;
 
     const ContactWriter::DetailList &details = fetchHint.detailTypesHint();
 
@@ -1799,7 +1809,7 @@ QContactManager::Error ContactReader::queryContacts(
                             .arg(detail.table)
                             .arg(table.query.lastError().text()));
                 } else if (table.query.next()) {
-                    table.currentId = table.query.value(7).toUInt();
+                    table.currentId = table.query.value(idValueOffset).toUInt();
                     tables.append(table);
                 }
             }

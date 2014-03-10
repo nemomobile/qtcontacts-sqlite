@@ -653,7 +653,8 @@ static const char *insertDetail =
         "\n  contexts,"
         "\n  accessConstraints,"
         "\n  provenance,"
-        "\n  modifiable)"
+        "\n  modifiable,"
+        "\n  nonexportable)"
         "\n VALUES ("
         "\n  :contactId,"
         "\n  :detailId,"
@@ -663,7 +664,8 @@ static const char *insertDetail =
         "\n  :contexts,"
         "\n  :accessConstraints,"
         "\n  :provenance,"
-        "\n  :modifiable);";
+        "\n  :modifiable,"
+        "\n  :nonexportable);";
 
 static const char *insertIdentity =
         "\n INSERT OR REPLACE INTO Identities ("
@@ -2075,6 +2077,7 @@ template <typename T> bool ContactWriter::writeCommonDetails(
     const int accessConstraints = static_cast<int>(detail.accessConstraints());
     const QVariant provenance = detailValue(detail, QContactDetail__FieldProvenance);
     const QVariant modifiable = wasLocal ? true : (syncable ? detailValue(detail, QContactDetail__FieldModifiable) : QVariant());
+    const QVariant nonexportable = detailValue(detail, QContactDetail__FieldNonexportable);
 
     m_insertDetail.bindValue(0, contactId);
     m_insertDetail.bindValue(1, detailId);
@@ -2085,6 +2088,7 @@ template <typename T> bool ContactWriter::writeCommonDetails(
     m_insertDetail.bindValue(6, accessConstraints);
     m_insertDetail.bindValue(7, provenance);
     m_insertDetail.bindValue(8, modifiable);
+    m_insertDetail.bindValue(9, nonexportable);
 
     if (!m_insertDetail.exec()) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to write common details for %1:\n%2\ndetailUri: %3, linkedDetailUris: %4")
@@ -3618,7 +3622,15 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
                 return QContactManager::UnspecifiedError;
             }
 
-            foreach (const QContact &aggregate, readList) {
+            foreach (QContact aggregate, readList) {
+                // Remove any non-exportable details from the contact
+                foreach (const QContactDetail detail, aggregate.details()) {
+                    if (detail.value<bool>(QContactDetail__FieldNonexportable)) {
+                        QContactDetail copy(detail);
+                        aggregate.removeDetail(&copy);
+                    }
+                }
+
                 if (exportedIds.contains(ContactId::databaseId(aggregate.id()))) {
                     syncContacts->append(aggregate);
                 } else {

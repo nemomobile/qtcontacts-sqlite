@@ -47,6 +47,7 @@ QT_BEGIN_NAMESPACE_CONTACTS
 // In QContactDetail, we support the provenance and modifiable properties
 static const int QContactDetail__FieldProvenance = (QContactDetail::FieldLinkedDetailUris+1);
 static const int QContactDetail__FieldModifiable = (QContactDetail::FieldLinkedDetailUris+2);
+static const int QContactDetail__FieldNonexportable = (QContactDetail::FieldLinkedDetailUris+3);
 
 // In QContactName, we support the customLabel property
 static const int QContactName__FieldCustomLabel = (QContactName::FieldSuffix+1);

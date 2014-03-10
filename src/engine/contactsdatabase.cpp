@@ -245,7 +245,8 @@ static const char *createDetailsTable =
         "\n contexts TEXT,"
         "\n accessConstraints INTEGER,"
         "\n provenance TEXT,"
-        "\n modifiable BOOL);";
+        "\n modifiable BOOL,"
+        "\n nonexportable BOOL);";
 
 static const char *createDetailsJoinIndex =
         "\n CREATE INDEX DetailsJoinIndex ON Details(detailId, detail);";
@@ -629,6 +630,11 @@ static const char *upgradeVersion5[] = {
     "PRAGMA user_version=6",
     0 // NULL-terminated
 };
+static const char *upgradeVersion6[] = {
+    "ALTER TABLE Details ADD COLUMN nonexportable BOOL DEFAULT 0",
+    "PRAGMA user_version=7",
+    0 // NULL-terminated
+};
 
 static const char **upgradeVersions[] = {
     upgradeVersion0,
@@ -637,9 +643,10 @@ static const char **upgradeVersions[] = {
     upgradeVersion3,
     upgradeVersion4,
     upgradeVersion5,
+    upgradeVersion6,
 };
 
-static const int currentSchemaVersion = 6;
+static const int currentSchemaVersion = 7;
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {

@@ -3933,6 +3933,12 @@ void tst_Aggregation::fetchSyncContacts()
     e.setEmailAddress("mad.hatter@example.org");
     stc.saveDetail(&e);
 
+    // Add a detail marked as non-exportable
+    QContactPhoneNumber pn;
+    pn.setNumber("555-555-555");
+    pn.setValue(QContactDetail__FieldNonexportable, true);
+    stc.saveDetail(&pn);
+
     QVERIFY(m_cm->saveContact(&stc));
 
     QTRY_COMPARE(syncSpy.count(), 1);
@@ -3961,7 +3967,12 @@ void tst_Aggregation::fetchSyncContacts()
     // The partial aggregate should have the same ID as the constituent it was derived from
     QContact pa = syncContacts.at(0);
     QCOMPARE(pa.id(), stc.id());
+
     QCOMPARE(pa.details<QContactEmailAddress>().count(), 1);
+    QCOMPARE(pa.details<QContactEmailAddress>().at(0).emailAddress(), e.emailAddress());
+
+    QCOMPARE(pa.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(pa.details<QContactPhoneNumber>().at(0).number(), pn.number());
 
     // Invalid since time is equivalent to not having a time limitation
     syncContacts.clear();
@@ -3983,7 +3994,12 @@ void tst_Aggregation::fetchSyncContacts()
     // The export contact should have the aggregate ID
     pa = addedContacts.at(0);
     QCOMPARE(pa.id(), a1);
+
     QCOMPARE(pa.details<QContactEmailAddress>().count(), 1);
+    QCOMPARE(pa.details<QContactEmailAddress>().at(0).emailAddress(), e.emailAddress());
+
+    // The non-exportable data is excluded from the export details
+    QCOMPARE(pa.details<QContactPhoneNumber>().count(), 0);
 
     // Add this contact to the sync-export set
     syncExportedIds.append(pa.id());
