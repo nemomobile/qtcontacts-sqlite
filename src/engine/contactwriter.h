@@ -122,6 +122,8 @@ private:
     QContactManager::Error saveRelationships(const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap);
     QContactManager::Error removeRelationships(const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap);
 
+    QContactManager::Error removeContacts(const QVariantList &ids);
+
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     QContactManager::Error setAggregate(QContact *contact, quint32 contactId, bool update, const DetailList &definitionMask, bool withinTransaction);
     QContactManager::Error calculateDelta(QContact *contact, const ContactWriter::DetailList &definitionMask,
@@ -131,6 +133,7 @@ private:
     QContactManager::Error regenerateAggregates(const QList<quint32> &aggregateIds, const DetailList &definitionMask, bool withinTransaction);
     QContactManager::Error removeChildlessAggregates(QList<QContactId> *realRemoveIds);
     QContactManager::Error aggregateOrphanedContacts(bool withinTransaction);
+    QContactManager::Error recordAffectedSyncTargets(const QVariantList &ids);
 
     QContactManager::Error syncFetch(const QString &syncTarget, const QDateTime &lastSync, const QSet<quint32> &exportedIds,
                                      QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds);

@@ -811,32 +811,12 @@ bool ContactWriter::commitTransaction()
 {
     if (!m_changedLocalIds.isEmpty()) {
         // Find any sync targets affected by modified local contacts
-        bool error(false);
-
         QVariantList ids;
         foreach (quint32 id, m_changedLocalIds) {
             ids.append(id);
         }
 
-        ContactsDatabase::clearTemporaryContactIdsTable(m_database, syncConstituentsTable);
-
-        if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, syncConstituentsTable, ids)) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error populating syncConstituents temporary table"));
-            error = true;
-        } else if (!m_affectedSyncTargets.exec()) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to fetch affected sync targets:\n%1")
-                    .arg(m_affectedSyncTargets.lastError().text()));
-            error = true;
-        }
-        while (!error && m_affectedSyncTargets.next()) {
-            const QString st(m_affectedSyncTargets.value(0).toString());
-            if (!m_suppressedSyncTargets.contains(st)) {
-                m_changedSyncTargets.insert(st);
-            }
-        }
-        m_affectedSyncTargets.finish();
-
-        if (error) {
+        if (recordAffectedSyncTargets(ids) != QContactManager::NoError) {
             rollbackTransaction();
             return false;
         }
@@ -1309,6 +1289,27 @@ QContactManager::Error ContactWriter::removeRelationships(
     return QContactManager::NoError;
 }
 
+QContactManager::Error ContactWriter::removeContacts(const QVariantList &ids)
+{
+#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
+    // If this is a local contact, it may cause changes to sync target contacts aggregated with it
+    if (recordAffectedSyncTargets(ids) != QContactManager::NoError) {
+        return QContactManager::UnspecifiedError;
+    }
+#endif
+
+    m_removeContact.bindValue(QLatin1String(":contactId"), ids);
+    if (!m_removeContact.execBatch()) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to remove contacts:\n%1")
+                .arg(m_removeContact.lastError().text()));
+        m_removeContact.finish();
+        return QContactManager::UnspecifiedError;
+    }
+    m_removeContact.finish();
+
+    return QContactManager::NoError;
+}
+
 QContactManager::Error ContactWriter::remove(const QList<QContactId> &contactIds, QMap<int, QContactManager::Error> *errorMap, bool withinTransaction)
 {
     QMutexLocker locker(ContactsDatabase::accessMutex());
@@ -1373,18 +1374,14 @@ QContactManager::Error ContactWriter::remove(const QList<QContactId> &contactIds
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to begin database transaction while removing contacts"));
             return QContactManager::UnspecifiedError;
         }
-        m_removeContact.bindValue(QLatin1String(":contactId"), boundRealRemoveIds);
-        if (!m_removeContact.execBatch()) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to remove contacts:\n%1")
-                    .arg(m_removeContact.lastError().text()));
+        QContactManager::Error removeError = removeContacts(boundRealRemoveIds);
+        if (removeError != QContactManager::NoError) {
             if (!withinTransaction) {
                 // only rollback if we created a transaction.
                 rollbackTransaction();
             }
-            m_removeContact.finish();
-            return QContactManager::UnspecifiedError;
+            return removeError;
         }
-        m_removeContact.finish();
         foreach (const QContactId &rrid, realRemoveIds) {
             m_removedIds.insert(rrid);
         }
@@ -1451,19 +1448,14 @@ QContactManager::Error ContactWriter::remove(const QList<QContactId> &contactIds
 
     // remove the non-aggregate contacts
     if (boundNonAggregatesToRemove.size() > 0) {
-        m_removeContact.bindValue(QLatin1String(":contactId"), boundNonAggregatesToRemove);
-        if (!m_removeContact.execBatch()) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to remove non-aggregate contacts:\n%1")
-                    .arg(m_removeContact.lastError().text()));
+        QContactManager::Error removeError = removeContacts(boundNonAggregatesToRemove);
+        if (removeError != QContactManager::NoError) {
             if (!withinTransaction) {
-                // only rollback the transaction if we created it
+                // only rollback if we created a transaction.
                 rollbackTransaction();
             }
-            m_removeContact.finish();
-            return QContactManager::UnspecifiedError;
+            return removeError;
         }
-
-        m_removeContact.finish();
     }
 
     // remove the aggregate contacts - and any contacts they aggregate
@@ -1495,18 +1487,14 @@ QContactManager::Error ContactWriter::remove(const QList<QContactId> &contactIds
         }
 
         // remove the aggregates + the aggregated
-        m_removeContact.bindValue(QLatin1String(":contactId"), boundAggregatesToRemove);
-        if (!m_removeContact.execBatch()) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to remove aggregate contacts (and the contacts they aggregate):\n%1")
-                    .arg(m_removeContact.lastError().text()));
+        QContactManager::Error removeError = removeContacts(boundAggregatesToRemove);
+        if (removeError != QContactManager::NoError) {
             if (!withinTransaction) {
                 // only rollback the transaction if we created it
                 rollbackTransaction();
             }
-            m_removeContact.finish();
-            return QContactManager::UnspecifiedError;
+            return removeError;
         }
-        m_removeContact.finish();
     }
 
     // removing aggregates if they no longer aggregate any contacts.
@@ -3410,14 +3398,10 @@ QContactManager::Error ContactWriter::regenerateAggregates(const QList<quint32> 
         }
     }
     if (!aggregatesToRemove.isEmpty()) {
-        m_removeContact.bindValue(QLatin1String(":contactId"), aggregatesToRemove);
-        if (!m_removeContact.execBatch()) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to remove deactivated aggregate contacts:\n%1")
-                    .arg(m_removeContact.lastError().text()));
-            m_removeContact.finish();
-            return QContactManager::UnspecifiedError;
+        QContactManager::Error removeError = removeContacts(aggregatesToRemove);
+        if (removeError != QContactManager::NoError) {
+            return removeError;
         }
-        m_removeContact.finish();
     }
 
     return QContactManager::NoError;
@@ -3439,14 +3423,10 @@ QContactManager::Error ContactWriter::removeChildlessAggregates(QList<QContactId
     m_childlessAggregateIds.finish();
 
     if (aggregateIds.size() > 0) {
-        m_removeContact.bindValue(QLatin1String(":contactId"), aggregateIds);
-        if (!m_removeContact.execBatch()) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to remove childless aggregate contacts:\n%1")
-                    .arg(m_removeContact.lastError().text()));
-            m_removeContact.finish();
-            return QContactManager::UnspecifiedError;
+        QContactManager::Error removeError = removeContacts(aggregateIds);
+        if (removeError != QContactManager::NoError) {
+            return removeError;
         }
-        m_removeContact.finish();
     }
 
     return QContactManager::NoError;
@@ -3488,6 +3468,30 @@ QContactManager::Error ContactWriter::aggregateOrphanedContacts(bool withinTrans
     }
 
     return QContactManager::NoError;
+}
+
+QContactManager::Error ContactWriter::recordAffectedSyncTargets(const QVariantList &ids)
+{
+    ContactsDatabase::clearTemporaryContactIdsTable(m_database, syncConstituentsTable);
+
+    if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, syncConstituentsTable, ids)) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error populating syncConstituents temporary table"));
+    } else if (!m_affectedSyncTargets.exec()) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to fetch affected sync targets:\n%1")
+                .arg(m_affectedSyncTargets.lastError().text()));
+    } else {
+        while (m_affectedSyncTargets.next()) {
+            const QString st(m_affectedSyncTargets.value(0).toString());
+            if (!m_suppressedSyncTargets.contains(st)) {
+                m_changedSyncTargets.insert(st);
+            }
+        }
+        m_affectedSyncTargets.finish();
+
+        return QContactManager::NoError;
+    }
+
+    return QContactManager::UnspecifiedError;
 }
 
 static QDateTime epochDateTime()
@@ -4158,14 +4162,10 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
         }
 
         // Remove any contacts that should no longer exist
-        m_removeContact.bindValue(QLatin1String(":contactId"), removeIds);
-        if (!m_removeContact.execBatch()) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to remove sync target constituents:\n%1")
-                    .arg(m_removeContact.lastError().text()));
-            m_removeContact.finish();
-            return QContactManager::UnspecifiedError;
+        QContactManager::Error removeError = removeContacts(removeIds);
+        if (removeError != QContactManager::NoError) {
+            return removeError;
         }
-        m_removeContact.finish();
     }
 
     return QContactManager::NoError;
