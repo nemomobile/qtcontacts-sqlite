@@ -4421,6 +4421,43 @@ void tst_Aggregation::fetchSyncContacts()
     QVERIFY(contactIds.contains(flc.id()));
     QVERIFY(contactIds.contains(a3));
 
+    // Remove a local contact that affects an aggregate containing our sync target
+    QVERIFY(m_cm->removeContact(lc.id()));
+
+    // The deletion should report changes to sync targets
+    QTRY_COMPARE(syncSpy.count(), 1);
+    signalArgs = syncSpy.takeFirst();
+    QCOMPARE(syncSpy.count(), 0);
+    QCOMPARE(signalArgs.count(), 1);
+    changedSyncTargets = signalArgs.first().value<QStringList>();
+    QCOMPARE(changedSyncTargets.count(), 2);
+    QCOMPARE(changedSyncTargets.toSet(), (QSet<QString>() << "sync-test" << "different-sync-target"));
+
+    // Remove a local contact that affects a different sync target
+    QVERIFY(m_cm->removeContact(nlc.id()));
+
+    QTRY_COMPARE(syncSpy.count(), 1);
+    signalArgs = syncSpy.takeFirst();
+    QCOMPARE(syncSpy.count(), 0);
+    QCOMPARE(signalArgs.count(), 1);
+    changedSyncTargets = signalArgs.first().value<QStringList>();
+    QCOMPARE(changedSyncTargets.count(), 1);
+    QCOMPARE(changedSyncTargets.first(), QString::fromLatin1("different-sync-target"));
+
+    contactIds = m_cm->contactIds(allSyncTargets);
+    QVERIFY(contactIds.contains(stc.id()));
+    QVERIFY(!contactIds.contains(lc.id()));
+    QVERIFY(contactIds.contains(alc.id()));
+    QVERIFY(contactIds.contains(dstc.id()));
+    QVERIFY(contactIds.contains(astc.id()));
+    QVERIFY(contactIds.contains(a1));
+    QVERIFY(!contactIds.contains(nlc.id()));
+    QVERIFY(contactIds.contains(nastc.id()));
+    QVERIFY(contactIds.contains(a2));
+    QVERIFY(contactIds.contains(fstc.id()));
+    QVERIFY(contactIds.contains(flc.id()));
+    QVERIFY(contactIds.contains(a3));
+
     // Now remove all contacts
     QVERIFY(m_cm->removeContacts(QList<QContactId>() << a1 << a2 << a3));
 
@@ -4450,6 +4487,14 @@ void tst_Aggregation::fetchSyncContacts()
     QVERIFY(deletedIds.contains(stc.id()));
     QVERIFY(deletedIds.contains(astc.id()));
     QVERIFY(deletedIds.contains(nlc.id()));
+
+    QTRY_COMPARE(syncSpy.count(), 1);
+    signalArgs = syncSpy.takeFirst();
+    QCOMPARE(syncSpy.count(), 0);
+    QCOMPARE(signalArgs.count(), 1);
+    changedSyncTargets = signalArgs.first().value<QStringList>();
+    QCOMPARE(changedSyncTargets.count(), 2);
+    QCOMPARE(changedSyncTargets.toSet(), (QSet<QString>() << "sync-test" << "different-sync-target"));
 }
 
 void tst_Aggregation::storeSyncContacts()
