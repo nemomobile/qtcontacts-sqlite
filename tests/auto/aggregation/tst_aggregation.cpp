@@ -5313,6 +5313,50 @@ void tst_Aggregation::storeSyncContacts()
     syncContacts.clear();
     QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
     QCOMPARE(syncContacts.count(), 0);
+
+    // Now ensure that if the sync target constituent is the only constituent,
+    // removing it via storeSyncContacts() will result in the aggregate being removed.
+    QDateTime finalTime = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
+    QTest::qWait(1000);
+
+    // Create a final sync target contact, with no linked constituents
+    QContactName n4;
+    n4.setFirstName("Julius");
+    n4.setLastName("Oppenheimer");
+
+    QContact fstc;
+    fstc.saveDetail(&n4);
+
+    modifications.clear();
+    modifications.append(qMakePair(QContact(), fstc));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
+
+    syncContacts.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", finalTime, exportedIds, &syncContacts, 0, 0, &err));
+    QCOMPARE(syncContacts.count(), 1);
+
+    fstc = m_cm->contact(retrievalId(syncContacts.at(0)));
+
+    // The contact should have an aggregate
+    QCOMPARE(fstc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
+    QContactId faId = fstc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id();
+
+    contactIds = m_cm->contactIds(allSyncTargets);
+    QVERIFY(contactIds.contains(fstc.id()));
+    QVERIFY(contactIds.contains(faId));
+
+    // Now remove the sync target contact
+    QSignalSpy remSpy(m_cm, contactsRemovedSignal);
+    int remSpyCount = remSpy.count();
+    modifications.clear();
+    modifications.append(qMakePair(fstc, QContact()));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
+
+    // Both the constituent and the aggregate should be removed
+    contactIds = m_cm->contactIds(allSyncTargets);
+    QVERIFY(!contactIds.contains(fstc.id()));
+    QVERIFY(!contactIds.contains(faId));
+    QTRY_COMPARE(remSpy.count(), remSpyCount+1);
 }
 
 void tst_Aggregation::testOOB()
