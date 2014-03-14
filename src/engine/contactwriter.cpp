@@ -2631,7 +2631,7 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
     if (createdNewLocal) {
         // Add the aggregates relationship
         QList<QContactRelationship> saveRelationshipList;
-        saveRelationshipList.append(makeRelationship(relationshipString(QContactRelationship::Aggregates), contact->id(), writeList.at(0).id()));
+        saveRelationshipList.append(makeRelationship(relationshipString(QContactRelationship::Aggregates), contact->id(), writeList.last().id())); // the last contact will be the incidental contact, appended to the writeList above.
         writeError = save(saveRelationshipList, &errorMap, withinTransaction);
         if (writeError != QContactManager::NoError) {
             // if the aggregation relationship fails, the entire save has failed.
