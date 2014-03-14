@@ -32,6 +32,7 @@
 #define QT_STATICPLUGIN
 
 #include "../../util.h"
+#include "testsyncadapter.h"
 
 #define TRIM_MSECS(t) t.addMSecs(0 - t.msec())
 #define TRIM_DT_MSECS(dt) dt.addMSecs(0 - dt.time().msec())
@@ -121,6 +122,7 @@ private slots:
     void storeSyncContacts();
 
     void testOOB();
+    void testSyncAdapter();
 
 private:
     void waitForSignalPropagation();
@@ -5417,6 +5419,36 @@ void tst_Aggregation::testOOB()
     values.clear();
     QVERIFY(cme->fetchOOB(scope, &values));
     QCOMPARE(values.count(), 0);
+}
+
+void tst_Aggregation::testSyncAdapter()
+{
+    typedef QtContactsSqliteExtensions::ContactManagerEngine EngineType;
+    EngineType *cme = qobject_cast<EngineType *>(QContactManagerData::managerData(m_cm)->m_engine);
+
+    TestSyncAdapter tsa;
+
+    // TODO!
+
+    // start from clean, so the first run should look like:
+    // remoteChangesSince should include some additions
+    // store them, should result in new sync-target-constituents
+    // upsyncLocalChangesSince should be empty, no further modifications upsynced.
+
+    // next should mutate some things just locally
+    // remoteChangesSince should be empty
+    // nothing to store
+    // upsyncLocalChangesSince should involve some modifications and some removals
+
+    // next should mutate some things just remotely
+    // remoteChangesSince should include some additions/modifications/removals
+    // store them, should result in the appropriate changes locally
+    // nothing to upsync
+
+    // next should be changes both remotely and locally
+    // especially, check the "remotely modified but locally deleted" behaviour.
+
+    // finally, check remote total deletion, to return database back to clean state.
 }
 
 QTEST_MAIN(tst_Aggregation)
