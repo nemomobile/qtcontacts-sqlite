@@ -3975,6 +3975,7 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
     if (!affectedContactIds.isEmpty() || !contactsToAdd.isEmpty()) {
         QList<QContact> modifiedContacts;
         QVariantList removeIds;
+        QList<QContactId> removeContactIds;
 
         if (!affectedContactIds.isEmpty()) {
             QContactFetchHint hint;
@@ -4004,6 +4005,7 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
                                 .arg(contactId).arg(cst));
                     } else {
                         removeIds.append(contactId);
+                        removeContactIds.append(contact.id());
                     }
                     continue;
                 }
@@ -4162,9 +4164,23 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
         }
 
         // Remove any contacts that should no longer exist
-        QContactManager::Error removeError = removeContacts(removeIds);
-        if (removeError != QContactManager::NoError) {
-            return removeError;
+        if (removeIds.size()) {
+            QContactManager::Error removeError = removeContacts(removeIds);
+            if (removeError != QContactManager::NoError) {
+                return removeError;
+            }
+
+            // remove any childless agggregates left over by the above removal
+            QList<QContactId> removedAggregateIds;
+            removeError = removeChildlessAggregates(&removedAggregateIds);
+            if (removeError != QContactManager::NoError) {
+                return removeError;
+            }
+
+            // and add those ids to the change signal accumulator
+            foreach (const QContactId &id, removeContactIds + removedAggregateIds) {
+                m_removedIds.insert(id);
+            }
         }
     }
 
