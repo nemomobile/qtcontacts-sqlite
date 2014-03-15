@@ -797,10 +797,6 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapter::createUpdateList(con
             // No need to check if the change is substantial - it is, it now has a guid.
             prevRemoteModificationIndexes.insert(prmIndex, updated);
             retn.append(qMakePair(prev, updated));
-            // This sync adapter should remove that contact from the list of
-            // exported ids (as it now has a synctarget constituent, so doesn't
-            // need to be tracked separately).
-            exportedIds->removeAll(QContactId::fromString(addedModifiedGuidToGId.value(guid)));
         } else {
             // this is a pure server-side addition.
             // additions: <NULL, UPDATED_REMOTE>
