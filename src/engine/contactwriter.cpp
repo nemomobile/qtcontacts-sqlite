@@ -243,7 +243,7 @@ static const char *aggregateContactIds =
         "\n AND Contacts.modified > :lastSync";
 
 static const char *constituentContactDetails =
-        "\n SELECT Relationships.firstId, Contacts.contactId, Contacts.syncTarget"
+        "\n SELECT Relationships.firstId, Contacts.contactId, Contacts.syncTarget, Contacts.IsIncidental"
         "\n FROM Relationships"
         "\n JOIN Contacts ON Contacts.contactId = Relationships.secondId"
         "\n WHERE Relationships.type = 'Aggregates'"
@@ -251,7 +251,7 @@ static const char *constituentContactDetails =
         "\n  SELECT contactId FROM temp.syncAggregates)"
         "\n AND Contacts.isDeactivated = 0";
 
-static const char *localConstituentIds =
+static const char *syncTargetConstituentIds =
         "\n SELECT R2.secondId, R1.secondId"
         "\n FROM Relationships AS R1"
         "\n JOIN Relationships AS R2 ON R2.firstId = R1.firstId"
@@ -259,7 +259,7 @@ static const char *localConstituentIds =
         "\n WHERE R1.type = 'Aggregates' AND R1.secondId IN ("
         "\n  SELECT contactId FROM temp.syncConstituents)"
         "\n AND R2.type = 'Aggregates'"
-        "\n AND Contacts.syncTarget = 'local'";
+        "\n AND Contacts.syncTarget = :syncTarget";
 
 static const char *affectedSyncTargets =
         "\n SELECT Contacts.syncTarget"
@@ -753,7 +753,7 @@ ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &d
     // These queries needs the 'temp.syncConstituents' to exist to prepare
     if (ContactsDatabase::createTemporaryContactIdsTable(m_database, syncConstituentsTable, QVariantList())) {
         m_aggregateContactIds = prepare(aggregateContactIds, database);
-        m_localConstituentIds = prepare(localConstituentIds, database);
+        m_syncTargetConstituentIds = prepare(syncTargetConstituentIds, database);
         m_affectedSyncTargets = prepare(affectedSyncTargets, database);
     } else {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary %1 table").arg(syncConstituentsTable));
@@ -3501,6 +3501,12 @@ static QDateTime epochDateTime()
     return rv;
 }
 
+struct ConstituentDetails {
+    quint32 id;
+    QString syncTarget;
+    bool incidental;
+};
+
 QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const QDateTime &lastSync, const QSet<quint32> &exportedIds,
                                                 QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds)
 {
@@ -3580,7 +3586,7 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
             // remote data.  Data from other sync adaptors should be excluded.
 
             // First, find the constituent details for the aggregates
-            QMap<quint32, QList<QPair<quint32, QString> > > constituentDetails;
+            QMap<quint32, QList<ConstituentDetails> > constituentDetails;
             QMap<quint32, quint32> localIds;
 
             QVariantList ids;
@@ -3604,8 +3610,10 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
                 const quint32 aggId(m_constituentContactDetails.value(0).toUInt());
                 const quint32 constituentId(m_constituentContactDetails.value(1).toUInt());
                 const QString st(m_constituentContactDetails.value(2).toString());
+                const bool incidental(m_constituentContactDetails.value(3).toBool());
 
-                constituentDetails[aggId].append(qMakePair(constituentId, st));
+                ConstituentDetails details = { constituentId, st, incidental };
+                constituentDetails[aggId].append(details);
                 if (st == localSyncTarget) {
                     localIds[aggId] = constituentId;
                 }
@@ -3616,22 +3624,23 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
             QSet<quint32> requiredConstituentIds;
 
             // For each aggregate - can we return the existing complete aggregate or do we need to generate a limited version?
-            QMap<quint32, QList<QPair<quint32, QString> > >::const_iterator it = constituentDetails.constBegin(), end = constituentDetails.constEnd();
+            QMap<quint32, QList<ConstituentDetails> >::const_iterator it = constituentDetails.constBegin(), end = constituentDetails.constEnd();
             for ( ; it != end; ++it) {
                 quint32 syncTargetConstituentId = 0;
                 QList<quint32> inclusions;
 
                 const quint32 aggId(it.key());
-                const QList<QPair<quint32, QString> > &constituents(it.value());
+                const QList<ConstituentDetails> &constituents(it.value());
 
-                QList<QPair<quint32, QString> >::const_iterator cit = constituents.constBegin(), cend = constituents.constEnd();
+                QList<ConstituentDetails>::const_iterator cit = constituents.constBegin(), cend = constituents.constEnd();
                 for ( ; cit != cend; ++cit) {
-                    const quint32 cid((*cit).first);
-                    const QString cst((*cit).second);
+                    const quint32 cid((*cit).id);
+                    const QString cst((*cit).syncTarget);
+                    const bool incidental((*cit).incidental);
 
                     if (cst == syncTarget || cst == localSyncTarget || cst == wasLocalSyncTarget) {
                         inclusions.append(cid);
-                        if (cst == syncTarget) {
+                        if (cst == syncTarget && !incidental) {
                             if (syncTargetConstituentId != 0) {
                                 // We need to generate partial aggregates for each syncTarget constituent
                                 partialBaseAggregateIds.insert(cid, aggId);
@@ -3692,9 +3701,7 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
                     if (localId) {
                         if (const QContact *localConstituent = constituentContacts[localId]) {
                             foreach (const QContactDetail &detail, localConstituent->details()) {
-                                const bool forcePromotion(localId == baseId);
-                                if ((!forcePromotion && !detailListContains(unpromotedDetailTypes, detail)) ||
-                                    (forcePromotion && !detailListContains(absolutelyUnpromotedDetailTypes, detail))) {
+                                if (!detailListContains(unpromotedDetailTypes, detail)) {
                                     // promote this detail to the aggregate.
                                     QContactDetail copy(detail);
                                     adjustDetailUrisForAggregate(copy, aggId);
@@ -3708,23 +3715,25 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
                     }
 
                     // Promote details from other constituents
-                    const QList<QPair<quint32, QString> > &constituents(constituentDetails[aggId]);
-                    QList<QPair<quint32, QString> >::const_iterator cit = constituents.constBegin(), cend = constituents.constEnd();
+                    const QList<ConstituentDetails> &constituents(constituentDetails[aggId]);
+                    QList<ConstituentDetails>::const_iterator cit = constituents.constBegin(), cend = constituents.constEnd();
                     for ( ; cit != cend; ++cit) {
-                        const quint32 cid((*cit).first);
-                        const QString cst((*cit).second);
+                        const quint32 cid((*cit).id);
+                        const QString cst((*cit).syncTarget);
+                        const bool incidental((*cit).incidental);
 
                         if (cst == syncTarget || cst == wasLocalSyncTarget) {
                             if (cst == syncTarget) {
-                                // Do not include any constituents from this sync service that are not the base itself
-                                // (Note that the base will either be from this service, or a local where there is no
-                                // constituent from this service)
-                                if (cid != baseId) {
+                                // Do not include any constituents from this sync service that are not the base itself,
+                                // unless the constituent is incidental (Note that the base will either be from this service,
+                                // or a local where there may be an incidental constituent from this service)
+                                if (cid != baseId && !incidental) {
                                     continue;
                                 }
                             }
                             if (const QContact *constituent = constituentContacts[cid]) {
-                                const bool forcePromotion(cid == baseId);
+                                // Force promotion of details from the constituent matching the syncTarget
+                                const bool forcePromotion(cst == syncTarget);
                                 promoteDetailsToAggregate(*constituent, &partialAggregate, DetailList(), forcePromotion);
                             } else {
                                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to promote details from missing constitutent: %1").arg(cid));
@@ -3940,36 +3949,77 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
             return QContactManager::UnspecifiedError;
         }
 
-        if (!m_localConstituentIds.exec()) {
+        m_syncTargetConstituentIds.bindValue(":syncTarget", QString::fromLatin1("local"));
+        if (!m_syncTargetConstituentIds.exec()) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to fetch local constituent ids for sync update:\n%1")
-                    .arg(m_localConstituentIds.lastError().text()));
+                    .arg(m_syncTargetConstituentIds.lastError().text()));
             return QContactManager::UnspecifiedError;
         }
-        while (m_localConstituentIds.next()) {
-            const quint32 localConstituentId = m_localConstituentIds.value(0).toUInt();
-            const quint32 modifiedConstituentId = m_localConstituentIds.value(1).toUInt();
+        while (m_syncTargetConstituentIds.next()) {
+            const quint32 localConstituentId = m_syncTargetConstituentIds.value(0).toUInt();
+            const quint32 modifiedConstituentId = m_syncTargetConstituentIds.value(1).toUInt();
 
             if (localConstituentId != modifiedConstituentId) {
                 // Any changes made to the constituent must also be made to the local to be effective
                 contactModifications[localConstituentId].append(contactModifications[modifiedConstituentId]);
             }
         }
-        m_localConstituentIds.finish();
+        m_syncTargetConstituentIds.finish();
     }
 
     QSet<quint32> affectedContactIds((contactModifications.keys() + contactAdditions.keys() + contactRemovals.keys()).toSet());
 
-    QSet<quint32>::iterator rit = contactsToRemove.begin();
-    while (rit != contactsToRemove.end()) {
-        if (affectedContactIds.contains(*rit)) {
-            // This contact is to be modified - don't remove it
-            rit = contactsToRemove.erase(rit);
-        } else {
-            // Add this contact to the fetch set
-            affectedContactIds.insert(*rit);
-            ++rit;
+    QMap<quint32, quint32> stConstituents;
+
+    // For contacts that are not from out sync target, we may need to modify the sync target constituent of the aggregate
+    if (!affectedContactIds.isEmpty() || !contactsToRemove.isEmpty()) {
+        QVariantList ids;
+        foreach (quint32 id, affectedContactIds + contactsToRemove) {
+            ids.append(id);
+        }
+
+        ContactsDatabase::clearTemporaryContactIdsTable(m_database, syncConstituentsTable);
+
+        if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, syncConstituentsTable, ids)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error populating syncConstituents temporary table"));
+            return QContactManager::UnspecifiedError;
+        }
+
+        m_syncTargetConstituentIds.bindValue(":syncTarget", syncTarget);
+        if (!m_syncTargetConstituentIds.exec()) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to fetch local constituent ids for sync update:\n%1")
+                    .arg(m_syncTargetConstituentIds.lastError().text()));
+            return QContactManager::UnspecifiedError;
+        }
+        while (m_syncTargetConstituentIds.next()) {
+            const quint32 stConstituentId = m_syncTargetConstituentIds.value(0).toUInt();
+            const quint32 modifiedConstituentId = m_syncTargetConstituentIds.value(1).toUInt();
+
+            if (stConstituentId != modifiedConstituentId) {
+                // We may need to modify the sync target constituent also
+                stConstituents.insert(modifiedConstituentId, stConstituentId);
+                affectedContactIds.insert(stConstituentId);
+            }
+        }
+        m_syncTargetConstituentIds.finish();
+    }
+
+    QSet<quint32> modifiedContactsToRemove;
+    QSet<quint32>::const_iterator rit = contactsToRemove.constBegin(), rend = contactsToRemove.constEnd();
+    for ( ; rit != rend; ++rit) {
+        if (!affectedContactIds.contains(*rit)) {
+            const quint32 stId(stConstituents.value(*rit));
+            if (stId != 0) {
+                // Remove the sync target consituent instead of the base constituent
+                modifiedContactsToRemove.insert(stId);
+                affectedContactIds.insert(stId);
+            } else {
+                modifiedContactsToRemove.insert(*rit);
+                affectedContactIds.insert(*rit);
+            }
         }
     }
+    contactsToRemove = modifiedContactsToRemove;
 
     // Fetch all the contacts we want to apply modifications to
     if (!affectedContactIds.isEmpty() || !contactsToAdd.isEmpty()) {
@@ -4001,7 +4051,7 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
                 if (contactsToRemove.contains(contactId)) {
                     // This contact should be removed, only if it has our syncTarget
                     if (cst != syncTarget) {
-                        QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Ignoring constituent removal for %1 with invalid sync target: %2")
+                        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Ignoring constituent removal for %1 with invalid sync target: %2")
                                 .arg(contactId).arg(cst));
                     } else {
                         removeIds.append(contactId);
@@ -4093,32 +4143,60 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
                     QContact stContact;
 
                     if (cst != syncTarget) {
-                        // We need to create a new constituent of this contact, to contain the remote additions
-                        QContactSyncTarget stDetail;
-                        stDetail.setSyncTarget(syncTarget);
-                        stContact.saveDetail(&stDetail);
-
-                        // Copy some identifying detail to the new constituent
-                        QContactName nameDetail = contact.detail<QContactName>();
-                        bool copyName = (!nameDetail.firstName().isEmpty() || !nameDetail.lastName().isEmpty());
-                        if (!copyName) {
-                            // This name fails to adequately identify the contact - copy a nickname instead, if available
-                            copyName = (!nameDetail.prefix().isEmpty() || !nameDetail.middleName().isEmpty() || !nameDetail.suffix().isEmpty());
-                            foreach (QContactNickname nick, contact.details<QContactNickname>()) {
-                                if (!nick.nickname().isEmpty()) {
-                                    adjustDetailUrisForLocal(nick);
-                                    nick.setValue(QContactDetail__FieldModifiable, true);
-                                    stContact.saveDetail(&nick);
-
-                                    // We have found a usable nickname - ignore the name detail
-                                    copyName = false;
+                        // Do we already have a constituent of this contact with our sync target?
+                        const quint32 stId(stConstituents.value(contactId));
+                        if (stId != 0) {
+                            // See if we have already modifed this contact in this batch
+                            QList<QContact>::iterator mit = modifiedContacts.begin(), mend = modifiedContacts.end();
+                            for ( ; mit != mend; ++mit) {
+                                if (ContactId::databaseId((*mit).id()) == stId) {
+                                    // Modify this contact further, and add it back to the list
+                                    stContact = *mit;
+                                    modifiedContacts.erase(mit);
                                     break;
                                 }
                             }
-                        }
-                        if (copyName) {
-                            adjustDetailUrisForLocal(nameDetail);
-                            stContact.saveDetail(&nameDetail);
+
+                            if (stContact.isEmpty()) {
+                                // We haven't modified this contact yet; find it in the read list
+                                foreach (const QContact &contact, readList) {
+                                    if (ContactId::databaseId(contact.id()) == stId) {
+                                        stContact = contact;
+                                        break;
+                                    }
+                                }
+                            }
+                        } else {
+                            // We need to create a new constituent of this contact, to contain the remote additions
+                            QContactSyncTarget stDetail;
+                            stDetail.setSyncTarget(syncTarget);
+                            stContact.saveDetail(&stDetail);
+
+                            QContactIncidental incidental;
+                            stContact.saveDetail(&incidental);
+
+                            // Copy some identifying detail to the new constituent
+                            QContactName nameDetail = contact.detail<QContactName>();
+                            bool copyName = (!nameDetail.firstName().isEmpty() || !nameDetail.lastName().isEmpty());
+                            if (!copyName) {
+                                // This name fails to adequately identify the contact - copy a nickname instead, if available
+                                copyName = (!nameDetail.prefix().isEmpty() || !nameDetail.middleName().isEmpty() || !nameDetail.suffix().isEmpty());
+                                foreach (QContactNickname nick, contact.details<QContactNickname>()) {
+                                    if (!nick.nickname().isEmpty()) {
+                                        adjustDetailUrisForLocal(nick);
+                                        nick.setValue(QContactDetail__FieldModifiable, true);
+                                        stContact.saveDetail(&nick);
+
+                                        // We have found a usable nickname - ignore the name detail
+                                        copyName = false;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (copyName) {
+                                adjustDetailUrisForLocal(nameDetail);
+                                stContact.saveDetail(&nameDetail);
+                            }
                         }
 
                         contactForAdditions = &stContact;

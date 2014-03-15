@@ -5213,6 +5213,10 @@ void tst_Aggregation::storeSyncContacts()
     n3.setLastName("Bohr");
     alc.saveDetail(&n3);
 
+    QContactNote note;
+    note.setNote("Quite tall");
+    alc.saveDetail(&note);
+
     alc.saveDetail(&t);
 
     QVERIFY(m_cm->saveContact(&alc));
@@ -5229,9 +5233,8 @@ void tst_Aggregation::storeSyncContacts()
     pa = addedContacts.at(0);
     QCOMPARE(pa.id(), alc.id());
 
-    // The GUID is promoted into the the partial aggregate
-    QCOMPARE(pa.details<QContactGuid>().count(), 1);
-    QCOMPARE(pa.detail<QContactGuid>().guid(), alc.detail<QContactGuid>().guid());
+    // The GUID is not promoted into the the partial aggregate
+    QCOMPARE(pa.details<QContactGuid>().count(), 0);
 
     // Make changes to this contact
     mpa = pa;
@@ -5254,9 +5257,12 @@ void tst_Aggregation::storeSyncContacts()
     QCOMPARE(alc.details<QContactTag>().count(), 1);
     QCOMPARE(alc.details<QContactTag>().at(0).tag(), t3.tag());
 
+    QCOMPARE(alc.details<QContactNote>().count(), 1);
+    QCOMPARE(alc.details<QContactNote>().at(0).note(), note.note());
+
     QCOMPARE(alc.details<QContactHobby>().count(), 0);
 
-    // A new contact should have been created to contain the hobby
+    // A new incidental contact should have been created to contain the hobby
     QCOMPARE(alc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
 
     QContact a2 = m_cm->contact(alc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id());
@@ -5280,6 +5286,8 @@ void tst_Aggregation::storeSyncContacts()
 
     QCOMPARE(stc2.details<QContactTag>().count(), 0);
 
+    QCOMPARE(stc2.details<QContactNote>().count(), 0);
+
     QCOMPARE(stc2.details<QContactHobby>().count(), 1);
     QCOMPARE(stc2.details<QContactHobby>().at(0).hobby(), h3.hobby());
 
@@ -5287,9 +5295,75 @@ void tst_Aggregation::storeSyncContacts()
     syncContacts.clear();
     QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
     QCOMPARE(syncContacts.count(), 2);
-    QCOMPARE((QList<QContactId>() << syncContacts.at(0).id() << syncContacts.at(1).id()).toSet(), (QList<QContactId>() << stc.id() << stc2.id()).toSet());
+    QCOMPARE((QList<QContactId>() << syncContacts.at(0).id() << syncContacts.at(1).id()).toSet(), (QList<QContactId>() << stc.id() << alc.id()).toSet());
 
     QCOMPARE(alc.details<QContactGuid>().count(), 1);
+
+    // Make a modification to the incidental contact - it should remain incidental
+    if (syncContacts.at(0).id() == alc.id()) {
+        pa = syncContacts.at(0);
+    } else {
+        pa = syncContacts.at(1);
+    }
+    mpa = pa;
+
+    note = mpa.detail<QContactNote>();
+    note.setNote("Quite tall indeed");
+    mpa.saveDetail(&note);
+
+    h3 = mpa.detail<QContactHobby>();
+    h3.setHobby("Ventriloquism");
+    mpa.saveDetail(&h3);
+
+    QContactHobby h4;
+    h4.setHobby("Philately");
+    mpa.saveDetail(&h4);
+
+    QContactGuid stGuid;
+    stGuid.setGuid("I am also a unique snowflake");
+    mpa.saveDetail(&stGuid);
+
+    modifications.clear();
+    modifications.append(qMakePair(pa, mpa));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
+
+    // The changes should be made in their respective contacts
+    alc = m_cm->contact(alc.id());
+
+    QCOMPARE(alc.details<QContactTag>().count(), 1);
+    QCOMPARE(alc.details<QContactTag>().at(0).tag(), t3.tag());
+
+    QCOMPARE(alc.details<QContactNote>().count(), 1);
+    QCOMPARE(alc.details<QContactNote>().at(0).note(), note.note());
+
+    QCOMPARE(alc.details<QContactHobby>().count(), 0);
+
+    stc2 = m_cm->contact(stc2.id());
+
+    QCOMPARE(stc2.details<QContactTag>().count(), 0);
+
+    QCOMPARE(stc2.details<QContactNote>().count(), 0);
+
+    QCOMPARE(stc2.details<QContactHobby>().count(), 2);
+    QCOMPARE((QSet<QString>() << stc2.details<QContactHobby>().at(0).hobby() << stc2.details<QContactHobby>().at(1).hobby()), (QSet<QString>() << h3.hobby() << h4.hobby()));
+
+    QCOMPARE(stc2.details<QContactGuid>().count(), 1);
+    QCOMPARE(stc2.details<QContactGuid>().at(0).guid(), stGuid.guid());
+
+    syncContacts.clear();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
+    QCOMPARE(syncContacts.count(), 2);
+    QCOMPARE((QList<QContactId>() << syncContacts.at(0).id() << syncContacts.at(1).id()).toSet(), (QList<QContactId>() << stc.id() << alc.id()).toSet());
+
+    if (syncContacts.at(0).id() == alc.id()) {
+        pa = syncContacts.at(0);
+    } else {
+        pa = syncContacts.at(1);
+    }
+
+    // Verify that the GUID from the sync-target contact is returned
+    QCOMPARE(pa.details<QContactGuid>().count(), 1);
+    QCOMPARE(pa.details<QContactGuid>().at(0).guid(), stGuid.guid());
 
     // Report both contacts as remotely-deleted
     modifications.clear();
