@@ -101,7 +101,8 @@ public:
 
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     QContactManager::Error fetchSyncContacts(const QString &syncTarget, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
-                                             QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds);
+                                             QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
+                                             QDateTime *maxTimestamp);
 
     QContactManager::Error updateSyncContacts(const QString &syncTarget,
                                               QtContactsSqliteExtensions::ContactManagerEngine::ConflictResolutionPolicy conflictPolicy,
@@ -137,7 +138,8 @@ private:
     QContactManager::Error recordAffectedSyncTargets(const QVariantList &ids);
 
     QContactManager::Error syncFetch(const QString &syncTarget, const QDateTime &lastSync, const QSet<quint32> &exportedIds,
-                                     QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds);
+                                     QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
+                                     QDateTime *maxTimestamp);
 
     QContactManager::Error syncUpdate(const QString &syncTarget,
                                       QtContactsSqliteExtensions::ContactManagerEngine::ConflictResolutionPolicy conflictPolicy,

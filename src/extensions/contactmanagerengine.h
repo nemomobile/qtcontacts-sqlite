@@ -66,9 +66,12 @@ public:
     void setMergePresenceChanges(bool b) { m_mergePresenceChanges = b; }
 
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
+    virtual bool Q_DECL_DEPRECATED fetchSyncContacts(const QString &syncTarget, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
+                                   QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
+                                   QContactManager::Error *error) = 0; // DEPRECATED
     virtual bool fetchSyncContacts(const QString &syncTarget, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
                                    QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
-                                   QContactManager::Error *error) = 0;
+                                   QDateTime *maxTimestamp, QContactManager::Error *error) = 0;
 
     virtual bool storeSyncContacts(const QString &syncTarget, ConflictResolutionPolicy conflictPolicy,
                                    const QList<QPair<QContact, QContact> > &remoteChanges, QContactManager::Error *error) = 0;

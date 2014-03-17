@@ -33,12 +33,14 @@
 #ifndef TESTSYNCADAPTER_H
 #define TESTSYNCADAPTER_H
 
-#include "twowaycontactsyncadapter.h"
+#include "../../../src/extensions/twowaycontactsyncadapter.h"
 #include <QContactManager>
 #include <QContact>
+#include <QTimer>
 #include <QDateTime>
 #include <QList>
 #include <QPair>
+#include <QMap>
 
 QTCONTACTS_USE_NAMESPACE
 
@@ -51,10 +53,18 @@ public:
     ~TestSyncAdapter();
 
     // for testing purposes
-    void setRemoteDelta(const QString &accountId,
-                        const QList<QContact> &deletions,
-                        const QList<QContact> &addmods);
+    void addRemoteContact(const QString &accountId, const QString &fname, const QString &lname, const QString &phone);
+    void removeRemoteContact(const QString &accountId, const QString &fname, const QString &lname);
+    void setRemoteContact(const QString &accountId, const QString &fname, const QString &lname, const QContact &contact);
+    void changeRemoteContactPhone(const QString &accountId, const QString &fname, const QString &lname, const QString &modPhone);
+    void changeRemoteContactEmail(const QString &accountId, const QString &fname, const QString &lname, const QString &modEmail);
+
+
+    // triggering sync and checking state.
     void performTwoWaySync(const QString &accountId);
+    bool upsyncWasRequired(const QString &accountId) const;
+    bool downsyncWasRequired(const QString &accountId) const;
+    QContact remoteContact(const QString &accountId, const QString &fname, const QString &lname) const;
 
 Q_SIGNALS:
     void finished();
@@ -77,13 +87,15 @@ private Q_SLOTS:
 
 private:
     QContactManager m_manager;
-    QString m_accountId;
-    QDateTime m_remoteSince;
-    QList<QContact> m_deletedRemote;
-    QList<QContact> m_addModRemote;
 
-    // simulating server-side changes:
-    mutable QMap<QString, QPair<QList<QContact>, QList<QContact> > > m_remoteDelta; // per account.
+    // simulating server-side changes, per account:
+    mutable QMap<QString, QTimer*> m_simulationTimers;
+    mutable QMap<QString, bool> m_downsyncWasRequired;
+    mutable QMap<QString, bool> m_upsyncWasRequired;
+    mutable QMap<QString, QDateTime> m_remoteSince;
+    mutable QMap<QString, QList<QContact> > m_remoteDeletions;
+    mutable QMap<QString, QSet<QString> > m_remoteAddMods; // used to lookup into m_remoteServerContacts
+    mutable QMap<QString, QMap<QString, QContact> > m_remoteServerContacts;
 };
 
 #endif

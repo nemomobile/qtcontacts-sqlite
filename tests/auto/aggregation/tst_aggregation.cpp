@@ -3894,11 +3894,12 @@ void tst_Aggregation::fetchSyncContacts()
     QList<QContactId> deletedIds;
 
     QDateTime initialTime = TRIM_DT_MSECS(QDateTime::currentDateTimeUtc());
+    QDateTime updatedSyncTime;
     QTest::qWait(1000);
 
     // Initial test - ensure that nothing is reported for sync
     QContactManager::Error err;
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
     QCOMPARE(err, QContactManager::NoError);
     QCOMPARE(syncContacts.count(), 0);
     QCOMPARE(addedContacts.count(), 0);
@@ -3939,7 +3940,8 @@ void tst_Aggregation::fetchSyncContacts()
     syncContacts.clear();
     addedContacts.clear();
     deletedIds.clear();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    updatedSyncTime = QDateTime();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
     QCOMPARE(err, QContactManager::NoError);
     QCOMPARE(syncContacts.count(), 1);
     QCOMPARE(addedContacts.count(), 0);
@@ -3952,7 +3954,8 @@ void tst_Aggregation::fetchSyncContacts()
 
     // Invalid since time is equivalent to not having a time limitation
     syncContacts.clear();
-    QVERIFY(cme->fetchSyncContacts("sync-test", QDateTime(), exportedIds, &syncContacts, 0, 0, &err));
+    updatedSyncTime = QDateTime();
+    QVERIFY(cme->fetchSyncContacts("sync-test", QDateTime(), exportedIds, &syncContacts, 0, 0, &updatedSyncTime, &err));
     QCOMPARE(err, QContactManager::NoError);
     QVERIFY(syncContacts.count() >= 1);
 
@@ -3981,7 +3984,8 @@ void tst_Aggregation::fetchSyncContacts()
     syncContacts.clear();
     addedContacts.clear();
     deletedIds.clear();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    updatedSyncTime = QDateTime();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
     QCOMPARE(err, QContactManager::NoError);
     QCOMPARE(syncContacts.count(), 1);
     QCOMPARE(addedContacts.count(), 0);
@@ -4022,7 +4026,8 @@ void tst_Aggregation::fetchSyncContacts()
     syncContacts.clear();
     addedContacts.clear();
     deletedIds.clear();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    updatedSyncTime = QDateTime();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
     QCOMPARE(err, QContactManager::NoError);
     QCOMPARE(syncContacts.count(), 1);
     QCOMPARE(addedContacts.count(), 0);
@@ -4068,7 +4073,8 @@ void tst_Aggregation::fetchSyncContacts()
     syncContacts.clear();
     addedContacts.clear();
     deletedIds.clear();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    updatedSyncTime = QDateTime();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
     QCOMPARE(err, QContactManager::NoError);
     QCOMPARE(syncContacts.count(), 1);
     QCOMPARE(addedContacts.count(), 0);
@@ -4114,11 +4120,13 @@ void tst_Aggregation::fetchSyncContacts()
     syncContacts.clear();
     addedContacts.clear();
     deletedIds.clear();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    updatedSyncTime = QDateTime();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
     QCOMPARE(err, QContactManager::NoError);
     QCOMPARE(syncContacts.count(), 2);
     QCOMPARE(addedContacts.count(), 0);
     QCOMPARE(deletedIds.count(), 0);
+    QDateTime updatedInitialSyncTime = updatedSyncTime; // store for use later.
 
     QVERIFY(syncContacts.at(0).id() != syncContacts.at(1).id());
     for (int i = 0; i < 2; ++i) {
@@ -4176,7 +4184,8 @@ void tst_Aggregation::fetchSyncContacts()
     syncContacts.clear();
     addedContacts.clear();
     deletedIds.clear();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    updatedSyncTime = QDateTime();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
     QCOMPARE(err, QContactManager::NoError);
     QCOMPARE(syncContacts.count(), 2);
     QCOMPARE(addedContacts.count(), 1);
@@ -4205,7 +4214,23 @@ void tst_Aggregation::fetchSyncContacts()
     syncContacts.clear();
     addedContacts.clear();
     deletedIds.clear();
-    QVERIFY(cme->fetchSyncContacts("sync-test", nextTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    updatedSyncTime = QDateTime();
+    QVERIFY(cme->fetchSyncContacts("sync-test", nextTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
+    QCOMPARE(err, QContactManager::NoError);
+    QCOMPARE(syncContacts.count(), 0);
+    QCOMPARE(addedContacts.count(), 1);
+    QCOMPARE(deletedIds.count(), 0);
+    QDateTime updatedNextSyncTime = updatedSyncTime;
+
+    pa = addedContacts.at(0);
+    QCOMPARE(pa.id(), nlc.id());
+
+    // Test the timestamp filtering - fetch using updatedSyncTime -- results should be equivalent to using nextTime
+    syncContacts.clear();
+    addedContacts.clear();
+    deletedIds.clear();
+    updatedSyncTime = updatedInitialSyncTime; // the updatedInitialSyncTime should be "equivalent" time-separation-wise to nextTime.
+    QVERIFY(cme->fetchSyncContacts("sync-test", updatedSyncTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
     QCOMPARE(err, QContactManager::NoError);
     QCOMPARE(syncContacts.count(), 0);
     QCOMPARE(addedContacts.count(), 1);
@@ -4214,11 +4239,16 @@ void tst_Aggregation::fetchSyncContacts()
     pa = addedContacts.at(0);
     QCOMPARE(pa.id(), nlc.id());
 
+    // ensure that the timestamp update calculations work as expected
+    QCOMPARE(updatedSyncTime, updatedNextSyncTime); // should have been updated to the same value.
+    QCOMPARE(updatedSyncTime, pa.detail<QContactTimestamp>().created());
+
     // Fetch with afterAddition
     syncContacts.clear();
     addedContacts.clear();
     deletedIds.clear();
-    QVERIFY(cme->fetchSyncContacts("sync-test", afterAdditionTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    updatedSyncTime = QDateTime();
+    QVERIFY(cme->fetchSyncContacts("sync-test", afterAdditionTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
     QCOMPARE(err, QContactManager::NoError);
     QCOMPARE(syncContacts.count(), 0);
     QCOMPARE(addedContacts.count(), 0);
@@ -4230,7 +4260,8 @@ void tst_Aggregation::fetchSyncContacts()
     syncContacts.clear();
     addedContacts.clear();
     deletedIds.clear();
-    QVERIFY(cme->fetchSyncContacts("sync-test", afterAdditionTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    updatedSyncTime = QDateTime();
+    QVERIFY(cme->fetchSyncContacts("sync-test", afterAdditionTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
     QCOMPARE(err, QContactManager::NoError);
     QCOMPARE(syncContacts.count(), 0);
     QCOMPARE(addedContacts.count(), 0);
@@ -4239,7 +4270,8 @@ void tst_Aggregation::fetchSyncContacts()
     syncContacts.clear();
     addedContacts.clear();
     deletedIds.clear();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    updatedSyncTime = QDateTime();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
     QCOMPARE(err, QContactManager::NoError);
     QCOMPARE(syncContacts.count(), 3);
     QCOMPARE(addedContacts.count(), 0);
@@ -4289,7 +4321,8 @@ void tst_Aggregation::fetchSyncContacts()
     syncContacts.clear();
     addedContacts.clear();
     deletedIds.clear();
-    QVERIFY(cme->fetchSyncContacts("sync-test", afterAdditionTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    updatedSyncTime = QDateTime();
+    QVERIFY(cme->fetchSyncContacts("sync-test", afterAdditionTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
     QCOMPARE(err, QContactManager::NoError);
     QCOMPARE(syncContacts.count(), 1);
     QCOMPARE(addedContacts.count(), 0);
@@ -4340,7 +4373,8 @@ void tst_Aggregation::fetchSyncContacts()
     syncContacts.clear();
     addedContacts.clear();
     deletedIds.clear();
-    QVERIFY(cme->fetchSyncContacts("sync-test", finalAdditionTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    updatedSyncTime = QDateTime();
+    QVERIFY(cme->fetchSyncContacts("sync-test", finalAdditionTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
     QCOMPARE(err, QContactManager::NoError);
     QCOMPARE(syncContacts.count(), 0);
     QCOMPARE(addedContacts.count(), 0);
@@ -4383,7 +4417,8 @@ void tst_Aggregation::fetchSyncContacts()
     syncContacts.clear();
     addedContacts.clear();
     deletedIds.clear();
-    QVERIFY(cme->fetchSyncContacts("sync-test", finalAdditionTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    updatedSyncTime = QDateTime();
+    QVERIFY(cme->fetchSyncContacts("sync-test", finalAdditionTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
     QCOMPARE(err, QContactManager::NoError);
     QCOMPARE(syncContacts.count(), 0);
     QCOMPARE(addedContacts.count(), 0);
@@ -4481,7 +4516,8 @@ void tst_Aggregation::fetchSyncContacts()
     syncContacts.clear();
     addedContacts.clear();
     deletedIds.clear();
-    QVERIFY(cme->fetchSyncContacts("sync-test", afterAdditionTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &err));
+    updatedSyncTime = QDateTime();
+    QVERIFY(cme->fetchSyncContacts("sync-test", afterAdditionTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
     QCOMPARE(err, QContactManager::NoError);
     QCOMPARE(syncContacts.count(), 0);
     QCOMPARE(addedContacts.count(), 0);
@@ -4543,7 +4579,8 @@ void tst_Aggregation::storeSyncContacts()
 
     QList<QContactId> exportedIds;
     QList<QContact> syncContacts;
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
+    QDateTime updatedSyncTime;
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &updatedSyncTime, &err));
     QCOMPARE(syncContacts.count(), 1);
 
     stc = m_cm->contact(retrievalId(syncContacts.at(0)));
@@ -4596,7 +4633,8 @@ void tst_Aggregation::storeSyncContacts()
 
     // Fetch the partial aggregate for this contact
     syncContacts.clear();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
+    updatedSyncTime = QDateTime();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &updatedSyncTime, &err));
     QCOMPARE(syncContacts.count(), 1);
 
     QContact pa = syncContacts.at(0);
@@ -4781,7 +4819,8 @@ void tst_Aggregation::storeSyncContacts()
     QCOMPARE(a.relatedContacts(aggregatesRelationship, QContactRelationship::Second).count(), 2);
 
     syncContacts.clear();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
+    updatedSyncTime = QDateTime();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &updatedSyncTime, &err));
     QCOMPARE(syncContacts.count(), 1);
 
     pa = syncContacts.at(0);
@@ -4933,7 +4972,8 @@ void tst_Aggregation::storeSyncContacts()
 
     // The sync target partial agregate should contain the sync target GUID
     syncContacts.clear();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
+    updatedSyncTime = QDateTime();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &updatedSyncTime, &err));
     QCOMPARE(syncContacts.count(), 1);
 
     pa = syncContacts.at(0);
@@ -4975,7 +5015,8 @@ void tst_Aggregation::storeSyncContacts()
 
     // Modify the name again
     syncContacts.clear();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
+    updatedSyncTime = QDateTime();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &updatedSyncTime, &err));
     QCOMPARE(syncContacts.count(), 1);
 
     pa = syncContacts.at(0);
@@ -5012,7 +5053,8 @@ void tst_Aggregation::storeSyncContacts()
 
     // Test conflict resolution - we currently support only PreserveLocalChanges
     syncContacts.clear();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
+    updatedSyncTime = QDateTime();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &updatedSyncTime, &err));
     QCOMPARE(syncContacts.count(), 1);
     pa = syncContacts.at(0);
     mpa = QContact(pa);
@@ -5178,7 +5220,8 @@ void tst_Aggregation::storeSyncContacts()
 
     // Check that the partial aggregate matches the aggregate
     syncContacts.clear();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
+    updatedSyncTime = QDateTime();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &updatedSyncTime, &err));
     QCOMPARE(syncContacts.count(), 1);
 
     pa = syncContacts.at(0);
@@ -5228,7 +5271,8 @@ void tst_Aggregation::storeSyncContacts()
     QList<QContact> addedContacts;
 
     syncContacts.clear();
-    QVERIFY(cme->fetchSyncContacts("sync-test", nextTime, exportedIds, &syncContacts, &addedContacts, 0, &err));
+    updatedSyncTime = QDateTime();
+    QVERIFY(cme->fetchSyncContacts("sync-test", nextTime, exportedIds, &syncContacts, &addedContacts, 0, &updatedSyncTime, &err));
     QCOMPARE(addedContacts.count(), 1);
 
     pa = addedContacts.at(0);
@@ -5295,7 +5339,8 @@ void tst_Aggregation::storeSyncContacts()
 
     // Both contacts should now be reported by their sync-target IDs
     syncContacts.clear();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
+    updatedSyncTime = QDateTime();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &updatedSyncTime, &err));
     QCOMPARE(syncContacts.count(), 2);
     QCOMPARE((QList<QContactId>() << syncContacts.at(0).id() << syncContacts.at(1).id()).toSet(), (QList<QContactId>() << stc.id() << alc.id()).toSet());
 
@@ -5353,7 +5398,8 @@ void tst_Aggregation::storeSyncContacts()
     QCOMPARE(stc2.details<QContactGuid>().at(0).guid(), stGuid.guid());
 
     syncContacts.clear();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
+    updatedSyncTime = QDateTime();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &updatedSyncTime, &err));
     QCOMPARE(syncContacts.count(), 2);
     QCOMPARE((QList<QContactId>() << syncContacts.at(0).id() << syncContacts.at(1).id()).toSet(), (QList<QContactId>() << stc.id() << alc.id()).toSet());
 
@@ -5408,7 +5454,8 @@ void tst_Aggregation::storeSyncContacts()
 
     // The next fetch should not return the deleted contacts
     syncContacts.clear();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &err));
+    updatedSyncTime = QDateTime();
+    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &updatedSyncTime, &err));
     QCOMPARE(syncContacts.count(), 0);
 
     // Now ensure that if the sync target constituent is the only constituent,
@@ -5429,7 +5476,8 @@ void tst_Aggregation::storeSyncContacts()
     QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
 
     syncContacts.clear();
-    QVERIFY(cme->fetchSyncContacts("sync-test", finalTime, exportedIds, &syncContacts, 0, 0, &err));
+    updatedSyncTime = QDateTime();
+    QVERIFY(cme->fetchSyncContacts("sync-test", finalTime, exportedIds, &syncContacts, 0, 0, &updatedSyncTime, &err));
     QCOMPARE(syncContacts.count(), 1);
 
     fstc = m_cm->contact(retrievalId(syncContacts.at(0)));
@@ -5516,33 +5564,266 @@ void tst_Aggregation::testOOB()
     QCOMPARE(values.count(), 0);
 }
 
+bool haveExpectedContent(const QContact &c, const QString &phone, const QString &email)
+{
+    return c.detail<QContactPhoneNumber>().number() == phone
+        && c.detail<QContactEmailAddress>().emailAddress() == email;
+}
+
 void tst_Aggregation::testSyncAdapter()
 {
-    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(*m_cm);
+    QContactDetailFilter allSyncTargets;
+    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
+    QList<QContactId> originalIds = m_cm->contactIds(allSyncTargets);
 
+    // add some contacts remotely, and downsync them.  It should not result in an upsync.
+    QString accountId(QStringLiteral("1"));
     TestSyncAdapter tsa;
+    tsa.addRemoteContact(accountId, "John", "TsaOne", "1111111");
+    tsa.addRemoteContact(accountId, "Bob", "TsaTwo", "2222222");
+    tsa.addRemoteContact(accountId, "Mark", "TsaThree", "3333333");
 
-    // TODO!
+    QSignalSpy finishedSpy(&tsa, SIGNAL(finished()));
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 1);
 
-    // start from clean, so the first run should look like:
-    // remoteChangesSince should include some additions
-    // store them, should result in new sync-target-constituents
-    // upsyncLocalChangesSince should be empty, no further modifications upsynced.
+    // should have 6 more contacts than we had before (aggregate+synctarget x 3)
+    QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
+    QContactId tsaOneStcId, tsaOneAggId, tsaTwoStcId, tsaTwoAggId, tsaThreeStcId, tsaThreeAggId;
+    for (int i = allContacts.size() - 1; i >= 0; --i) {
+        const QContact &c(allContacts[i]);
+        if (originalIds.contains(c.id())) {
+            allContacts.removeAt(i);
+        } else {
+            bool isAggregate = c.relatedContacts(QStringLiteral("Aggregates"), QContactRelationship::Second).size() > 0;
+            if (c.detail<QContactName>().firstName() == QStringLiteral("John")) {
+                if (isAggregate) {
+                    tsaOneAggId = c.id();
+                } else {
+                    tsaOneStcId = c.id();
+                }
+            } else if (c.detail<QContactName>().firstName() == QStringLiteral("Bob")) {
+                if (isAggregate) {
+                    tsaTwoAggId = c.id();
+                } else {
+                    tsaTwoStcId = c.id();
+                }
+            } else if (c.detail<QContactName>().firstName() == QStringLiteral("Mark")) {
+                if (isAggregate) {
+                    tsaThreeAggId = c.id();
+                } else {
+                    tsaThreeStcId = c.id();
+                }
+            }
+        }
+    }
+    QCOMPARE(allContacts.size(), 6);
+    QVERIFY(tsaOneStcId != QContactId());
+    QVERIFY(tsaOneAggId != QContactId());
+    QVERIFY(tsaTwoStcId != QContactId());
+    QVERIFY(tsaTwoAggId != QContactId());
+    QVERIFY(tsaThreeStcId != QContactId());
+    QVERIFY(tsaThreeAggId != QContactId());
 
-    // next should mutate some things just locally
-    // remoteChangesSince should be empty
-    // nothing to store
-    // upsyncLocalChangesSince should involve some modifications and some removals
+    // and no upsync of local changes should be required (there shouldn't have been any local changes).
+    QVERIFY(!tsa.upsyncWasRequired(accountId));
+    QVERIFY(tsa.downsyncWasRequired(accountId));
 
-    // next should mutate some things just remotely
-    // remoteChangesSince should include some additions/modifications/removals
-    // store them, should result in the appropriate changes locally
-    // nothing to upsync
+    // ensure that the downsynced contacts have the data we expect
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneStcId), QStringLiteral("1111111"), QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneAggId), QStringLiteral("1111111"), QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoStcId), QStringLiteral("2222222"), QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoAggId), QStringLiteral("2222222"), QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeStcId), QStringLiteral("3333333"), QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeAggId), QStringLiteral("3333333"), QString()));
 
-    // next should be changes both remotely and locally
-    // especially, check the "remotely modified but locally deleted" behaviour.
+    // now modify tsaTwo's aggregate - should cause the creation of an incidental local.
+    // triggering update should then not require downsync but would require upsync.
+    QContact tsaTwoAggregate = m_cm->contact(tsaTwoAggId);
+    QContactEmailAddress tsaTwoEmail;
+    tsaTwoEmail.setEmailAddress("bob@tsatwo.com");
+    tsaTwoAggregate.saveDetail(&tsaTwoEmail); // new detail, will cause creation of incidental local.
+    m_cm->saveContact(&tsaTwoAggregate);
+    allContacts = m_cm->contacts(allSyncTargets);
+    QContactId tsaTwoLocalId;
+    for (int i = allContacts.size() - 1; i >= 0; --i) {
+        if (originalIds.contains(allContacts[i].id())) {
+            allContacts.removeAt(i);
+        } else if (allContacts[i].detail<QContactName>().firstName() == QStringLiteral("Bob")
+                && allContacts[i].id() != tsaTwoAggId
+                && allContacts[i].id() != tsaTwoStcId) {
+            tsaTwoLocalId = allContacts[i].id();
+        }
+    }
+    QCOMPARE(allContacts.size(), 7); // new incidental local.
+    QVERIFY(tsaTwoLocalId != QContactId());
 
-    // finally, check remote total deletion, to return database back to clean state.
+    // perform the sync.
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 2);
+
+    // downsync should not have been required, but upsync should have been.
+    QVERIFY(!tsa.downsyncWasRequired(accountId));
+    QVERIFY(tsa.upsyncWasRequired(accountId));
+
+    // ensure that the contacts have the data we expect
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneStcId), QStringLiteral("1111111"), QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneAggId), QStringLiteral("1111111"), QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoStcId), QStringLiteral("2222222"), QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoLocalId), QString(), QStringLiteral("bob@tsatwo.com")));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoAggId), QStringLiteral("2222222"), QStringLiteral("bob@tsatwo.com")));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeStcId), QStringLiteral("3333333"), QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeAggId), QStringLiteral("3333333"), QString()));
+    QVERIFY(haveExpectedContent(tsa.remoteContact(accountId, QStringLiteral("Bob"), QStringLiteral("TsaTwo")),
+                                QStringLiteral("2222222"), QStringLiteral("bob@tsatwo.com")));
+
+    // modify both locally and remotely.
+    // we modify the phone number locally (ie, the synctarget constituent)
+    // and the email address remotely (ie, the local constituent)
+    // and test to ensure that everything is resolved/updated correctly.
+    QContact tsaTwoStc = m_cm->contact(tsaTwoStcId);
+    QContactPhoneNumber tsaTwoStcPhn = tsaTwoStc.detail<QContactPhoneNumber>();
+    tsaTwoStcPhn.setNumber("2222229");
+    tsaTwoStc.saveDetail(&tsaTwoStcPhn);
+    QVERIFY(m_cm->saveContact(&tsaTwoStc));
+
+    tsa.changeRemoteContactEmail(accountId, "Bob", "TsaTwo", "bob2@tsatwo.com");
+
+    // perform the sync.
+    tsa.performTwoWaySync(accountId);
+
+    // ensure that the per-account separation is maintained properly for out of band data etc.
+    tsa.addRemoteContact(QStringLiteral("2"), QStringLiteral("Jerry"), QStringLiteral("TsaTwoTwo"), QStringLiteral("555"));
+    tsa.performTwoWaySync(QStringLiteral("2"));
+    QTRY_COMPARE(finishedSpy.count(), 4); // wait for both to finish
+    tsa.removeRemoteContact(QStringLiteral("2"), QStringLiteral("Jerry"), QStringLiteral("TsaTwoTwo"));
+    tsa.performTwoWaySync(QStringLiteral("2"));
+    QTRY_COMPARE(finishedSpy.count(), 5);
+
+    // downsync and upsync should have been required in the original sync for the "main" account.
+    QVERIFY(tsa.downsyncWasRequired(accountId));
+    QVERIFY(tsa.upsyncWasRequired(accountId));
+
+    // ensure that the contacts have the data we expect
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneStcId), QStringLiteral("1111111"), QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneAggId), QStringLiteral("1111111"), QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoStcId), QStringLiteral("2222229"), QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoLocalId), QString(), QStringLiteral("bob2@tsatwo.com")));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoAggId), QStringLiteral("2222229"), QStringLiteral("bob2@tsatwo.com")));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeStcId), QStringLiteral("3333333"), QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeAggId), QStringLiteral("3333333"), QString()));
+    QVERIFY(haveExpectedContent(tsa.remoteContact(accountId, QStringLiteral("Bob"), QStringLiteral("TsaTwo")),
+                                QStringLiteral("2222229"), QStringLiteral("bob2@tsatwo.com")));
+
+    // remove a contact locally, ensure that the removal is upsynced.
+    QVERIFY(tsa.remoteContact(accountId, QStringLiteral("Mark"), QStringLiteral("TsaThree")) != QContact());
+    QVERIFY(m_cm->removeContact(tsaThreeAggId));
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 6);
+    QVERIFY(tsa.downsyncWasRequired(accountId)); // the previously upsynced changes which were applied will be returned, hence will be downsynced; but discarded as nonsubstantial / already applied.
+    QVERIFY(tsa.upsyncWasRequired(accountId));
+
+    // ensure that the contacts have the data we expect
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneStcId), QStringLiteral("1111111"), QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneAggId), QStringLiteral("1111111"), QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoStcId), QStringLiteral("2222229"), QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoLocalId), QString(), QStringLiteral("bob2@tsatwo.com")));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoAggId), QStringLiteral("2222229"), QStringLiteral("bob2@tsatwo.com")));
+    QVERIFY(haveExpectedContent(tsa.remoteContact(accountId, QStringLiteral("Bob"), QStringLiteral("TsaTwo")),
+                                QStringLiteral("2222229"), QStringLiteral("bob2@tsatwo.com")));
+    QVERIFY(tsa.remoteContact(accountId, QStringLiteral("Mark"), QStringLiteral("TsaThree")) == QContact()); // deleted remotely.
+
+    // add a contact locally, ensure that the addition is upsynced.
+    QContact tsaFourLocal;
+    QContactName tsaFourName;
+    tsaFourName.setFirstName("Jennifer");
+    tsaFourName.setLastName("TsaFour");
+    QContactEmailAddress tsaFourEmail;
+    tsaFourEmail.setEmailAddress("jennifer@tsafour.com");
+    tsaFourLocal.saveDetail(&tsaFourName);
+    tsaFourLocal.saveDetail(&tsaFourEmail);
+    QVERIFY(m_cm->saveContact(&tsaFourLocal));
+    QContactId tsaFourLocalId = tsaFourLocal.id();
+    QContactId tsaFourAggId;
+    allContacts = m_cm->contacts(allSyncTargets);
+    for (int i = allContacts.size() - 1; i >= 0; --i) {
+        if (originalIds.contains(allContacts[i].id())) {
+            allContacts.removeAt(i);
+        } else if (allContacts[i].detail<QContactName>().firstName() == QStringLiteral("Jennifer")
+                && allContacts[i].id() != tsaFourLocalId) {
+            tsaFourAggId = allContacts[i].id();
+        }
+    }
+    QVERIFY(tsaFourAggId != QContactId());
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 7);
+    QVERIFY(tsa.downsyncWasRequired(accountId));
+    QVERIFY(tsa.upsyncWasRequired(accountId));
+    QVERIFY(haveExpectedContent(tsa.remoteContact(accountId, QStringLiteral("Jennifer"), QStringLiteral("TsaFour")),
+                                QString(), QStringLiteral("jennifer@tsafour.com")));
+
+    // remove some contacts remotely, ensure the removals are downsynced.
+    QTest::qWait(1001);
+    tsa.removeRemoteContact(accountId, QStringLiteral("Bob"), QStringLiteral("TsaTwo"));
+    QVERIFY(tsa.remoteContact(accountId, QStringLiteral("Bob"), QStringLiteral("TsaTwo")) == QContact());
+    tsa.removeRemoteContact(accountId, QStringLiteral("Jennifer"), QStringLiteral("TsaFour"));
+    QVERIFY(tsa.remoteContact(accountId, QStringLiteral("Jennifer"), QStringLiteral("TsaFour")) == QContact());
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 8);
+    QVERIFY(tsa.downsyncWasRequired(accountId));
+    QVERIFY(!tsa.upsyncWasRequired(accountId));
+    QList<QContactId> allIds = m_cm->contactIds(allSyncTargets);
+    // the sync target constituents of two and four should be removed.
+    // the local constituents (and the aggregates) should remain.
+    QVERIFY(!allIds.contains(tsaTwoStcId));
+    // the local constituent of tsaTwo should remain even though it's incidental.
+    QVERIFY(allIds.contains(tsaTwoLocalId));
+    QVERIFY(allIds.contains(tsaTwoAggId));
+    // and the tsaFour contact was originally a pure-local addition, so shouldn't be removed.
+    // it may, after all, have been synced up to other sync sources.
+    // Note: we should NOT sync up either tsaTwo or tsaFour in subsequent syncs.
+    QVERIFY(allIds.contains(tsaFourLocalId));
+    QVERIFY(allIds.contains(tsaFourAggId));
+
+    // modify two and four locally, and ensure they don't get synced up.
+    tsaFourLocal = m_cm->contact(tsaFourLocalId);
+    tsaFourEmail = tsaFourLocal.detail<QContactEmailAddress>();
+    tsaFourEmail.setEmailAddress("jennifer2@tsafour.com");
+    tsaFourLocal.saveDetail(&tsaFourEmail);
+    m_cm->saveContact(&tsaFourLocal);
+    tsaTwoAggregate = m_cm->contact(tsaTwoAggId);
+    tsaTwoEmail = tsaTwoAggregate.detail<QContactEmailAddress>();
+    tsaTwoEmail.setEmailAddress("bob3@tsatwo.com");
+    tsaTwoAggregate.saveDetail(&tsaTwoEmail);
+    m_cm->saveContact(&tsaTwoAggregate);
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 9);
+    QVERIFY(!tsa.downsyncWasRequired(accountId)); // no remote changes since last sync, and last sync didn't upsync any changes.
+    QVERIFY(!tsa.upsyncWasRequired(accountId));   // changes shouldn't have been upsynced.
+
+    // modify (the only remaining) remote contact, delete the local contacts.
+    // the conflict should be resolved in favour of the local device, and the
+    // removal should be upsynced.  TODO: support different conflict resolutions.
+    tsa.changeRemoteContactPhone(accountId, QStringLiteral("John"), QStringLiteral("TsaOne"), QStringLiteral("1111112"));
+    QVERIFY(m_cm->removeContact(tsaOneAggId));
+    QVERIFY(m_cm->removeContact(tsaTwoAggId));
+    QVERIFY(m_cm->removeContact(tsaFourAggId));
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 10);
+    QVERIFY(tsa.downsyncWasRequired(accountId));
+    QVERIFY(tsa.upsyncWasRequired(accountId));
+    allIds = m_cm->contactIds(allSyncTargets);
+    QVERIFY(!allIds.contains(tsaOneStcId));
+    QVERIFY(!allIds.contains(tsaOneAggId));
+    QVERIFY(!allIds.contains(tsaTwoLocalId));
+    QVERIFY(!allIds.contains(tsaTwoAggId));
+    QVERIFY(!allIds.contains(tsaFourLocalId));
+    QVERIFY(!allIds.contains(tsaFourAggId));
+    // should be back to original set of ids prior to test.
+    QCOMPARE(originalIds.size(), allIds.size());
+    foreach (const QContactId &id, allIds) {
+        QVERIFY(originalIds.contains(id));
+    }
 }
 
 QTEST_MAIN(tst_Aggregation)

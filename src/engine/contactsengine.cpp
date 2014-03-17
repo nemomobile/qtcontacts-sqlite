@@ -1138,8 +1138,20 @@ bool ContactsEngine::fetchSyncContacts(const QString &syncTarget, const QDateTim
                                        QContactManager::Error *error)
 {
     Q_ASSERT(error);
+    // This function is deprecated and exists for backward compatibility only!
+    qWarning() << Q_FUNC_INFO << "DEPRECATED: use the overload which takes a maxTimestamp argument instead!";
+    QDateTime maxTimestamp;
+    return fetchSyncContacts(syncTarget, lastSync, exportedIds, syncContacts, addedContacts, deletedContactIds, &maxTimestamp, error);
+}
 
-    *error = writer()->fetchSyncContacts(syncTarget, lastSync, exportedIds, syncContacts, addedContacts, deletedContactIds);
+bool ContactsEngine::fetchSyncContacts(const QString &syncTarget, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
+                                       QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
+                                       QDateTime *maxTimestamp, QContactManager::Error *error)
+{
+    Q_ASSERT(maxTimestamp);
+    Q_ASSERT(error);
+
+    *error = writer()->fetchSyncContacts(syncTarget, lastSync, exportedIds, syncContacts, addedContacts, deletedContactIds, maxTimestamp);
     return (*error == QContactManager::NoError);
 }
 

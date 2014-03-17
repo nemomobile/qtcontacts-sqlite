@@ -117,9 +117,9 @@ private:
     int exactDetailMatchExistsInList(const QContactDetail &det, const QList<QContactDetail> &list) const;
     void removeIgnorableDetailsFromList(QList<QContactDetail> *dets) const;
     int exactContactMatchExistsInList(const QContact &c, const QList<QContact> &list) const;
-    void dumpContact(const QContact &c) const; // debugging.
 
 protected:
+    void dumpContact(const QContact &c) const; // debugging.
     TwoWayContactSyncAdapterPrivate *d;
 };
 }
