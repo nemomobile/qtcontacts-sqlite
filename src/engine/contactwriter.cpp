@@ -4023,7 +4023,7 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
 
     // Fetch all the contacts we want to apply modifications to
     if (!affectedContactIds.isEmpty() || !contactsToAdd.isEmpty()) {
-        QList<QContact> modifiedContacts;
+        QList<QContact> updatedContacts;
         QVariantList removeIds;
         QList<QContactId> removeContactIds;
 
@@ -4038,9 +4038,14 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
                 return QContactManager::UnspecifiedError;
             }
 
+            QMap<quint32, QContact> modifiedContacts;
+            foreach (const QContact &contact, readList) {
+                modifiedContacts.insert(ContactId::databaseId(contact.id()), contact);
+            }
+
             // Create updated versions of the affected contacts
-            foreach (QContact contact, readList) {
-                const quint32 contactId(ContactId::databaseId(contact.id()));
+            foreach (quint32 contactId, modifiedContacts.keys()) {
+                QContact contact(modifiedContacts.value(contactId));
 
                 const QString cst(contact.detail<QContactSyncTarget>().syncTarget());
                 if (cst != syncTarget && cst != localSyncTarget && cst != wasLocalSyncTarget) {
@@ -4141,31 +4146,14 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
                 if (!additionDetails.isEmpty()) {
                     QContact *contactForAdditions = &contact;
                     QContact stContact;
+                    quint32 stId = 0;
 
                     if (cst != syncTarget) {
                         // Do we already have a constituent of this contact with our sync target?
-                        const quint32 stId(stConstituents.value(contactId));
+                        stId = stConstituents.value(contactId);
                         if (stId != 0) {
-                            // See if we have already modifed this contact in this batch
-                            QList<QContact>::iterator mit = modifiedContacts.begin(), mend = modifiedContacts.end();
-                            for ( ; mit != mend; ++mit) {
-                                if (ContactId::databaseId((*mit).id()) == stId) {
-                                    // Modify this contact further, and add it back to the list
-                                    stContact = *mit;
-                                    modifiedContacts.erase(mit);
-                                    break;
-                                }
-                            }
-
-                            if (stContact.isEmpty()) {
-                                // We haven't modified this contact yet; find it in the read list
-                                foreach (const QContact &contact, readList) {
-                                    if (ContactId::databaseId(contact.id()) == stId) {
-                                        stContact = contact;
-                                        break;
-                                    }
-                                }
-                            }
+                            // Get the version of this contact from the retrieved set
+                            stContact = modifiedContacts.value(stId);
                         } else {
                             // We need to create a new constituent of this contact, to contain the remote additions
                             QContactSyncTarget stDetail;
@@ -4209,11 +4197,21 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
                     }
 
                     if (contactForAdditions == &stContact) {
-                        modifiedContacts.append(stContact);
+                        if (stId == 0) {
+                            updatedContacts.append(stContact);
+                        } else {
+                            modifiedContacts[stId] = stContact;
+                        }
                     }
                 }
 
-                modifiedContacts.append(contact);
+                // Store the updated version in case we have to make additional modifications to it
+                modifiedContacts[contactId] = contact;
+            }
+
+            foreach (const QContact &contact, modifiedContacts.values()) {
+                // Update modified contacts before additions, to facilitate automatic merging
+                updatedContacts.prepend(contact);
             }
         }
 
@@ -4230,12 +4228,12 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
                 newContact.saveDetail(&detail);
             }
 
-            modifiedContacts.append(newContact);
+            updatedContacts.append(newContact);
         }
 
         // Store the changes we've accumulated
         QMap<int, QContactManager::Error> errorMap;
-        QContactManager::Error writeError = save(&modifiedContacts, DetailList(), 0, &errorMap, true, false, true);
+        QContactManager::Error writeError = save(&updatedContacts, DetailList(), 0, &errorMap, true, false, true);
         if (writeError != QContactManager::NoError) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to save contact changes for sync update"));
             return writeError;
