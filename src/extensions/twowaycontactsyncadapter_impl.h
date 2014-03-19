@@ -96,10 +96,9 @@ static void registerTypes()
     }
 }
 
-#define CONTACT_MANAGER_ENGINE_PTR(manager) reinterpret_cast<ContactManagerEngine*>(QContactManagerData::managerData(manager)->m_engine)
 TwoWayContactSyncAdapterPrivate::TwoWayContactSyncAdapterPrivate(const QString &syncTarget, const QMap<QString, QString> &params)
     : m_manager(new QContactManager(QStringLiteral("org.nemomobile.contacts.sqlite"), params))
-    , m_engine(CONTACT_MANAGER_ENGINE_PTR(m_manager)) // TODO: m_engine(contactManagerEngine(*m_manager))
+    , m_engine(contactManagerEngine(*m_manager))
     , m_syncTarget(syncTarget)
     , m_deleteManager(true)
 {
@@ -108,13 +107,12 @@ TwoWayContactSyncAdapterPrivate::TwoWayContactSyncAdapterPrivate(const QString &
 
 TwoWayContactSyncAdapterPrivate::TwoWayContactSyncAdapterPrivate(const QString &syncTarget, QContactManager &manager)
     : m_manager(&manager)
-    , m_engine(CONTACT_MANAGER_ENGINE_PTR(m_manager)) // TODO: m_engine(contactManagerEngine(*m_manager))
+    , m_engine(contactManagerEngine(*m_manager))
     , m_syncTarget(syncTarget)
     , m_deleteManager(false)
 {
     registerTypes();
 }
-#undef CONTACT_MANAGER_ENGINE_PTR
 
 TwoWayContactSyncAdapterPrivate::~TwoWayContactSyncAdapterPrivate()
 {

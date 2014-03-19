@@ -43,7 +43,7 @@ namespace QtContactsSqliteExtensions {
 ContactManagerEngine *contactManagerEngine(QContactManager &manager)
 {
     if (QContactManagerData *data = QContactManagerData::managerData(&manager)) {
-        return qobject_cast<QtContactsSqliteExtensions::ContactManagerEngine *>(data->m_engine);
+        return static_cast<QtContactsSqliteExtensions::ContactManagerEngine *>(data->m_engine);
     }
 
     return 0;
