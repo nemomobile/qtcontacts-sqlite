@@ -5497,8 +5497,7 @@ void tst_Aggregation::testOOB()
 
 void tst_Aggregation::testSyncAdapter()
 {
-    typedef QtContactsSqliteExtensions::ContactManagerEngine EngineType;
-    EngineType *cme = qobject_cast<EngineType *>(QContactManagerData::managerData(m_cm)->m_engine);
+    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(*m_cm);
 
     TestSyncAdapter tsa;
 
