@@ -4241,6 +4241,24 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
 
         // Remove any contacts that should no longer exist
         if (removeIds.size()) {
+            // determine which aggregates will need regeneration after removing the synctarget constituents.
+            QList<quint32> aggregatesOfRemoved;
+            ContactsDatabase::clearTemporaryContactIdsTable(m_database, aggregationIdsTable);
+            if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, aggregationIdsTable, removeIds)) {
+                return QContactManager::UnspecifiedError;
+            } else {
+                if (!m_findAggregateForContactIds.exec()) {
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to fetch aggregator contact ids during sync remove:\n%1")
+                            .arg(m_findAggregateForContactIds.lastError().text()));
+                    return QContactManager::UnspecifiedError;
+                }
+                while (m_findAggregateForContactIds.next()) {
+                    aggregatesOfRemoved.append(m_findAggregateForContactIds.value(0).toUInt());
+                }
+                m_findAggregateForContactIds.finish();
+            }
+
+            // then remove the sync target constituents
             QContactManager::Error removeError = removeContacts(removeIds);
             if (removeError != QContactManager::NoError) {
                 return removeError;
@@ -4253,9 +4271,20 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
                 return removeError;
             }
 
-            // and add those ids to the change signal accumulator
+            // add those ids to the change signal accumulator
             foreach (const QContactId &id, removeContactIds + removedAggregateIds) {
                 m_removedIds.insert(id);
+            }
+
+            // regenerate the non-childless aggregates of the removed STCs
+            foreach (const QContactId &removedAggId, removedAggregateIds) {
+                aggregatesOfRemoved.removeAll(ContactId::databaseId(removedAggId));
+            }
+            if (aggregatesOfRemoved.size() > 0) {
+                removeError = regenerateAggregates(aggregatesOfRemoved, DetailList(), true);
+                if (removeError != QContactManager::NoError) {
+                    return removeError;
+                }
             }
         }
     }
