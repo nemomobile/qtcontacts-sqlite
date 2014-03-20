@@ -4572,7 +4572,8 @@ void tst_Aggregation::storeSyncContacts()
 
     QCOMPARE(stc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
 
-    QContact a = m_cm->contact(stc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id());
+    QContactId a1Id(stc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id());
+    QContact a = m_cm->contact(a1Id);
 
     n2 = a.detail<QContactName>();
     QCOMPARE(n2.prefix(), n.prefix());
@@ -4668,7 +4669,7 @@ void tst_Aggregation::storeSyncContacts()
     QCOMPARE(stc.details<QContactNickname>().count(), 1);
     QCOMPARE(stc.details<QContactNickname>().at(0).nickname(), nn.nickname());
 
-    a = m_cm->contact(retrievalId(a));
+    a = m_cm->contact(a1Id);
 
     n2 = a.detail<QContactName>();
     QCOMPARE(n2.prefix(), n.prefix());
@@ -4745,7 +4746,7 @@ void tst_Aggregation::storeSyncContacts()
     QCOMPARE(lc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
     QCOMPARE(lc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id(), a.id());
 
-    a = m_cm->contact(retrievalId(a));
+    a = m_cm->contact(a1Id);
 
     n2 = a.detail<QContactName>();
     QCOMPARE(n2.prefix(), n.prefix());
@@ -4899,7 +4900,7 @@ void tst_Aggregation::storeSyncContacts()
     QCOMPARE(lc.details<QContactGuid>().count(), 1);
     QVERIFY(lc.details<QContactGuid>().at(0).guid() != guid.guid());
 
-    a = m_cm->contact(retrievalId(a));
+    a = m_cm->contact(a1Id);
 
     n2 = a.detail<QContactName>();
     QCOMPARE(n2.prefix(), n.prefix());
@@ -5003,7 +5004,7 @@ void tst_Aggregation::storeSyncContacts()
     lc = m_cm->contact(retrievalId(lc));
     QCOMPARE(lc.detail<QContactName>().middleName(), n.middleName());
 
-    a = m_cm->contact(retrievalId(a));
+    a = m_cm->contact(a1Id);
     QCOMPARE(a.detail<QContactName>().middleName(), n.middleName());
 
     dstc = m_cm->contact(retrievalId(dstc));
@@ -5265,7 +5266,8 @@ void tst_Aggregation::storeSyncContacts()
     // A new incidental contact should have been created to contain the hobby
     QCOMPARE(alc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
 
-    QContact a2 = m_cm->contact(alc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id());
+    QContactId a2Id(alc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id());
+    QContact a2 = m_cm->contact(a2Id);
     QCOMPARE(a2.relatedContacts(aggregatesRelationship, QContactRelationship::Second).count(), 2);
 
     QContactId stId;
@@ -5384,6 +5386,25 @@ void tst_Aggregation::storeSyncContacts()
     QVERIFY(contactIds.contains(lc.id()));
     QVERIFY(contactIds.contains(alc.id()));
     QVERIFY(contactIds.contains(dstc.id()));
+
+    // The aggregates should no longer contain details from sync target contacts
+    // but should still contain details from the local constituents
+    a = m_cm->contact(a1Id);
+    QCOMPARE(a.details<QContactEmailAddress>().count(), 0);
+    QCOMPARE(a.details<QContactHobby>().count(), 0);
+    QCOMPARE(a.details<QContactNickname>().count(), 0);
+    QCOMPARE(a.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(a.detail<QContactPhoneNumber>().number(), pn.number());
+    QCOMPARE(a.details<QContactTag>().count(), 1);
+    QCOMPARE(a.detail<QContactTag>().tag(), t.tag());
+
+    a2 = m_cm->contact(a2Id);
+    QCOMPARE(a2.details<QContactEmailAddress>().count(), 0);
+    QCOMPARE(a2.details<QContactTag>().count(), 1);
+    QCOMPARE(a2.details<QContactTag>().at(0).tag(), t3.tag());
+    QCOMPARE(a2.details<QContactNote>().count(), 1);
+    QCOMPARE(a2.details<QContactNote>().at(0).note(), note.note());
+    QCOMPARE(a2.details<QContactHobby>().count(), 0);
 
     // The next fetch should not return the deleted contacts
     syncContacts.clear();
