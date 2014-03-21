@@ -940,6 +940,18 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
         }
     }
 
+    if (matchOnType(filter, QContactType::Type)) {
+        // Special case - QContactType: we currently support only TypeContact
+        // Convert to a test for ID is non-NULL
+        bool pass = true;
+        if (validFilterField(filter)) {
+            pass = ((filterField(filter) == QContactType::FieldType) && (filter.value().value<int>() == QContactType::TypeContact));
+        } else {
+            // Presence of QContactType - always true
+        }
+        return QString::fromLatin1("contactId IS %1").arg(QString::fromLatin1(pass ? "NOT NULL" : "NULL"));
+    }
+
     *failed = true;
     QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with unknown DetailFilter detail: %1").arg(filter.detailType()));
     return QLatin1String("FALSE");
