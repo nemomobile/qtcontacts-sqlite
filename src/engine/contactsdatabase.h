@@ -32,6 +32,8 @@
 #ifndef QTCONTACTSSQLITE_CONTACTSDATABASE
 #define QTCONTACTSSQLITE_CONTACTSDATABASE
 
+#include "semaphore_p.h"
+
 #include <QMutex>
 #include <QSqlDatabase>
 #include <QVariantList>
@@ -43,7 +45,25 @@ public:
         SelfContactId
     };
 
-    static QSqlDatabase open(const QString &databaseName, bool &nonprivileged);
+    class ProcessMutex
+    {
+        Semaphore m_semaphore;
+        bool m_initialProcess;
+
+    public:
+        ProcessMutex(const QString &path);
+
+        bool lock();
+        bool unlock();
+
+        bool isLocked() const;
+
+        bool isInitialProcess() const;
+    };
+
+    static ProcessMutex &processMutex(const QSqlDatabase &database);
+
+    static QSqlDatabase open(const QString &databaseName, bool &nonprivileged, bool secondaryConnection = false);
     static QSqlQuery prepare(const char *statement, const QSqlDatabase &database);
 
     static bool beginTransaction(QSqlDatabase &database);

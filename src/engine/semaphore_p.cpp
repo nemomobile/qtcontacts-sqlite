@@ -52,96 +52,122 @@ union semun {
     struct seminfo  *__buf;
 };
 
+void semaphoreError(const char *msg, const char *id, int error)
+{
+    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("%1 %2: %3 (%4)").arg(msg).arg(id).arg(::strerror(error)).arg(error));
 }
 
-Semaphore::Semaphore(const char *id, int initial)
-    : m_identifier(id)
-    , m_initialValue(-1)
-    , m_id(-1)
+int semaphoreInit(const char *id, size_t count, const int *initialValues)
 {
-    key_t key = ::ftok(m_identifier, 0);
+    int rv = -1;
 
-    m_id = ::semget(key, 1, 0);
-    if (m_id == -1) {
+    key_t key = ::ftok(id, 0);
+
+    rv = ::semget(key, count, 0);
+    if (rv == -1) {
         if (errno != ENOENT) {
-            error("Unable to get semaphore", errno);
+            semaphoreError("Unable to get semaphore", id, errno);
         } else {
             // The semaphore does not currently exist
-            m_id = ::semget(key, 1, IPC_CREAT | IPC_EXCL | S_IRWXU);
-            if (m_id == -1) {
+            rv = ::semget(key, count, IPC_CREAT | IPC_EXCL | S_IRWXU);
+            if (rv == -1) {
                 if (errno == EEXIST) {
                     // Someone else won the race to create the semaphore - retry get 
-                    m_id = ::semget(key, 1, 0);
+                    rv = ::semget(key, count, 0);
                 }
 
-                if (m_id == -1) {
-                    error("Unable to create semaphore", errno);
+                if (rv == -1) {
+                    semaphoreError("Unable to create semaphore", id, errno);
                 }
             } else {
                 // Set the initial value
-                union semun arg = { 0 };
-                arg.val = initial;
+                for (size_t i = 0; i < count; ++i) {
+                    union semun arg = { 0 };
+                    arg.val = *initialValues++;
 
-                int status = ::semctl(m_id, 0, SETVAL, arg);
-                if (status == -1) {
-                    m_id = -1;
-                    error("Unable to initialize semaphore", errno);
-                } else {
-                    m_initialValue = initial;
+                    int status = ::semctl(rv, static_cast<int>(i), SETVAL, arg);
+                    if (status == -1) {
+                        rv = -1;
+                        semaphoreError("Unable to initialize semaphore", id, errno);
+                    }
                 }
             }
         }
     }
+
+    return rv;
+}
+
+bool semaphoreIncrement(int id, size_t index, bool wait, int value)
+{
+    if (id == -1) {
+        errno = 0;
+        return false;
+    }
+
+    struct sembuf op;
+    op.sem_num = index;
+    op.sem_op = value;
+    op.sem_flg = SEM_UNDO;
+    if (!wait) {
+        op.sem_flg |= IPC_NOWAIT;
+    }
+
+    return (::semop(id, &op, 1) == 0);
+}
+
+}
+
+Semaphore::Semaphore(const char *id, int initial)
+    : m_identifier(id)
+    , m_id(-1)
+{
+    m_id = semaphoreInit(m_identifier.toUtf8().constData(), 1, &initial);
+}
+
+Semaphore::Semaphore(const char *id, size_t count, const int *initialValues)
+    : m_identifier(id)
+    , m_id(-1)
+{
+    m_id = semaphoreInit(m_identifier.toUtf8().constData(), count, initialValues);
 }
 
 Semaphore::~Semaphore()
 {
 }
 
-bool Semaphore::decrement()
+bool Semaphore::decrement(size_t index, bool wait)
 {
-    if (m_id == -1)
+    if (!semaphoreIncrement(m_id, index, wait, -1)) {
+        if (errno != EAGAIN) {
+            error("Unable to decrement semaphore", errno);
+        }
         return false;
-
-    struct sembuf op;
-    op.sem_num = 0;
-    op.sem_op = -1;
-    op.sem_flg = SEM_UNDO;
-
-    if (::semop(m_id, &op, 1) == 0)
-        return true;
-
-    error("Unable to decrement semaphore", errno);
-    return false;
+    }
+    return true;
 }
 
-bool Semaphore::increment()
+bool Semaphore::increment(size_t index, bool wait)
 {
-    if (m_id == -1)
+    if (!semaphoreIncrement(m_id, index, wait, 1)) {
+        if (errno != EAGAIN) {
+            error("Unable to increment semaphore", errno);
+        }
         return false;
-
-    struct sembuf op;
-    op.sem_num = 0;
-    op.sem_op = 1;
-    op.sem_flg = SEM_UNDO;
-
-    if (::semop(m_id, &op, 1) == 0)
-        return true;
-
-    error("Unable to increment semaphore", errno);
-    return false;
+    }
+    return true;
 }
 
-int Semaphore::value() const
+int Semaphore::value(size_t index) const
 {
     if (m_id == -1)
         return -1;
 
-    return ::semctl(m_id, 0, GETVAL, 0);
+    return ::semctl(m_id, index, GETVAL, 0);
 }
 
 void Semaphore::error(const char *msg, int error)
 {
-    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("%1 %2: %3 (%4)").arg(msg).arg(m_identifier).arg(::strerror(error)).arg(error));
+    semaphoreError(msg, m_identifier.toUtf8().constData(), error);
 }
 
