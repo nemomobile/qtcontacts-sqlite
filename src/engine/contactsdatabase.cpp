@@ -1161,17 +1161,17 @@ QSqlDatabase ContactsDatabase::open(const QString &databaseName, bool nonprivile
             .arg(QString::fromLatin1(QTCONTACTS_SQLITE_PRIVILEGED_DIR)));
     QString unprivilegedDataDir(QString::fromLatin1(QTCONTACTS_SQLITE_CENTRAL_DATA_DIR));
 
-    // See if we can access the privileged version of the DB
-    QDir databaseDir(privilegedDataDir);
-    if (!nonprivileged && databaseDir.exists() && directoryIsRW(privilegedDataDir)) {
+    QDir databaseDir;
+    if (!nonprivileged && databaseDir.mkpath(privilegedDataDir + QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR))) {
+        // privileged.
         databaseDir = privilegedDataDir + QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR);
     } else {
+        // not privileged.
+        if (!databaseDir.mkpath(unprivilegedDataDir + QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR))) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to create contacts database directory: %1").arg(unprivilegedDataDir + QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR)));
+            return QSqlDatabase();
+        }
         databaseDir = unprivilegedDataDir + QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR);
-    }
-
-    if (!databaseDir.exists() && !databaseDir.mkpath(QString::fromLatin1("."))) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to create contacts database directory: %1").arg(databaseDir.path()));
-        return QSqlDatabase();
     }
 
     const QString databaseFile = databaseDir.absoluteFilePath(QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_NAME));
