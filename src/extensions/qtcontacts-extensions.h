@@ -76,6 +76,7 @@ static const QContactDetail::DetailType QContactDetail__TypeStatusFlags = static
 // We support the QContactDeactivated detail type
 static const QContactDetail::DetailType QContactDetail__TypeDeactivated = static_cast<QContactDetail::DetailType>(QContactDetail::TypeVersion + 3);
 
+// Incidental is an internal property of a contact relating to the contact's inception
 static const QContactDetail::DetailType QContactDetail__TypeIncidental = static_cast<QContactDetail::DetailType>(QContactDetail::TypeVersion + 4);
 
 QT_END_NAMESPACE_CONTACTS
