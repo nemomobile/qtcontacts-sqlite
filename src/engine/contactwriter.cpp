@@ -238,7 +238,7 @@ static const char *aggregateContactIds =
         "\n SELECT Relationships.firstId"
         "\n FROM Relationships"
         "\n JOIN Contacts ON Contacts.contactId = Relationships.firstId"
-        "\n WHERE type = 'Aggregates' AND secondId IN ("
+        "\n WHERE Relationships.type = 'Aggregates' AND secondId IN ("
         "\n  SELECT contactId FROM temp.syncConstituents)"
         "\n AND Contacts.modified > :lastSync";
 
@@ -2176,9 +2176,9 @@ QContactManager::Error ContactWriter::save(
     // Note that empty == "local" for all intents and purposes.
     if (!withinAggregateUpdate && !withinSyncUpdate) {
         QString batchSyncTarget;
-        for (int i = 0; i < contacts->count(); ++i) {
+        foreach (const QContact &contact, *contacts) {
             // retrieve current contact's sync target
-            QString currSyncTarget = (*contacts)[i].detail<QContactSyncTarget>().syncTarget();
+            QString currSyncTarget = contact.detail<QContactSyncTarget>().syncTarget();
             if (currSyncTarget.isEmpty()) {
                 currSyncTarget = localSyncTarget;
             }
@@ -2194,6 +2194,13 @@ QContactManager::Error ContactWriter::save(
                     QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error: contacts from multiple sync targets specified in single batch save!"));
                     return QContactManager::UnspecifiedError;
                 }
+            }
+
+            // Also verify the type of this contact
+            const int contactType(contact.detail<QContactType>().type());
+            if (contactType != QContactType::TypeContact) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error: contact type %1 is not supported").arg(contactType));
+                return QContactManager::UnspecifiedError;
             }
         }
     }
