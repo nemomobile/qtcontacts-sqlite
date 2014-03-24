@@ -33,6 +33,7 @@
 #define QTCONTACTSSQLITE_CONTACTWRITER
 
 #include "contactsdatabase.h"
+#include "contactnotifier.h"
 #include "contactid_p.h"
 
 #include "../extensions/qtcontacts-extensions.h"
@@ -72,7 +73,7 @@ class ContactWriter
 public:
     typedef QList<QContactDetail::DetailType> DetailList;
 
-    ContactWriter(const ContactsEngine &engine, const QSqlDatabase &database, ContactReader *reader);
+    ContactWriter(const ContactsEngine &engine, const QSqlDatabase &database, ContactNotifier *notifier, ContactReader *reader);
     ~ContactWriter();
 
     QContactManager::Error save(
@@ -187,7 +188,10 @@ private:
 
     const ContactsEngine &m_engine;
     QSqlDatabase m_database;
+    ContactNotifier *m_notifier;
+    ContactReader *m_reader;
     ProcessMutex *m_databaseMutex;
+
     QSqlQuery m_findConstituentsForAggregate;
     QSqlQuery m_findLocalForAggregate;
     QSqlQuery m_findAggregateForContact;
@@ -258,7 +262,6 @@ private:
     QSqlQuery m_findConstituentsForAggregateIds;
     QSqlQuery m_findAggregateForContactIds;
     QSqlQuery m_selectAggregateContactIds;
-    ContactReader *m_reader;
 
     QSet<QContactId> m_addedIds;
     QSet<QContactId> m_removedIds;

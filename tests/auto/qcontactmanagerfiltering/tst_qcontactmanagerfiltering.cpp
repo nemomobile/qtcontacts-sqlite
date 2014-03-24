@@ -839,14 +839,8 @@ void tst_QContactManagerFiltering::detailVariantFiltering_data()
             QTest::newRow("date value (wrong field)") << manager << defAndFieldNames.first << invalidField << true << QVariant(ad) << es;
             QTest::newRow("date value 2 (wrong field)") << manager << defAndFieldNames.first << invalidField << true << QVariant(bd) << es;
             QTest::newRow("date value 3 (wrong field)") << manager << defAndFieldNames.first << invalidField << true << QVariant(dd) << es;
-            /*
-             * POOM date type only supports the date range:1900-2999
-             * http://msdn.microsoft.com/en-us/library/aa908155.aspx
-             */
-            if (manager->managerName() != "wince") {
-                QTest::newRow("date value 2") << manager << defAndFieldNames.first << defAndFieldNames.second << true << QVariant(bd)<< "b";
-                QTest::newRow("date value 3") << manager << defAndFieldNames.first << defAndFieldNames.second << true << QVariant(dd)<< "d";
-            }
+            QTest::newRow("date value 2") << manager << defAndFieldNames.first << defAndFieldNames.second << true << QVariant(bd)<< "b";
+            QTest::newRow("date value 3") << manager << defAndFieldNames.first << defAndFieldNames.second << true << QVariant(dd)<< "d";
         }
 
         /*
@@ -1874,18 +1868,9 @@ void tst_QContactManagerFiltering::sorting_data()
         FieldSelector integerDefAndFieldNames = defAndFieldNamesForTypePerManager.value(manager).value("Integer");
         FieldSelector stringDefAndFieldNames = defAndFieldNamesForTypePerManager.value(manager).value("String");
 
-#ifdef Q_OS_SYMBIAN
-        qWarning() << "Test case \"first ascending\" will fail on symbian platform because of QString::localeAwareCompare is not actually locale aware"; 
-#endif
         newMRow("first ascending", manager) << manager << namedef << firstname << asc << false << 0 << cs << "abcdefghjik" << "efg";  // efg have the same first name
-#ifdef Q_OS_SYMBIAN
-        qWarning() << "Test case \"first descending\" will fail on symbian platform because of QString::localeAwareCompare is not actually locale aware"; 
-#endif
         newMRow("first descending", manager) << manager << namedef << firstname << desc << false << 0 << cs << "kijhefgdcba" << "efg";// efg have the same first name
         newMRow("last ascending", manager) << manager << namedef << lastname << asc << false << 0 << cs << "bacdefghijk" << "hijk";       // all have a well defined, sortable last name except hijk
-#ifdef Q_OS_SYMBIAN
-        qWarning() << "Test case \"last descending\" will fail on symbian platform because of QString::localeAwareCompare is not actually locale aware"; 
-#endif
         newMRow("last descending", manager) << manager << namedef << lastname << desc << false << 0 << cs << "gfedcabhijk" << "hijk";     // all have a well defined, sortable last name except hijk
         if (!integerDefAndFieldNames.first.isEmpty() && !integerDefAndFieldNames.second.isEmpty()) {
             newMRow("integer ascending, blanks last", manager) << manager << integerDefAndFieldNames.first << integerDefAndFieldNames.second << asc << true << bll << cs << "cabgfedhijk" << "gfedhijk"; // gfedhijk have no integer
@@ -1901,9 +1886,6 @@ void tst_QContactManagerFiltering::sorting_data()
         }
 
         newMRow("display label insensitive", manager) << manager << dldef << dlfld << asc << false << 0 << ci << "abcdefghjik" << "efghji";
-#ifdef Q_OS_SYMBIAN
-        qWarning() << "Test case \"display label sensitive\" will fail on symbian platform because of QString::localeAwareCompare is not actually locale aware"; 
-#endif
         newMRow("display label sensitive", manager) << manager << dldef << dlfld << asc << false << 0 << cs << "abcdefghjik" << "efg";
 
 #else

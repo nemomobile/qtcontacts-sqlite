@@ -1151,7 +1151,7 @@ bool directoryIsRW(const QString &dirPath)
        || databaseDirInfo.permission(QFile::ReadUser  | QFile::WriteUser));
 }
 
-QSqlDatabase ContactsDatabase::open(const QString &databaseName)
+QSqlDatabase ContactsDatabase::open(const QString &databaseName, bool nonprivileged)
 {
     QMutexLocker locker(accessMutex());
 
@@ -1163,7 +1163,7 @@ QSqlDatabase ContactsDatabase::open(const QString &databaseName)
 
     // See if we can access the privileged version of the DB
     QDir databaseDir(privilegedDataDir);
-    if (databaseDir.exists() && directoryIsRW(privilegedDataDir)) {
+    if (!nonprivileged && databaseDir.exists() && directoryIsRW(privilegedDataDir)) {
         databaseDir = privilegedDataDir + QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR);
     } else {
         databaseDir = unprivilegedDataDir + QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR);
