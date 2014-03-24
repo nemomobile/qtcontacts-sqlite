@@ -181,6 +181,11 @@ static const FieldInfo statusFlagsFields[] =
     { QContactStatusFlags::FieldFlags, "", OtherField }
 };
 
+static const FieldInfo typeFields[] =
+{
+    { QContactType::FieldType, "type", IntegerField }
+};
+
 static const FieldInfo addressFields[] =
 {
     { QContactAddress::FieldStreet, "street", StringField },
@@ -640,6 +645,7 @@ static const DetailInfo detailInfo[] =
     DEFINE_DETAIL_PRIMARY_TABLE(QContactGender,       genderFields),
     DEFINE_DETAIL_PRIMARY_TABLE(QContactFavorite,     favoriteFields),
     DEFINE_DETAIL_PRIMARY_TABLE(QContactStatusFlags,  statusFlagsFields),
+    DEFINE_DETAIL_PRIMARY_TABLE(QContactType,         typeFields),
     DEFINE_DETAIL(QContactAddress       , Addresses      , addressFields       , false),
     DEFINE_DETAIL(QContactAnniversary   , Anniversaries  , anniversaryFields   , false),
     DEFINE_DETAIL(QContactAvatar        , Avatars        , avatarFields        , false),
@@ -938,18 +944,6 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
 
             return detail.where().arg(comparison.arg(column.isEmpty() ? field.column : column));
         }
-    }
-
-    if (matchOnType(filter, QContactType::Type)) {
-        // Special case - QContactType: we currently support only TypeContact
-        // Convert to a test for ID is non-NULL
-        bool pass = true;
-        if (validFilterField(filter)) {
-            pass = ((filterField(filter) == QContactType::FieldType) && (filter.value().value<int>() == QContactType::TypeContact));
-        } else {
-            // Presence of QContactType - always true
-        }
-        return QString::fromLatin1("contactId IS %1").arg(QString::fromLatin1(pass ? "NOT NULL" : "NULL"));
     }
 
     *failed = true;
@@ -1444,7 +1438,7 @@ bool includesSyncTarget(const QContactUnionFilter &filter)
 }
 bool includesSyncTarget(const QContactDetailFilter &filter)
 {
-    return filterOnField<QContactSyncTarget>(filter, QContactSyncTarget::FieldSyncTarget);
+    return filter.detailType() == QContactSyncTarget::Type;
 }
 bool includesSyncTarget(const QContactFilter &filter)
 {
@@ -1898,6 +1892,11 @@ QContactManager::Error ContactReader::queryContacts(
                 QContactIncidental incidental;
                 contact.saveDetail(&incidental);
             }
+
+            int contactType = query.value(21).toInt();
+            QContactType typeDetail = contact.detail<QContactType>();
+            typeDetail.setType(static_cast<QContactType::TypeValues>(contactType));
+            contact.saveDetail(&typeDetail);
 
             contacts->append(contact);
 

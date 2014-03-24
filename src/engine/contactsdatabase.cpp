@@ -77,7 +77,8 @@ static const char *createContactsTable =
         "\n hasOnlineAccount BOOL DEFAULT 0,"
         "\n isOnline BOOL DEFAULT 0,"
         "\n isDeactivated BOOL DEFAULT 0,"
-        "\n isIncidental BOOL DEFAULT 0);";
+        "\n isIncidental BOOL DEFAULT 0,"
+        "\n type INTEGER DEFAULT 0);"; // QContactType::TypeContact
 
 static const char *createAddressesTable =
         "\n CREATE TABLE Addresses ("
@@ -479,6 +480,9 @@ static const char *createContactsIsOnlineIndex =
 static const char *createContactsIsDeactivatedIndex =
         "\n CREATE INDEX ContactsIsDeactivatedIndex ON Contacts(isDeactivated);";
 
+static const char *createContactsTypeIndex =
+        "\n CREATE INDEX ContactsTypeIndex ON Contacts(type);";
+
 static const char *createRelationshipsFirstIdIndex =
         "\n CREATE INDEX RelationshipsFirstIdIndex ON Relationships(firstId);";
 
@@ -578,6 +582,7 @@ static const char *createStatements[] =
     createContactsHasEmailAddressIndex,
     createContactsHasOnlineAccountIndex,
     createContactsIsOnlineIndex,
+    createContactsTypeIndex,
 };
 
 // Upgrade statement indexed by old version
@@ -615,6 +620,12 @@ static const char *upgradeVersion4[] = {
     "PRAGMA user_version=5",
     0 // NULL-terminated
 };
+static const char *upgradeVersion5[] = {
+    "ALTER TABLE Contacts ADD COLUMN type INTEGER DEFAULT 0",
+    createContactsTypeIndex,
+    "PRAGMA user_version=6",
+    0 // NULL-terminated
+};
 
 static const char **upgradeVersions[] = {
     upgradeVersion0,
@@ -622,9 +633,10 @@ static const char **upgradeVersions[] = {
     upgradeVersion2,
     upgradeVersion3,
     upgradeVersion4,
+    upgradeVersion5,
 };
 
-static const int currentSchemaVersion = 5;
+static const int currentSchemaVersion = 6;
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {

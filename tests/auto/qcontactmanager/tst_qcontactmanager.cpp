@@ -3711,9 +3711,6 @@ void tst_QContactManager::contactType()
     QFETCH(QString, uri);
     QScopedPointer<QContactManager> cm(QContactManager::fromUri(uri));
 
-    if (!managerSupportsFeature(*cm, "Groups"))
-        QSKIP("Skipping: This manager does not support group contacts!");
-
     QContact g1, g2, c;
     g1.setType(QContactType::TypeGroup);
     g2.setType(QContactType::TypeGroup);
@@ -3727,11 +3724,25 @@ void tst_QContactManager::contactType()
     g2.saveDetail(&g2p);
     c.saveDetail(&cp);
 
-    QVERIFY(cm->saveContact(&g1));
-    QVERIFY(cm->saveContact(&g2));
     QVERIFY(cm->saveContact(&c));
 
-    // test that the accessing by type works properly
+    // test that the accessing by type works properly for contacts
+    QContactDetailFilter typeFilter;
+    setFilterDetail<QContactType>(typeFilter, QContactType::FieldType);
+    setFilterValue(typeFilter, QContactType::TypeContact);
+
+    QContactDetailFilter stFilter;
+    stFilter.setDetailType(QContactSyncTarget::Type);
+
+    QVERIFY(cm->contactIds(typeFilter & stFilter).contains(ContactId::apiId(c)));
+
+    if (!managerSupportsFeature(*cm, "Groups"))
+        QSKIP("Skipping: This manager does not support group contacts!");
+
+    QVERIFY(cm->saveContact(&g1));
+    QVERIFY(cm->saveContact(&g2));
+
+    // test that the accessing by type works properly for groups
     QContactDetailFilter groupFilter;
     setFilterDetail<QContactType>(groupFilter, QContactType::FieldType);
     setFilterValue(groupFilter, QContactType::TypeGroup);
