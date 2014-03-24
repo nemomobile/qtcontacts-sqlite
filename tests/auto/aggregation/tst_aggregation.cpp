@@ -1298,11 +1298,11 @@ void tst_Aggregation::promotionToSingleLocal()
     setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
 
     // first, save a sync target alice.  This should generate an aggregate, but not a local.
+    // (with no last name, we require QContactIncidental to find the correct aggregate)
     QContact syncAlice;
     QContactName san;
     san.setFirstName(QLatin1String("Single"));
     san.setMiddleName(QLatin1String("Promotion"));
-    san.setLastName(QLatin1String("ToAggregate"));
     syncAlice.saveDetail(&san);
 
     QContactEmailAddress saem;
@@ -1327,7 +1327,7 @@ void tst_Aggregation::promotionToSingleLocal()
         QContactName currName = curr.detail<QContactName>();
         if (currName.firstName() == QLatin1String("Single")
                 && currName.middleName() == QLatin1String("Promotion")
-                && currName.lastName() == QLatin1String("ToAggregate")
+                && currName.lastName().isEmpty()
                 && currEm.emailAddress() == QLatin1String("spta@test.com")) {
             if (currSt.syncTarget() == QLatin1String("test")) {
                 syncAlice = curr;
@@ -1370,7 +1370,7 @@ void tst_Aggregation::promotionToSingleLocal()
         QContactFavorite currFav = curr.detail<QContactFavorite>();
         if (currName.firstName() == QLatin1String("Single")
                 && currName.middleName() == QLatin1String("Promotion")
-                && currName.lastName() == QLatin1String("ToAggregate")) {
+                && currName.lastName().isEmpty()) {
             if (currSt.syncTarget() == QLatin1String("test")) {
                 QVERIFY(!foundSyncAlice); // found more than one = error...
                 QCOMPARE(currEm.emailAddress(), QLatin1String("spta@test.com"));
@@ -1430,7 +1430,7 @@ void tst_Aggregation::promotionToSingleLocal()
         QContactName currName = curr.detail<QContactName>();
         if (currName.firstName() == QLatin1String("Single")
                 && currName.middleName() == QLatin1String("Promotion")
-                && currName.lastName() == QLatin1String("ToAggregate")) {
+                && currName.lastName().isEmpty()) {
             if (currSt.syncTarget() == QLatin1String("test")) {
                 QVERIFY(!foundSyncAlice); // found more than one = error...
                 syncAlice = curr;
@@ -1492,7 +1492,7 @@ void tst_Aggregation::promotionToSingleLocal()
         QContactName currName = curr.detail<QContactName>();
         if (currName.firstName() == QLatin1String("Single")
                 && currName.middleName() == QLatin1String("Promotion")
-                && currName.lastName() == QLatin1String("ToAggregate")) {
+                && currName.lastName().isEmpty()) {
             if (currSt.syncTarget() == QLatin1String("test")) {
                 QVERIFY(!foundSyncAlice); // found more than one = error...
                 syncAlice = curr;
