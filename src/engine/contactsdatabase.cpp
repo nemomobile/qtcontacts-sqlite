@@ -582,6 +582,7 @@ static const char *createStatements[] =
     createContactsHasEmailAddressIndex,
     createContactsHasOnlineAccountIndex,
     createContactsIsOnlineIndex,
+    createContactsIsDeactivatedIndex,
     createContactsTypeIndex,
 };
 
@@ -621,6 +622,8 @@ static const char *upgradeVersion4[] = {
     0 // NULL-terminated
 };
 static const char *upgradeVersion5[] = {
+    // Create the isDeactivated index, if it was previously missed
+    "CREATE INDEX IF NOT EXISTS ContactsIsDeactivatedIndex ON Contacts(isDeactivated)",
     "ALTER TABLE Contacts ADD COLUMN type INTEGER DEFAULT 0",
     createContactsTypeIndex,
     "PRAGMA user_version=6",
