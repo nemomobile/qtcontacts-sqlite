@@ -63,6 +63,7 @@ namespace QtContactsSqliteExtensions {
             QString m_oobScope;
             QDateTime m_localSince;
             QDateTime m_remoteSince;
+            QDateTime m_newLocalSince;
             QDateTime m_newRemoteSince;
             QList<QContactId> m_exportedIds;
             QList<QContact> m_prevRemote;
@@ -310,16 +311,19 @@ bool TwoWayContactSyncAdapter::determineLocalChanges(QDateTime *localSince,
     // Note: if localSince isn't valid, then we're doing a clean sync, and we can
     // to pass in zero-pointers for modified/deleted list (or at least, ignore them)
     // (otherwise enabling/disabling/re-enabling an account could cause local deletions
-    //  to be pushed upstream, which would be very bad (tm)).
+    // to be pushed upstream, which would be very bad (tm)).
+    // The backend will populate the newLocalSince timestamp appropriately.
     QContactManager::Error error;
     QList<QContactId> locallyDeletedIds;
     bool cleanSync = d->m_stateData[accountId].m_localSince.isValid() ? false : true;
+
     if (!d->m_engine->fetchSyncContacts(d->m_syncTarget,
                                         d->m_stateData[accountId].m_localSince,
                                         d->m_stateData[accountId].m_exportedIds,
                                         locallyModified,
                                         locallyAdded,
                                         &locallyDeletedIds,
+                                        &d->m_stateData[accountId].m_newLocalSince,
                                         &error)) {
         qWarning() << Q_FUNC_INFO << "error - couldn't fetch locally modified sync contacts!";
         d->clear(accountId);
@@ -524,17 +528,9 @@ bool TwoWayContactSyncAdapter::storeSyncStateData(const QString &accountId)
     writeExportedIds << d->m_stateData[accountId].m_exportedIds;
     values.insert(QStringLiteral("exportedIds"), QVariant(cdata));
 
-    // finally, determine new local since timestamp and store both of them to oob.
-    // NOTE: the newLocalSince timestamp may miss updates due to qtcontacts-sqlite setting modified timestamp. TODO!
-    QDateTime newLocalSince = maxModificationTimestamp(d->m_stateData[accountId].m_mutatedPrevRemote);
-    if (!newLocalSince.isValid()) {
-        // if no changes have ever occurred locally, we can use the same timestamp we
-        // will use for the remote since, as that timestamp is from a valid time prior
-        // to when we retrieved local changes during this sync run.
-        newLocalSince = d->m_stateData[accountId].m_newRemoteSince;
-    }
+    // finally, store the new local and remote since timestamps to the OOB db
     values.insert(QStringLiteral("remoteSince"), QVariant(d->m_stateData[accountId].m_newRemoteSince));
-    values.insert(QStringLiteral("localSince"), QVariant(newLocalSince));
+    values.insert(QStringLiteral("localSince"), QVariant(d->m_stateData[accountId].m_newLocalSince));
 
     // perform the store operation to the oob db.
     if (!d->m_engine->storeOOB(d->m_stateData[accountId].m_oobScope, values)) {

@@ -59,6 +59,26 @@
 
 #include <QtDebug>
 
+namespace {
+    void updateMaxSyncTimestamp(const QList<QContact> *contacts, QDateTime *prevMaxSyncTimestamp)
+    {
+        Q_ASSERT(prevMaxSyncTimestamp);
+
+        if (!contacts) {
+            return;
+        }
+
+        for (int i = 0; i < contacts->size(); ++i) {
+            const QContactTimestamp &ts(contacts->at(i).detail<QContactTimestamp>());
+            if (ts.lastModified().isValid() && (ts.lastModified() > *prevMaxSyncTimestamp || !prevMaxSyncTimestamp->isValid())) {
+                *prevMaxSyncTimestamp = ts.lastModified();
+            } else if (ts.created().isValid() && (ts.created() > *prevMaxSyncTimestamp || !prevMaxSyncTimestamp->isValid())) {
+                *prevMaxSyncTimestamp = ts.created();
+            }
+        }
+    }
+}
+
 using namespace Conversion;
 
 static const QString aggregateSyncTarget(QString::fromLatin1("aggregate"));
@@ -282,7 +302,7 @@ static const char *addedSyncContactIds =
         "\n AND Relationships.type = 'Aggregates'";
 
 static const char *deletedSyncContactIds =
-        "\n SELECT contactId, syncTarget"
+        "\n SELECT contactId, syncTarget, deleted"
         "\n FROM DeletedContacts"
         "\n WHERE deleted > :lastSync";
 
@@ -1821,7 +1841,8 @@ QVariant detailLinkedUris(const QContactDetail &detail)
 
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
 QContactManager::Error ContactWriter::fetchSyncContacts(const QString &syncTarget, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
-                                                        QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds)
+                                                        QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
+                                                        QDateTime *maxTimestamp)
 {
     // Although this is a read operation, it's probably best to make it a transaction
     QMutexLocker locker(ContactsDatabase::accessMutex());
@@ -1837,7 +1858,7 @@ QContactManager::Error ContactWriter::fetchSyncContacts(const QString &syncTarge
         return QContactManager::UnspecifiedError;
     }
 
-    QContactManager::Error error = syncFetch(syncTarget, lastSync, exportedDbIds, syncContacts, addedContacts, deletedContactIds);
+    QContactManager::Error error = syncFetch(syncTarget, lastSync, exportedDbIds, syncContacts, addedContacts, deletedContactIds, maxTimestamp);
     if (error != QContactManager::NoError) {
         rollbackTransaction();
         return error;
@@ -3532,12 +3553,14 @@ struct ConstituentDetails {
 };
 
 QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const QDateTime &lastSync, const QSet<quint32> &exportedIds,
-                                                QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds)
+                                                QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
+                                                QDateTime *maxTimestamp)
 {
     static const DetailList unpromotedDetailTypes(getUnpromotedDetailTypes());
     static const DetailList absolutelyUnpromotedDetailTypes(getAbsolutelyUnpromotedDetailTypes());
 
     const QDateTime since(lastSync.isValid() ? lastSync : epochDateTime());
+    *maxTimestamp = since; // fall back to current sync timestamp if no data found.
 
     if (syncContacts || addedContacts) {
         QSet<quint32> aggregateIds;
@@ -3776,6 +3799,11 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
         }
     }
 
+    // determine the max created/modified/deleted timestamp from the data.
+    // this timestamp should be used as the syncTimestamp during the next sync.
+    updateMaxSyncTimestamp(syncContacts, maxTimestamp);
+    updateMaxSyncTimestamp(addedContacts, maxTimestamp);
+
     if (deletedContactIds) {
         m_deletedSyncContactIds.bindValue(":lastSync", since);
         if (!m_deletedSyncContactIds.exec()) {
@@ -3786,10 +3814,14 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
         while (m_deletedSyncContactIds.next()) {
             const quint32 dbId(m_deletedSyncContactIds.value(0).toUInt());
             const QString st(m_deletedSyncContactIds.value(1).toString());
+            const QDateTime deleted(m_deletedSyncContactIds.value(2).toDateTime());
 
             // If this contact was from this source, or was exported to this source, report the deletion
             if (st == syncTarget || exportedIds.contains(dbId)) {
                 deletedContactIds->append(ContactId::apiId(dbId));
+                if (deleted > *maxTimestamp) {
+                    *maxTimestamp = deleted;
+                }
             }
         }
         m_deletedSyncContactIds.finish();
@@ -4062,14 +4094,20 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
 
             QList<QContact> readList;
             QContactManager::Error readError = m_reader->readContacts(QLatin1String("syncUpdate"), &readList, affectedContactIds.toList(), hint);
-            if (readError != QContactManager::NoError || readList.size() != affectedContactIds.size()) {
+            if ((readError != QContactManager::NoError && readError != QContactManager::DoesNotExistError) || readList.size() != affectedContactIds.size()) {
+                // note that if a contact was deleted locally and modified remotely,
+                // the remote-modification may reference a contact which no longer exists locally.
                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to read contacts for sync update"));
                 return QContactManager::UnspecifiedError;
             }
 
             QMap<quint32, QContact> modifiedContacts;
             foreach (const QContact &contact, readList) {
-                modifiedContacts.insert(ContactId::databaseId(contact.id()), contact);
+                // the contact might be empty if it was removed locally and then modified remotely.
+                // TODO: support PreserveRemoteChanges semantics.
+                if (contact != QContact()) {
+                    modifiedContacts.insert(ContactId::databaseId(contact.id()), contact);
+                }
             }
 
             // Create updated versions of the affected contacts

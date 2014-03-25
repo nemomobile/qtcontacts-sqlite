@@ -136,6 +136,9 @@ public:
     bool fetchSyncContacts(const QString &syncTarget, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
                            QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
                            QContactManager::Error *error);
+    bool fetchSyncContacts(const QString &syncTarget, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
+                           QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
+                           QDateTime *maxTimestamp, QContactManager::Error *error);
 
     bool storeSyncContacts(const QString &syncTarget, ConflictResolutionPolicy conflictPolicy,
                            const QList<QPair<QContact, QContact> > &remoteChanges, QContactManager::Error *error);
