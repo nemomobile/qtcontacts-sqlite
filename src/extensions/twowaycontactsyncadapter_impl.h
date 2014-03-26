@@ -110,8 +110,21 @@ static QDateTime fromDateTimeString(const QString &s)
     return rv;
 }
 
+static QMap<QString, QString> checkParams(const QMap<QString, QString> &params)
+{
+    QMap<QString, QString> rv(params);
+
+    const QString presenceKey(QStringLiteral("mergePresenceChanges"));
+    if (!rv.contains(presenceKey)) {
+        // Don't report presence changes
+        rv.insert(presenceKey, QStringLiteral("false"));
+    }
+
+    return rv;
+}
+
 TwoWayContactSyncAdapterPrivate::TwoWayContactSyncAdapterPrivate(const QString &syncTarget, const QMap<QString, QString> &params)
-    : m_manager(new QContactManager(QStringLiteral("org.nemomobile.contacts.sqlite"), params))
+    : m_manager(new QContactManager(QStringLiteral("org.nemomobile.contacts.sqlite"), checkParams(params)))
     , m_engine(contactManagerEngine(*m_manager))
     , m_syncTarget(syncTarget)
     , m_deleteManager(true)
