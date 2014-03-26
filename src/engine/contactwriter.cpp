@@ -1019,7 +1019,7 @@ static QContactManager::Error bindRelationships(
 */
 
 QContactManager::Error ContactWriter::save(
-        const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap, bool withinTransaction)
+        const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap, bool withinTransaction, bool withinAggregateUpdate)
 {
     QMutexLocker locker(ContactsDatabase::accessMutex());
 
@@ -1031,7 +1031,7 @@ QContactManager::Error ContactWriter::save(
         return QContactManager::UnspecifiedError;
     }
 
-    QContactManager::Error error = saveRelationships(relationships, errorMap);
+    QContactManager::Error error = saveRelationships(relationships, errorMap, withinAggregateUpdate);
     if (error != QContactManager::NoError) {
         if (!withinTransaction) {
             // only rollback if we created a transaction.
@@ -1055,7 +1055,7 @@ QString relationshipString(T type)
 }
 
 QContactManager::Error ContactWriter::saveRelationships(
-        const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap)
+        const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap, bool withinAggregateUpdate)
 {
     static const QString uri(QString::fromLatin1("qtcontacts:org.nemomobile.contacts.sqlite:"));
 
@@ -1183,7 +1183,7 @@ QContactManager::Error ContactWriter::saveRelationships(
     }
 
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
-    if (!aggregatesAffected.isEmpty()) {
+    if (!aggregatesAffected.isEmpty() && !withinAggregateUpdate) {
         QContactManager::Error writeError = regenerateAggregates(aggregatesAffected.toList(), DetailList(), true);
         if (writeError != QContactManager::NoError)
             return writeError;
@@ -2699,8 +2699,7 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
         // Add the aggregates relationship
         QList<QContactRelationship> saveRelationshipList;
         saveRelationshipList.append(makeRelationship(relationshipString(QContactRelationship::Aggregates), contact->id(), writeList.last().id())); // the last contact will be the incidental contact, appended to the writeList above.
-        // TODO: suppress the aggregate regeneration inside this save, since we will clobber the aggregate anyway
-        writeError = save(saveRelationshipList, &errorMap, withinTransaction);
+        writeError = save(saveRelationshipList, &errorMap, withinTransaction, true);
         if (writeError != QContactManager::NoError) {
             // if the aggregation relationship fails, the entire save has failed.
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to save aggregation relationship for new local contact!"));

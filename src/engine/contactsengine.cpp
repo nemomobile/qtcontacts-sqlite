@@ -406,7 +406,7 @@ public:
 
     void execute(ContactReader *, WriterProxy &writer)
     {
-        m_error = writer->save(m_relationships, &m_errorMap, false);
+        m_error = writer->save(m_relationships, &m_errorMap, false, false);
     }
 
     void updateState(QContactAbstractRequest::State state)
@@ -1024,7 +1024,7 @@ bool ContactsEngine::saveRelationships(
         QMap<int, QContactManager::Error> *errorMap,
         QContactManager::Error *error)
 {
-    QContactManager::Error err = writer()->save(*relationships, errorMap, false);
+    QContactManager::Error err = writer()->save(*relationships, errorMap, false, false);
     if (error)
         *error = err;
 

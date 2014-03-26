@@ -93,7 +93,8 @@ public:
     QContactManager::Error save(
             const QList<QContactRelationship> &relationships,
             QMap<int, QContactManager::Error> *errorMap,
-            bool withinTransaction);
+            bool withinTransaction,
+            bool withinAggregateUpdate);
     QContactManager::Error remove(
             const QList<QContactRelationship> &relationships,
             QMap<int, QContactManager::Error> *errorMap,
@@ -121,7 +122,7 @@ private:
     QContactManager::Error update(QContact *contact, const DetailList &definitionMask, bool *aggregateUpdated, bool withinTransaction, bool withinAggregateUpdate);
     QContactManager::Error write(quint32 contactId, QContact *contact, const DetailList &definitionMask);
 
-    QContactManager::Error saveRelationships(const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap);
+    QContactManager::Error saveRelationships(const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap, bool withinAggregateUpdate);
     QContactManager::Error removeRelationships(const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap);
 
     QContactManager::Error removeContacts(const QVariantList &ids);
