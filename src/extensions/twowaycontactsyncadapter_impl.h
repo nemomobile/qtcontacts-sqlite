@@ -761,6 +761,8 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapter::createUpdateList(con
             // This sync adapter should remove that contact from the list of
             // exported ids (as it no longer wishes to sync it up to the remote).
             exportedIds->removeAll(QContactId::fromString(deletedGuidToGId.value(guid)));
+        } else {
+            qWarning() << Q_FUNC_INFO << "removal of contact with unknown id, with guid =" << guid;
         }
     }
 
@@ -988,7 +990,10 @@ QList<QContactDetail> TwoWayContactSyncAdapter::determineModifications(QList<QCo
             }
             QMap<int, QVariant> possiblyStaleValues = modification.values();
             foreach (int field, possiblyStaleValues.keys()) {
-                if (!values.contains(field)) {
+                if (!values.contains(field)
+                        && field != QContactDetail__FieldProvenance // maintain provenance for modifications
+                        && field != QContactDetail::FieldDetailUri
+                        && field != QContactDetail::FieldLinkedDetailUris) {
                     modification.removeValue(field);
                 }
             }
