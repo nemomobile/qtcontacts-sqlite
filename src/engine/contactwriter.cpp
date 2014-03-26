@@ -2699,6 +2699,7 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
         // Add the aggregates relationship
         QList<QContactRelationship> saveRelationshipList;
         saveRelationshipList.append(makeRelationship(relationshipString(QContactRelationship::Aggregates), contact->id(), writeList.last().id())); // the last contact will be the incidental contact, appended to the writeList above.
+        // TODO: suppress the aggregate regeneration inside this save, since we will clobber the aggregate anyway
         writeError = save(saveRelationshipList, &errorMap, withinTransaction);
         if (writeError != QContactManager::NoError) {
             // if the aggregation relationship fails, the entire save has failed.
@@ -2711,6 +2712,16 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
         // Saving the local has caused the aggregate to be regenerated and saved, so we
         // don't need to save it now (our copy doesn't have the regenerated details yet)
     } else {
+        if (createdNewLocal) {
+            // The aggregate has been updated - the modified timestamp should now include the new constituent
+            QContactTimestamp cts(writeList.last().detail<QContactTimestamp>());
+            QContactTimestamp ats(contact->detail<QContactTimestamp>());
+            if (cts.lastModified() > ats.lastModified()) {
+                ats.setLastModified(cts.lastModified());
+            }
+            contact->saveDetail(&ats);
+        }
+
         // update (via clobber) the aggregate contact
         errorMap.clear();
         writeList.clear();
@@ -2811,8 +2822,11 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
             QContactTimestamp ats(aggregate->detail<QContactTimestamp>());
             if (cts.lastModified().isValid() && (!ats.lastModified().isValid() || cts.lastModified() > ats.lastModified())) {
                 ats.setLastModified(cts.lastModified());
-                aggregate->saveDetail(&ats);
             }
+            if (cts.created().isValid() && !ats.created().isValid()) {
+                ats.setCreated(cts.created());
+            }
+            aggregate->saveDetail(&ats);
         } else if (detailType(original) == detailType<QContactGender>()) {
             // gender involves composition
             QContactGender cg(original);
@@ -4672,8 +4686,10 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
     // update the display label for this contact
     m_engine.regenerateDisplayLabel(*contact);
 
-    // update the timestamp if necessary
-    updateTimestamp(contact, true); // set creation timestamp
+    // update the timestamp if necessary (aggregate contacts should have a composed timestamp value)
+    if (stv != aggregateSyncTarget) {
+        updateTimestamp(contact, true); // set creation timestamp
+    }
 
     QContactManager::Error writeErr = enforceDetailConstraints(contact);
     if (writeErr != QContactManager::NoError) {
@@ -4759,8 +4775,10 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
         return writeError;
     }
 
-    // update the modification timestamp
-    updateTimestamp(contact, false);
+    // update the modification timestamp (aggregate contacts should have a composed timestamp value)
+    if (newSyncTarget != aggregateSyncTarget) {
+        updateTimestamp(contact, false);
+    }
 
 #ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     if (!withinAggregateUpdate && oldSyncTarget == aggregateSyncTarget) {
