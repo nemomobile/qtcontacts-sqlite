@@ -1159,6 +1159,19 @@ bool ContactsEngine::storeSyncContacts(const QString &syncTarget, ConflictResolu
                                        const QList<QPair<QContact, QContact> > &remoteChanges, QContactManager::Error *error)
 {
     Q_ASSERT(error);
+    // This function is deprecated and exists for backward compatibility only!
+    qWarning() << Q_FUNC_INFO << "DEPRECATED: use the alternate overload instead!";
+
+    QList<QPair<QContact, QContact> > remoteChangesCopy(remoteChanges);
+
+    *error = writer()->updateSyncContacts(syncTarget, conflictPolicy, &remoteChangesCopy);
+    return (*error == QContactManager::NoError);
+}
+
+bool ContactsEngine::storeSyncContacts(const QString &syncTarget, ConflictResolutionPolicy conflictPolicy,
+                                       QList<QPair<QContact, QContact> > *remoteChanges, QContactManager::Error *error)
+{
+    Q_ASSERT(error);
 
     *error = writer()->updateSyncContacts(syncTarget, conflictPolicy, remoteChanges);
     return (*error == QContactManager::NoError);

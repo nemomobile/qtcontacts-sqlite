@@ -73,8 +73,10 @@ public:
                                    QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
                                    QDateTime *maxTimestamp, QContactManager::Error *error) = 0;
 
-    virtual bool storeSyncContacts(const QString &syncTarget, ConflictResolutionPolicy conflictPolicy,
+    virtual bool Q_DECL_DEPRECATED storeSyncContacts(const QString &syncTarget, ConflictResolutionPolicy conflictPolicy,
                                    const QList<QPair<QContact, QContact> > &remoteChanges, QContactManager::Error *error) = 0;
+    virtual bool storeSyncContacts(const QString &syncTarget, ConflictResolutionPolicy conflictPolicy,
+                                   QList<QPair<QContact, QContact> > *remoteChanges, QContactManager::Error *error) = 0;
 #endif
 
     virtual bool fetchOOB(const QString &scope, const QString &key, QVariant *value) = 0;

@@ -65,6 +65,7 @@ public:
     bool upsyncWasRequired(const QString &accountId) const;
     bool downsyncWasRequired(const QString &accountId) const;
     QContact remoteContact(const QString &accountId, const QString &fname, const QString &lname) const;
+    QSet<QContactId> modifiedIds(const QString &accountId) const;
 
 Q_SIGNALS:
     void finished();
@@ -96,6 +97,7 @@ private:
     mutable QMap<QString, QList<QContact> > m_remoteDeletions;
     mutable QMap<QString, QSet<QString> > m_remoteAddMods; // used to lookup into m_remoteServerContacts
     mutable QMap<QString, QMap<QString, QContact> > m_remoteServerContacts;
+    mutable QMap<QString, QSet<QContactId> > m_modifiedIds;
 };
 
 #endif

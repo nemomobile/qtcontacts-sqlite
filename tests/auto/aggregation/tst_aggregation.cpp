@@ -4766,7 +4766,7 @@ void tst_Aggregation::storeSyncContacts()
     QList<QPair<QContact, QContact> > modifications;
     QContactManager::Error err;
     QtContactsSqliteExtensions::ContactManagerEngine::ConflictResolutionPolicy policy(QtContactsSqliteExtensions::ContactManagerEngine::PreserveLocalChanges);
-    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, &modifications, &err));
     QCOMPARE(err, QContactManager::NoError);
 
     // Store a sync target contact originating at this service
@@ -4790,7 +4790,11 @@ void tst_Aggregation::storeSyncContacts()
     stc.saveDetail(&h);
 
     modifications.append(qMakePair(QContact(), stc));
-    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, &modifications, &err));
+
+    // The added ID should be reported
+    QContactId additionId(modifications.first().second.id());
+    QVERIFY(additionId != QContactId());
 
     // The syncTarget should not be reported as updated by storeSyncContacts
     QVERIFY(!syncSpy.wait(1000));
@@ -4800,8 +4804,9 @@ void tst_Aggregation::storeSyncContacts()
     QDateTime updatedSyncTime;
     QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &updatedSyncTime, &err));
     QCOMPARE(syncContacts.count(), 1);
+    QCOMPARE(syncContacts.at(0).id(), additionId);
 
-    stc = m_cm->contact(retrievalId(syncContacts.at(0)));
+    stc = m_cm->contact(additionId);
 
     // Verify that the contact properties are as we expect
     QContactName n2 = stc.detail<QContactName>();
@@ -4895,7 +4900,7 @@ void tst_Aggregation::storeSyncContacts()
 
     modifications.clear();
     modifications.append(qMakePair(pa, mpa));
-    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, &modifications, &err));
 
     // The syncTarget should not be reported as updated by storeSyncContacts
     QVERIFY(!syncSpy.wait(1000));
@@ -5103,7 +5108,7 @@ void tst_Aggregation::storeSyncContacts()
 
     modifications.clear();
     modifications.append(qMakePair(pa, mpa));
-    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, &modifications, &err));
 
     // Verify that the expected changes occurred
     stc = m_cm->contact(retrievalId(stc));
@@ -5245,7 +5250,7 @@ void tst_Aggregation::storeSyncContacts()
 
     modifications.clear();
     modifications.append(qMakePair(pa, mpa));
-    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, &modifications, &err));
 
     // A sync-target that was not the subject of this update should be reported as having changed
     QTRY_COMPARE(syncSpy.count(), 1);
@@ -5389,7 +5394,7 @@ void tst_Aggregation::storeSyncContacts()
 
     modifications.clear();
     modifications.append(qMakePair(pa, mpa));
-    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, &modifications, &err));
 
     // Verify that the expected changes occurred
     stc = m_cm->contact(retrievalId(stc));
@@ -5512,7 +5517,7 @@ void tst_Aggregation::storeSyncContacts()
 
     modifications.clear();
     modifications.append(qMakePair(pa, mpa));
-    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, &modifications, &err));
 
     // The tag should have been modified in the original local contact
     alc = m_cm->contact(alc.id());
@@ -5590,7 +5595,7 @@ void tst_Aggregation::storeSyncContacts()
 
     modifications.clear();
     modifications.append(qMakePair(pa, mpa));
-    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, &modifications, &err));
 
     // The changes should be made in their respective contacts
     alc = m_cm->contact(alc.id());
@@ -5682,7 +5687,7 @@ void tst_Aggregation::storeSyncContacts()
 
     modifications.clear();
     modifications.append(qMakePair(pa, mpa));
-    QVERIFY(cme->storeSyncContacts("export", policy, modifications, &err));
+    QVERIFY(cme->storeSyncContacts("export", policy, &modifications, &err));
 
     // The changes should be applied to the origin details, and additions go to the local constituent
     stc2 = m_cm->contact(stId);
@@ -5775,7 +5780,7 @@ void tst_Aggregation::storeSyncContacts()
 
     modifications.clear();
     modifications.append(qMakePair(pa, mpa));
-    QVERIFY(cme->storeSyncContacts("export", policy, modifications, &err));
+    QVERIFY(cme->storeSyncContacts("export", policy, &modifications, &err));
 
     // The aggregate should be updated
     a3 = m_cm->contact(a3.id());
@@ -5845,7 +5850,7 @@ void tst_Aggregation::storeSyncContacts()
 
     modifications.clear();
     modifications.append(qMakePair(QContact(), xc));
-    QVERIFY(cme->storeSyncContacts("export", policy, modifications, &err));
+    QVERIFY(cme->storeSyncContacts("export", policy, &modifications, &err));
 
     syncContacts.clear();
     addedContacts.clear();
@@ -5912,7 +5917,7 @@ void tst_Aggregation::storeSyncContacts()
 
     modifications.clear();
     modifications.append(qMakePair(pa, mpa));
-    QVERIFY(cme->storeSyncContacts("export", policy, modifications, &err));
+    QVERIFY(cme->storeSyncContacts("export", policy, &modifications, &err));
 
     // The local's details should have been updated
     lxc = m_cm->contact(lxc.id());
@@ -5943,7 +5948,7 @@ void tst_Aggregation::storeSyncContacts()
     // Report the export DB contact as deleted from the export DB
     modifications.clear();
     modifications.append(qMakePair(a4, QContact()));
-    QVERIFY(cme->storeSyncContacts("export", policy, modifications, &err));
+    QVERIFY(cme->storeSyncContacts("export", policy, &modifications, &err));
 
     QContactDetailFilter allSyncTargets;
     setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
@@ -5957,7 +5962,7 @@ void tst_Aggregation::storeSyncContacts()
     // Report an exported contact as removed from the export DB
     modifications.clear();
     modifications.append(qMakePair(a3, QContact()));
-    QVERIFY(cme->storeSyncContacts("export", policy, modifications, &err));
+    QVERIFY(cme->storeSyncContacts("export", policy, &modifications, &err));
 
     // All constituents will be removed except that belonging to another sync target
     contactIds = m_cm->contactIds(allSyncTargets);
@@ -5969,7 +5974,7 @@ void tst_Aggregation::storeSyncContacts()
     modifications.clear();
     modifications.append(qMakePair(stc, QContact()));
     modifications.append(qMakePair(stc2, QContact()));
-    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, &modifications, &err));
 
     // The sync target constituents should be removed
     contactIds = m_cm->contactIds(allSyncTargets);
@@ -6021,7 +6026,7 @@ void tst_Aggregation::storeSyncContacts()
 
     modifications.clear();
     modifications.append(qMakePair(QContact(), fstc));
-    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, &modifications, &err));
 
     syncContacts.clear();
     updatedSyncTime = QDateTime();
@@ -6043,7 +6048,7 @@ void tst_Aggregation::storeSyncContacts()
     int remSpyCount = remSpy.count();
     modifications.clear();
     modifications.append(qMakePair(fstc, QContact()));
-    QVERIFY(cme->storeSyncContacts("sync-test", policy, modifications, &err));
+    QVERIFY(cme->storeSyncContacts("sync-test", policy, &modifications, &err));
 
     // Both the constituent and the aggregate should be removed
     contactIds = m_cm->contactIds(allSyncTargets);
@@ -6172,6 +6177,13 @@ void tst_Aggregation::testSyncAdapter()
     QVERIFY(tsaTwoAggId != QContactId());
     QVERIFY(tsaThreeStcId != QContactId());
     QVERIFY(tsaThreeAggId != QContactId());
+
+    // verify that the added IDs were reported
+    QSet<QContactId> reportedIds(tsa.modifiedIds(accountId));
+    QCOMPARE(reportedIds.size(), 3);
+    QVERIFY(reportedIds.contains(tsaOneStcId));
+    QVERIFY(reportedIds.contains(tsaTwoStcId));
+    QVERIFY(reportedIds.contains(tsaThreeStcId));
 
     // and no upsync of local changes should be required (there shouldn't have been any local changes).
     QVERIFY(!tsa.upsyncWasRequired(accountId));

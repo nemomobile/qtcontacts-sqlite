@@ -107,7 +107,7 @@ public:
 
     QContactManager::Error updateSyncContacts(const QString &syncTarget,
                                               QtContactsSqliteExtensions::ContactManagerEngine::ConflictResolutionPolicy conflictPolicy,
-                                              const QList<QPair<QContact, QContact> > &remoteChanges);
+                                              QList<QPair<QContact, QContact> > *remoteChanges);
 #endif
 
     bool storeOOB(const QString &scope, const QMap<QString, QVariant> &values);
@@ -144,7 +144,7 @@ private:
 
     QContactManager::Error syncUpdate(const QString &syncTarget,
                                       QtContactsSqliteExtensions::ContactManagerEngine::ConflictResolutionPolicy conflictPolicy,
-                                      const QList<QPair<QContact, QContact> > &remoteChanges);
+                                      QList<QPair<QContact, QContact> > *remoteChanges);
 #endif
 
     void bindContactDetails(const QContact &contact, QSqlQuery &query, const DetailList &definitionMask = DetailList(), quint32 contactId = 0);

@@ -267,7 +267,7 @@ void TwoWayContactSyncAdapter::determineRemoteChanges(const QDateTime &remoteSin
 // the needToApplyDelta parameter should only be set to false if the adapter implementation
 // takes care of ensuring that the detailIds are preserved when making modifications.
 bool TwoWayContactSyncAdapter::storeRemoteChanges(const QList<QContact> &deletedRemote,
-                                                  const QList<QContact> &addModRemote,
+                                                  QList<QContact> *addModRemote,
                                                   const QString &accountId,
                                                   bool needToApplyDelta)
 {
@@ -283,10 +283,13 @@ bool TwoWayContactSyncAdapter::storeRemoteChanges(const QList<QContact> &deleted
     // the future.
     // the first value in each pair will be a copy of a value in the prevRemote list.
     // the second value in each pair will be a copy of a (newly constructed) value in the mutatedPrevRemote list.
+    QMap<int, int> additionIndices;
     QList<QPair<QContact, QContact> > syncContactUpdates = createUpdateList(d->m_stateData[accountId].m_prevRemote,
-                                                                            deletedRemote, addModRemote,
+                                                                            deletedRemote,
+                                                                            addModRemote,
                                                                             &d->m_stateData[accountId].m_exportedIds,
                                                                             &d->m_stateData[accountId].m_mutatedPrevRemote,
+                                                                            &additionIndices,
                                                                             needToApplyDelta);
     d->m_stateData[accountId].m_mutated = true; // createUpdateList will populate MUTATED_PREV_REMOTE from PREV_REMOTE
 
@@ -302,11 +305,19 @@ bool TwoWayContactSyncAdapter::storeRemoteChanges(const QList<QContact> &deleted
     if (syncContactUpdates.size()) {
         if (!d->m_engine->storeSyncContacts(d->m_syncTarget,
                                             QtContactsSqliteExtensions::ContactManagerEngine::PreserveLocalChanges,
-                                            syncContactUpdates,
+                                            &syncContactUpdates,
                                             &error)) {
             qWarning() << Q_FUNC_INFO << "error - couldn't store sync contacts!";
             d->clear(accountId);
             return false;
+        }
+
+        // Report IDs allocated for added contacts back to the caller
+        QMap<int, int>::const_iterator it = additionIndices.constBegin(), end = additionIndices.constEnd();
+        for ( ; it != end; ++it) {
+            const int addModIndex(it.key());
+            const int updateIndex(it.value());
+            (*addModRemote)[addModIndex].setId(syncContactUpdates.at(updateIndex).second.id());
         }
     } else {
         qDebug() << Q_FUNC_INFO << "no substantial changes, no need to store remote changes.";
@@ -708,11 +719,16 @@ void TwoWayContactSyncAdapter::ensureAccountProvenance(QList<QContact> *locallyA
 // contains the QContactIds of previously-upsynced contacts which did not have a synctarget
 // constituent (and therefore no GUID detail)), this function will create a list of update
 // pairs which can be passed to the qtcontacts-sqlite storeSyncContacts() function.
+// If any of the update pairs correspond to contact additions, the mapping of input index
+// (into "remoteAddedModified") to output index (into the result list) is added to the
+// "additionIndices" map.  This allows the eventual allocation of local IDs to be linked
+// back to the remote contact from which they were created.
 QList<QPair<QContact, QContact> > TwoWayContactSyncAdapter::createUpdateList(const QList<QContact> &prevRemote,
                                                                              const QList<QContact> &remoteDeleted,
-                                                                             const QList<QContact> &remoteAddedModified,
+                                                                             QList<QContact> *remoteAddedModified,
                                                                              QList<QContactId> *exportedIds,
                                                                              QList<QContact> *mutatedPrevRemote,
+                                                                             QMap<int, int> *additionIndices,
                                                                              bool needToApplyDelta) const
 {
     // <PREV_REMOTE, UPDATED_REMOTE> pairs.
@@ -753,11 +769,11 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapter::createUpdateList(con
     }
     QHash<QString, int> addedModifiedGuidToIndex;
     QHash<QString, QString> addedModifiedGuidToGId;
-    for (int i = 0; i < remoteAddedModified.size(); ++i) {
+    for (int i = 0; i < remoteAddedModified->size(); ++i) {
         // all contacts from the remote service will have a Guid.
-        QString remoteGuid = remoteAddedModified[i].detail<QContactGuid>().guid();
+        QString remoteGuid = (*remoteAddedModified)[i].detail<QContactGuid>().guid();
         addedModifiedGuidToIndex.insert(remoteGuid, i);
-        QString gid = remoteAddedModified[i].detail<QContactOriginMetadata>().groupId();
+        QString gid = (*remoteAddedModified)[i].detail<QContactOriginMetadata>().groupId();
         if (!gid.isEmpty()) {
             // if the gid was stored server-side (as a custom/extended property)
             // then it may have been because when we synced it up previously,
@@ -802,7 +818,7 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapter::createUpdateList(con
             // to ensure that the detail ids are preserved.
             int prmIndex = prevGuidToIndex.value(guid);
             const QContact &prev(prevRemote[prmIndex]);
-            const QContact &curr(remoteAddedModified[addedModifiedGuidToIndex.value(guid)]);
+            const QContact &curr((*remoteAddedModified)[addedModifiedGuidToIndex.value(guid)]);
             QContact updated = needToApplyDelta ? applyRemoteDeltaToPrev(prev, curr) : curr;
             if (exactContactMatchExistsInList(prev, QList<QContact>() << updated) == -1) {
                 // the change is substantial (ie, wasn't just an eTag update, for example)
@@ -819,7 +835,7 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapter::createUpdateList(con
             // modifications: <PREV_REMOTE, UPDATED_REMOTE>
             int prmIndex = prevGIdToIndex.value(addedModifiedGuidToGId.value(guid));
             const QContact &prev(prevRemote[prmIndex]);
-            const QContact &curr(remoteAddedModified[addedModifiedGuidToIndex.value(guid)]);
+            const QContact &curr((*remoteAddedModified)[addedModifiedGuidToIndex.value(guid)]);
             QContact updated = needToApplyDelta ? applyRemoteDeltaToPrev(prev, curr) : curr;
             // No need to check if the change is substantial - it is, it now has a guid.
             prevRemoteModificationIndexes.insert(prmIndex, updated);
@@ -827,9 +843,12 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapter::createUpdateList(con
         } else {
             // this is a pure server-side addition.
             // additions: <NULL, UPDATED_REMOTE>
-            QContact addedContact = remoteAddedModified.at(addedModifiedGuidToIndex.value(guid));
+            const int addModIndex = addedModifiedGuidToIndex.value(guid);
+            const int updateIndex = retn.count();
+            QContact addedContact = remoteAddedModified->at(addModIndex);
             prevRemoteAdditions.append(addedContact);
             retn.append(qMakePair(QContact(), addedContact));
+            additionIndices->insert(addModIndex, updateIndex);
         }
     }
 

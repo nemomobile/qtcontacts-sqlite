@@ -142,6 +142,8 @@ public:
 
     bool storeSyncContacts(const QString &syncTarget, ConflictResolutionPolicy conflictPolicy,
                            const QList<QPair<QContact, QContact> > &remoteChanges, QContactManager::Error *error);
+    bool storeSyncContacts(const QString &syncTarget, ConflictResolutionPolicy conflictPolicy,
+                           QList<QPair<QContact, QContact> > *remoteChanges, QContactManager::Error *error);
 #endif
 
     bool fetchOOB(const QString &scope, const QString &key, QVariant *value);

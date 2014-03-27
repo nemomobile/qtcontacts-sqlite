@@ -202,10 +202,15 @@ void TestSyncAdapter::continueTwoWaySync()
         remoteAddMods.append(m_remoteServerContacts[accountId].value(contactGuidStr));
     }
 
-    if (!storeRemoteChanges(m_remoteDeletions[accountId], remoteAddMods, accountId)) {
+    if (!storeRemoteChanges(m_remoteDeletions[accountId], &remoteAddMods, accountId)) {
         qWarning() << Q_FUNC_INFO << "couldn't store remote changes";
         emit failed();
         return;
+    }
+
+    m_modifiedIds[accountId].clear();
+    foreach (const QContact &stored, remoteAddMods) {
+        m_modifiedIds[accountId].insert(stored.id());
     }
 
     // clear our simulated remote changes deltas, as we've already reported / stored them.
@@ -287,5 +292,10 @@ bool TestSyncAdapter::downsyncWasRequired(const QString &accountId) const
 QContact TestSyncAdapter::remoteContact(const QString &accountId, const QString &fname, const QString &lname) const
 {
     return m_remoteServerContacts[accountId][TSA_GUID_STRING(accountId, fname, lname)];
+}
+
+QSet<QContactId> TestSyncAdapter::modifiedIds(const QString &accountId) const
+{
+    return m_modifiedIds[accountId];
 }
 

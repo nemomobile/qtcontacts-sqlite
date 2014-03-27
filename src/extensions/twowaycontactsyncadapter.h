@@ -62,7 +62,7 @@ public:
     virtual void determineRemoteChanges(const QDateTime &remoteSince, const QString &accountId);
     // step four: store those changes to the local database.
     virtual bool storeRemoteChanges(const QList<QContact> &deletedRemote,
-                                    const QList<QContact> &addModRemote,
+                                    QList<QContact> *addModRemote,
                                     const QString &accountId,
                                     bool needToApplyDelta = true);
     // step five: determine which contact changes occurred locally.
@@ -101,9 +101,10 @@ protected:
     QList<QPair<QContact, QContact> > createUpdateList(
                     const QList<QContact> &prevRemote,
                     const QList<QContact> &remoteRemoved,
-                    const QList<QContact> &remoteAddedModified,
+                    QList<QContact> *remoteAddedModified,
                     QList<QContactId> *exportedIds,
                     QList<QContact> *mutatedPrevRemote,
+                    QMap<int, int> *additionIndices,
                     bool needToApplyDelta = true) const;
     QContact applyRemoteDeltaToPrev(const QContact &prev, const QContact &curr) const;
 
