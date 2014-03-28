@@ -917,8 +917,8 @@ QPair<QList<QContactDetail>, QList<QContactDetail> > TwoWayContactSyncAdapter::f
     // ignore all exact matches, as they don't form part of the delta.
     for (int i = pdets.size() - 1; i >= 0; --i) {
         int idx = -1;
-        for (int j = 0; j < cdets.size(); ++j) {
-            if (pdets[i] == cdets[j]) {
+        for (int j = cdets.size() - 1; j >= 0; --j) {
+            if (detailPairExactlyMatches(pdets.at(i), cdets.at(j))) {
                 idx = j;
                 break;
             }
