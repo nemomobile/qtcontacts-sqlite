@@ -43,7 +43,7 @@ public:
         SelfContactId
     };
 
-    static QSqlDatabase open(const QString &databaseName, bool nonprivileged);
+    static QSqlDatabase open(const QString &databaseName, bool &nonprivileged);
     static QSqlQuery prepare(const char *statement, const QSqlDatabase &database);
 
     static bool beginTransaction(QSqlDatabase &database);

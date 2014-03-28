@@ -1151,7 +1151,7 @@ bool directoryIsRW(const QString &dirPath)
        || databaseDirInfo.permission(QFile::ReadUser  | QFile::WriteUser));
 }
 
-QSqlDatabase ContactsDatabase::open(const QString &databaseName, bool nonprivileged)
+QSqlDatabase ContactsDatabase::open(const QString &databaseName, bool &nonprivileged)
 {
     QMutexLocker locker(accessMutex());
 
@@ -1172,6 +1172,10 @@ QSqlDatabase ContactsDatabase::open(const QString &databaseName, bool nonprivile
             return QSqlDatabase();
         }
         databaseDir = unprivilegedDataDir + QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR);
+        if (!nonprivileged) {
+            QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Could not access privileged data directory; using nonprivileged"));
+            nonprivileged = true;
+        }
     }
 
     const QString databaseFile = databaseDir.absoluteFilePath(QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_NAME));
