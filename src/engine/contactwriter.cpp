@@ -3765,7 +3765,8 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
                 QMap<quint32, quint32> partialBaseAggregateIds;
                 QSet<quint32> requiredConstituentIds;
 
-                // For each aggregate - can we return the existing complete aggregate or do we need to generate a limited version?
+                // Find the base constituents for every contact the remote should see, and the constituents
+                // that should be combined into the partial aggregate
                 QMap<quint32, QList<ConstituentDetails> >::const_iterator it = constituentDetails.constBegin(), end = constituentDetails.constEnd();
                 for ( ; it != end; ++it) {
                     quint32 syncTargetConstituentId = 0;
