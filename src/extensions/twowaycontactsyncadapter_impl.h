@@ -87,7 +87,9 @@ namespace QtContactsSqliteExtensions {
 QTCONTACTS_USE_NAMESPACE
 using namespace QtContactsSqliteExtensions;
 
-static void registerTypes()
+namespace {
+
+void registerTypes()
 {
     static bool registered = false;
     if (!registered) {
@@ -98,19 +100,19 @@ static void registerTypes()
 }
 
 // Input must be UTC
-static QString dateTimeString(const QDateTime &qdt)
+QString dateTimeString(const QDateTime &qdt)
 {
     return qdt.toString(QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz"));
 }
 
-static QDateTime fromDateTimeString(const QString &s)
+QDateTime fromDateTimeString(const QString &s)
 {
     QDateTime rv(QDateTime::fromString(s, QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz")));
     rv.setTimeSpec(Qt::UTC);
     return rv;
 }
 
-static QMap<QString, QString> checkParams(const QMap<QString, QString> &params)
+QMap<QString, QString> checkParams(const QMap<QString, QString> &params)
 {
     QMap<QString, QString> rv(params);
 
@@ -121,6 +123,29 @@ static QMap<QString, QString> checkParams(const QMap<QString, QString> &params)
     }
 
     return rv;
+}
+
+QSet<QContactDetail::DetailType> getDefaultIgnorableDetailTypes()
+{
+    QSet<QContactDetail::DetailType> rv;
+    rv.insert(QContactDetail__TypeDeactivated);
+    rv.insert(QContactDetail::TypeDisplayLabel);
+    rv.insert(QContactDetail::TypeGlobalPresence);
+    rv.insert(QContactDetail__TypeIncidental);
+    rv.insert(QContactDetail::TypePresence);
+    rv.insert(QContactDetail::TypeOnlineAccount);
+    rv.insert(QContactDetail__TypeStatusFlags);
+    rv.insert(QContactDetail::TypeSyncTarget);
+    rv.insert(QContactDetail::TypeTimestamp);
+    return rv;
+}
+
+const QSet<QContactDetail::DetailType> &defaultIgnorableDetailTypes()
+{
+    static QSet<QContactDetail::DetailType> types(getDefaultIgnorableDetailTypes());
+    return types;
+}
+
 }
 
 TwoWayContactSyncAdapterPrivate::TwoWayContactSyncAdapterPrivate(const QString &syncTarget, const QMap<QString, QString> &params)
@@ -269,7 +294,8 @@ void TwoWayContactSyncAdapter::determineRemoteChanges(const QDateTime &remoteSin
 bool TwoWayContactSyncAdapter::storeRemoteChanges(const QList<QContact> &deletedRemote,
                                                   QList<QContact> *addModRemote,
                                                   const QString &accountId,
-                                                  bool needToApplyDelta)
+                                                  bool needToApplyDelta,
+                                                  const QSet<QContactDetail::DetailType> &ignorableDetailTypes)
 {
     if (d->m_stateData[accountId].m_status != TwoWayContactSyncAdapterPrivate::ReadSyncStateData) {
         qWarning() << Q_FUNC_INFO << "invalid state" << d->m_stateData[accountId].m_status;
@@ -290,7 +316,8 @@ bool TwoWayContactSyncAdapter::storeRemoteChanges(const QList<QContact> &deleted
                                                                             &d->m_stateData[accountId].m_exportedIds,
                                                                             &d->m_stateData[accountId].m_mutatedPrevRemote,
                                                                             &additionIndices,
-                                                                            needToApplyDelta);
+                                                                            needToApplyDelta,
+                                                                            ignorableDetailTypes);
     d->m_stateData[accountId].m_mutated = true; // createUpdateList will populate MUTATED_PREV_REMOTE from PREV_REMOTE
 
     // store them to qtcontacts-sqlite.
@@ -332,7 +359,8 @@ bool TwoWayContactSyncAdapter::determineLocalChanges(QDateTime *localSince,
                                                      QList<QContact> *locallyAdded,
                                                      QList<QContact> *locallyModified,
                                                      QList<QContact> *locallyDeleted,
-                                                     const QString &accountId)
+                                                     const QString &accountId,
+                                                     const QSet<QContactDetail::DetailType> &ignorableDetailTypes)
 {
     if (d->m_stateData[accountId].m_status != TwoWayContactSyncAdapterPrivate::StoredRemoteChanges) {
         qWarning() << Q_FUNC_INFO << "invalid state" << d->m_stateData[accountId].m_status;
@@ -426,14 +454,14 @@ bool TwoWayContactSyncAdapter::determineLocalChanges(QDateTime *localSince,
             // check this contact to see whether it already represents one from the changes lists.
             QContact remoteContact = d->m_stateData[accountId].m_mutatedPrevRemote.at(i);
             if (locallyAdded) {
-                int matchIndex = exactContactMatchExistsInList(remoteContact, *locallyAdded);
+                int matchIndex = exactContactMatchExistsInList(remoteContact, *locallyAdded, ignorableDetailTypes);
                 if (matchIndex != -1) {
                     remoteContact = locallyAdded->takeAt(matchIndex);
                     d->m_stateData[accountId].m_mutatedPrevRemote.replace(i, remoteContact);
                 }
             }
             if (locallyModified) {
-                int matchIndex = exactContactMatchExistsInList(remoteContact, *locallyModified);
+                int matchIndex = exactContactMatchExistsInList(remoteContact, *locallyModified, ignorableDetailTypes);
                 if (matchIndex != -1) {
                     remoteContact = locallyModified->takeAt(matchIndex);
                     d->m_stateData[accountId].m_mutatedPrevRemote.replace(i, remoteContact);
@@ -660,6 +688,7 @@ void TwoWayContactSyncAdapter::ensureAccountProvenance(QList<QContact> *locallyA
     // The default implementation doesn't need to look at the prevRemote version.
     // Other implementations may need to check if a field value changes (eg OriginMetadata groupId)
     Q_UNUSED(prevRemote)
+    Q_UNUSED(locallyAdded)
 
     // For deletions and modifications, we check to see if guid starts with <accountId>.
     // If not, we remove it from the list (as it was never in this account).
@@ -708,7 +737,8 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapter::createUpdateList(con
                                                                              QList<QContactId> *exportedIds,
                                                                              QList<QContact> *mutatedPrevRemote,
                                                                              QMap<int, int> *additionIndices,
-                                                                             bool needToApplyDelta) const
+                                                                             bool needToApplyDelta,
+                                                                             const QSet<QContactDetail::DetailType> &ignorableDetailTypes) const
 {
     // <PREV_REMOTE, UPDATED_REMOTE> pairs.
     QList<QPair<QContact, QContact> > retn;
@@ -798,7 +828,7 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapter::createUpdateList(con
             const QContact &prev(prevRemote[prmIndex]);
             const QContact &curr((*remoteAddedModified)[addedModifiedGuidToIndex.value(guid)]);
             QContact updated = needToApplyDelta ? applyRemoteDeltaToPrev(prev, curr) : curr;
-            if (exactContactMatchExistsInList(prev, QList<QContact>() << updated) == -1) {
+            if (exactContactMatchExistsInList(prev, QList<QContact>() << updated, ignorableDetailTypes) == -1) {
                 // the change is substantial (ie, wasn't just an eTag update, for example)
                 prevRemoteModificationIndexes.insert(prmIndex, updated);
                 retn.append(qMakePair(prev, updated));
@@ -1164,43 +1194,30 @@ int TwoWayContactSyncAdapter::exactDetailMatchExistsInList(const QContactDetail 
     return -1;
 }
 
-void TwoWayContactSyncAdapter::removeIgnorableDetailsFromList(QList<QContactDetail> *dets) const
+void TwoWayContactSyncAdapter::removeIgnorableDetailsFromList(QList<QContactDetail> *dets, const QSet<QContactDetail::DetailType> &ignorableDetailTypes) const
 {
     // ignore differences in certain detail types
     for (int i = dets->size() - 1; i >= 0; --i) {
-        switch (dets->at(i).type()) {
-            case QContactDetail::TypeDisplayLabel:   // flow through
-            case QContactDetail::TypeGlobalPresence: // flow through
-            case QContactDetail::TypePresence:       // flow through
-            case QContactDetail::TypeOnlineAccount:  // flow through
-            case QContactDetail::TypeSyncTarget:     // flow through
-            case QContactDetail::TypeTimestamp:
-                dets->removeAt(i);      // we can ignore this detail
-                break;
-            default: {
-                if (dets->at(i).type() == QContactDetail__TypeStatusFlags ||
-                    dets->at(i).type() == QContactDetail__TypeDeactivated ||
-                    dets->at(i).type() == QContactDetail__TypeIncidental) {
-                    // we can ignore this detail
-                    dets->removeAt(i);
-                }
-                break;
-            }
+        const QContactDetail::DetailType type(dets->at(i).type());
+        if (ignorableDetailTypes.contains(type)) {
+            dets->removeAt(i);      // we can ignore this detail
         }
     }
 }
 
-int TwoWayContactSyncAdapter::exactContactMatchExistsInList(const QContact &c, const QList<QContact> &list) const
+int TwoWayContactSyncAdapter::exactContactMatchExistsInList(const QContact &c, const QList<QContact> &list, const QSet<QContactDetail::DetailType> &ignorableDetailTypes) const
 {
+    const QSet<QContactDetail::DetailType> &ignoreDetails(!ignorableDetailTypes.isEmpty() ? ignorableDetailTypes : defaultIgnorableDetailTypes());
+
     QList<QContactDetail> cdets = c.details();
-    removeIgnorableDetailsFromList(&cdets);
+    removeIgnorableDetailsFromList(&cdets, ignoreDetails);
 
     for (int i = 0; i < list.size(); ++i) {
         // for it to be an exact match:
         // a) every detail in cdets must exist in ldets
         // b) no extra details can exist in ldets
         QList<QContactDetail> ldets = list[i].details();
-        removeIgnorableDetailsFromList(&ldets);
+        removeIgnorableDetailsFromList(&ldets, ignoreDetails);
         if (ldets.size() != cdets.size()) {
             continue;
         }
@@ -1231,7 +1248,7 @@ int TwoWayContactSyncAdapter::exactContactMatchExistsInList(const QContact &c, c
 void TwoWayContactSyncAdapter::dumpContact(const QContact &c) const
 {
     QList<QContactDetail> cdets = c.details();
-    removeIgnorableDetailsFromList(&cdets);
+    removeIgnorableDetailsFromList(&cdets, defaultIgnorableDetailTypes());
     foreach (const QContactDetail &det, cdets) {
         qWarning() << "++ ---------" << det.type();
         QMap<int, QVariant> values = det.values();
