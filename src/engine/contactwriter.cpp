@@ -2902,7 +2902,7 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
 typedef QPair<QString, QString> StringPair;
 typedef QPair<QContactDetail, QContactDetail> DetailPair;
 
-static QList<QPair<QContactDetail, StringPair> > contactDetails(const QContact &contact, bool forcePromotion = false, const ContactWriter::DetailList &definitionMask = ContactWriter::DetailList())
+static QList<QPair<QContactDetail, StringPair> > promotableDetails(const QContact &contact, bool forcePromotion = false, const ContactWriter::DetailList &definitionMask = ContactWriter::DetailList())
 {
     QList<QPair<QContactDetail, StringPair> > rv;
 
@@ -3018,8 +3018,8 @@ QContactManager::Error ContactWriter::calculateDelta(QContact *contact, const Co
         return readError == QContactManager::NoError ? QContactManager::UnspecifiedError : readError;
     }
 
-    QList<QPair<QContactDetail, StringPair> > originalDetails(contactDetails(readList.at(0)));
-    QList<QPair<QContactDetail, StringPair> > updateDetails(contactDetails(*contact));
+    QList<QPair<QContactDetail, StringPair> > originalDetails(promotableDetails(readList.at(0)));
+    QList<QPair<QContactDetail, StringPair> > updateDetails(promotableDetails(*contact));
 
     removeEquivalentDetails(originalDetails, updateDetails);
 
@@ -4031,8 +4031,8 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
         }
 
         // Extract the details from these contacts
-        QList<QPair<QContactDetail, StringPair> > originalDetails(contactDetails(original, true));
-        QList<QPair<QContactDetail, StringPair> > updatedDetails(contactDetails(updated, true));
+        QList<QPair<QContactDetail, StringPair> > originalDetails(promotableDetails(original, true));
+        QList<QPair<QContactDetail, StringPair> > updatedDetails(promotableDetails(updated, true));
 
         // Remove any details that are equivalent in both contacts
         removeEquivalentDetails(originalDetails, updatedDetails);
