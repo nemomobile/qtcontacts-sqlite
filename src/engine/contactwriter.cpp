@@ -1730,6 +1730,11 @@ static bool detailListContains(const ContactWriter::DetailList &list)
     return list.contains(detailType<T>());
 }
 
+static bool detailListContains(const ContactWriter::DetailList &list, QContactDetail::DetailType type)
+{
+    return list.contains(type);
+}
+
 static bool detailListContains(const ContactWriter::DetailList &list, const QContactDetail &detail)
 {
     return list.contains(detailType(detail));
@@ -2765,6 +2770,23 @@ static void adjustDetailUrisForAggregate(QContactDetail &currDet, quint32 aggId)
     }
 }
 
+static bool promoteDetailType(QContactDetail::DetailType type, const ContactWriter::DetailList &definitionMask, bool forcePromotion)
+{
+    static const ContactWriter::DetailList unpromotedDetailTypes(getUnpromotedDetailTypes());
+    static const ContactWriter::DetailList absolutelyUnpromotedDetailTypes(getAbsolutelyUnpromotedDetailTypes());
+
+    // Timestamp is promoted in every update
+    if (type == QContactTimestamp::Type)
+        return true;
+
+    if (!definitionMask.isEmpty() && !detailListContains(definitionMask, type))
+        return false;
+
+    // Some detail types are not promoted even if promotion is forced
+    const ContactWriter::DetailList &unpromotedTypes(forcePromotion ? absolutelyUnpromotedDetailTypes : unpromotedDetailTypes);
+    return !detailListContains(unpromotedTypes, type);
+}
+
 /*
     For every detail in a contact \a c, this function will check to see if an
     identical detail already exists in the \a aggregate contact.  If not, the
@@ -2775,18 +2797,10 @@ static void adjustDetailUrisForAggregate(QContactDetail &currDet, quint32 aggId)
 */
 static void promoteDetailsToAggregate(const QContact &contact, QContact *aggregate, const ContactWriter::DetailList &definitionMask, bool forcePromotion)
 {
-    static const ContactWriter::DetailList unpromotedDetailTypes(getUnpromotedDetailTypes());
-    static const ContactWriter::DetailList absolutelyUnpromotedDetailTypes(getAbsolutelyUnpromotedDetailTypes());
-
     const quint32 aggId = ContactId::databaseId(*aggregate);
 
     foreach (const QContactDetail &original, contact.details()) {
-        if ((!forcePromotion && unpromotedDetailTypes.contains(detailType(original))) ||
-            (forcePromotion && absolutelyUnpromotedDetailTypes.contains(detailType(original)))) {
-            // don't promote this detail.
-            continue;
-        }
-        if (!definitionMask.isEmpty() && !detailListContains(definitionMask, original)) {
+        if (!promoteDetailType(original.type(), definitionMask, forcePromotion)) {
             // skip this detail
             continue;
         }
@@ -2890,17 +2904,11 @@ typedef QPair<QContactDetail, QContactDetail> DetailPair;
 
 static QList<QPair<QContactDetail, StringPair> > contactDetails(const QContact &contact, bool forcePromotion = false, const ContactWriter::DetailList &definitionMask = ContactWriter::DetailList())
 {
-    static const ContactWriter::DetailList unpromotedDetailTypes(getUnpromotedDetailTypes());
-    static const ContactWriter::DetailList absolutelyUnpromotedDetailTypes(getAbsolutelyUnpromotedDetailTypes());
-
     QList<QPair<QContactDetail, StringPair> > rv;
 
     foreach (const QContactDetail &original, contact.details()) {
-        if ((!forcePromotion && unpromotedDetailTypes.contains(detailType(original))) ||
-            (forcePromotion && absolutelyUnpromotedDetailTypes.contains(detailType(original)))) {
-            continue;
-        }
-        if (!definitionMask.isEmpty() && !detailListContains(definitionMask, original)) {
+        if (!promoteDetailType(original.type(), definitionMask, forcePromotion)) {
+            // Ignore details that won't be promoted to the aggregate
             continue;
         }
 
@@ -2995,8 +3003,6 @@ static bool modifyContactDetails(QContact *contact, const QList<QPair<StringPair
 QContactManager::Error ContactWriter::calculateDelta(QContact *contact, const ContactWriter::DetailList &definitionMask,
                                                      QList<QContactDetail> *addDelta, QList<QContactDetail> *removeDelta, QList<QContact> *writeList)
 {
-    static const ContactWriter::DetailList unpromotedDetailTypes(getUnpromotedDetailTypes());
-
     QContactFetchHint hint;
     hint.setDetailTypesHint(definitionMask);
     hint.setOptimizationHints(QContactFetchHint::NoRelationships);
@@ -3353,7 +3359,6 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
 QContactManager::Error ContactWriter::regenerateAggregates(const QList<quint32> &aggregateIds, const DetailList &definitionMask, bool withinTransaction)
 {
     static const DetailList identityDetailTypes(getIdentityDetailTypes());
-    static const DetailList unpromotedDetailTypes(getUnpromotedDetailTypes());
 
     // for each aggregate contact:
     // 1) get the contacts it aggregates
@@ -3424,9 +3429,7 @@ QContactManager::Error ContactWriter::regenerateAggregates(const QList<quint32> 
         // Copy any existing fields not affected by this update
         foreach (const QContactDetail &detail, originalAggregateContact.details()) {
             if (detailListContains(identityDetailTypes, detail) ||
-                (!definitionMask.isEmpty() &&
-                 !detailListContains(definitionMask, detail) &&
-                 !detailListContains(unpromotedDetailTypes, detail))) {
+                !promoteDetailType(detail.type(), definitionMask, false)) {
                 // Copy this detail to the new aggregate
                 QContactDetail newDetail(detail);
                 if (!aggregateContact.saveDetail(&newDetail)) {
@@ -3446,8 +3449,7 @@ QContactManager::Error ContactWriter::regenerateAggregates(const QList<quint32> 
             QList<QContactDetail> currDetails = curr.details();
             for (int j = 0; j < currDetails.size(); ++j) {
                 QContactDetail currDet = currDetails.at(j);
-                if (!detailListContains(unpromotedDetailTypes, currDet) &&
-                    (definitionMask.isEmpty() || detailListContains(definitionMask, currDet))) {
+                if (promoteDetailType(currDet.type(), definitionMask, false)) {
                     // promote this detail to the aggregate.
                     adjustDetailUrisForAggregate(currDet, aggId);
                     aggregateContact.saveDetail(&currDet);
@@ -3602,9 +3604,6 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
                                                 QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
                                                 QDateTime *maxTimestamp)
 {
-    static const DetailList unpromotedDetailTypes(getUnpromotedDetailTypes());
-    static const DetailList absolutelyUnpromotedDetailTypes(getAbsolutelyUnpromotedDetailTypes());
-
     const QDateTime sinceTime((lastSync.isValid() ? lastSync : epochDateTime()).toUTC());
     *maxTimestamp = sinceTime; // fall back to current sync timestamp if no data found.
 
@@ -3844,7 +3843,7 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
                         if (localId) {
                             if (const QContact *localConstituent = constituentContacts[localId]) {
                                 foreach (const QContactDetail &detail, localConstituent->details()) {
-                                    if (!detailListContains(unpromotedDetailTypes, detail)) {
+                                    if (promoteDetailType(detail.type(), DetailList(), false)) {
                                         // promote this detail to the aggregate.
                                         QContactDetail copy(detail);
                                         adjustDetailUrisForAggregate(copy, aggId);
