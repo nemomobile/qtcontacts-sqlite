@@ -132,7 +132,6 @@ public:
 
     void regenerateDisplayLabel(QContact &contact) const;
 
-#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     bool fetchSyncContacts(const QString &syncTarget, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
                            QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
                            QContactManager::Error *error);
@@ -144,7 +143,6 @@ public:
                            const QList<QPair<QContact, QContact> > &remoteChanges, QContactManager::Error *error);
     bool storeSyncContacts(const QString &syncTarget, ConflictResolutionPolicy conflictPolicy,
                            QList<QPair<QContact, QContact> > *remoteChanges, QContactManager::Error *error);
-#endif
 
     bool fetchOOB(const QString &scope, const QString &key, QVariant *value);
     bool fetchOOB(const QString &scope, const QStringList &keys, QMap<QString, QVariant> *values);
@@ -187,6 +185,7 @@ private:
     ContactWriter *m_synchronousWriter;
     ContactNotifier *m_notifier;
     JobThread *m_jobThread;
+    bool m_aggregating;
 };
 
 

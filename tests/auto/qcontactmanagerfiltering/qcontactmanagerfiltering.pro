@@ -1,4 +1,3 @@
-include(../../../aggregate.pri)
 include(../../common.pri)
 
 TARGET = tst_qcontactmanagerfiltering

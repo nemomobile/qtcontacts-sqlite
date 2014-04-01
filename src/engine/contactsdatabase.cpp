@@ -346,7 +346,6 @@ static const char *createRemoveTrigger =
         "\n  DELETE FROM Relationships WHERE firstId = old.contactId OR secondId = old.contactId;"
         "\n END;";
 
-#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
 static const char *createLocalSelfContact =
         "\n INSERT INTO Contacts ("
         "\n contactId,"
@@ -415,8 +414,8 @@ static const char *createAggregateSelfContact =
         "\n 0);";
 static const char *createSelfContactRelationship =
         "\n INSERT INTO Relationships (firstId, secondId, type) VALUES (2, 1, 'Aggregates');";
-#else
-static const char *createLocalSelfContact =
+
+static const char *createSelfContact =
         "\n INSERT INTO Contacts ("
         "\n contactId,"
         "\n displayLabel,"
@@ -449,7 +448,6 @@ static const char *createLocalSelfContact =
         "\n '',"
         "\n '',"
         "\n 0);";
-#endif
 
 static const char *createContactsSyncTargetIndex =
         "\n CREATE INDEX ContactsSyncTargetIndex ON Contacts(syncTarget);";
@@ -560,11 +558,6 @@ static const char *createStatements[] =
     createDeletedContactsTable,
     createOOBTable,
     createRemoveTrigger,
-    createLocalSelfContact,
-#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
-    createAggregateSelfContact,
-    createSelfContactRelationship,
-#endif
     createContactsSyncTargetIndex,
     createContactsFirstNameIndex,
     createContactsLastNameIndex,
@@ -784,7 +777,34 @@ static bool executeCreationStatements(QSqlDatabase &database)
     return true;
 }
 
-static bool prepareDatabase(QSqlDatabase &database)
+static bool executeSelfContactStatements(QSqlDatabase &database, const bool aggregating)
+{
+    const char *createStatements[] = {
+        createSelfContact,
+        0
+    };
+    const char *aggregatingCreateStatements[] = {
+        createLocalSelfContact,
+        createAggregateSelfContact,
+        createSelfContactRelationship,
+        0
+    };
+
+    const char **statement = (aggregating ? aggregatingCreateStatements : createStatements);
+    for ( ; *statement != 0; ++statement) {
+        QSqlQuery query(database);
+        if (!query.exec(QString::fromLatin1(*statement))) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Database creation failed: %1\n%2")
+                    .arg(query.lastError().text())
+                    .arg(*statement));
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool prepareDatabase(QSqlDatabase &database, const bool aggregating)
 {
     if (!configureDatabase(database))
         return false;
@@ -793,6 +813,9 @@ static bool prepareDatabase(QSqlDatabase &database)
         return false;
 
     bool success = executeCreationStatements(database);
+    if (success) {
+        success = executeSelfContactStatements(database, aggregating);
+    }
 
     return finalizeTransaction(database, success);
 }
@@ -1197,7 +1220,9 @@ QSqlDatabase ContactsDatabase::open(const QString &databaseName, bool &nonprivil
         return database;
     }
 
-    if (!exists && !prepareDatabase(database)) {
+    // For now, we aggregate in the privileged DB and not otherwise
+    const bool aggregating = !nonprivileged;
+    if (!exists && !prepareDatabase(database, aggregating)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare contacts database - removing: %1")
                 .arg(database.lastError().text()));
 

@@ -1354,8 +1354,9 @@ static QSqlQuery prepare(const char *statement, const QSqlDatabase &database)
     return ContactsDatabase::prepare(statement, database);
 }
 
-ContactReader::ContactReader(const QSqlDatabase &database)
+ContactReader::ContactReader(const QSqlDatabase &database, bool aggregating)
     : m_database(database)
+    , m_aggregating(aggregating)
     , m_identityId(prepare(identityId, database))
 {
 }
@@ -1597,7 +1598,7 @@ static bool deletedContactFilter(const QContactFilter &filter)
     return false;
 }
 
-QString expandWhere(const QString &where, const QContactFilter &filter)
+QString expandWhere(const QString &where, const QContactFilter &filter, const bool aggregating)
 {
     QStringList constraints;
 
@@ -1608,12 +1609,12 @@ QString expandWhere(const QString &where, const QContactFilter &filter)
 
     // if the filter does not specify contacts by ID
     if (!includesIdFilter(filter)) {
-#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
-        // exclude non-aggregates, unless the filter specifies syncTarget
-        if (!includesSyncTarget(filter)) {
-            constraints.append("Contacts.syncTarget = 'aggregate' ");
+        if (aggregating) {
+            // exclude non-aggregates, unless the filter specifies syncTarget
+            if (!includesSyncTarget(filter)) {
+                constraints.append("Contacts.syncTarget = 'aggregate' ");
+            }
         }
-#endif
 
         // exclude deactivated unless they're explicitly included
         if (!includesDeactivated(filter)) {
@@ -1671,7 +1672,7 @@ QContactManager::Error ContactReader::readContacts(
         return QContactManager::UnspecifiedError;
     }
 
-    where = expandWhere(where, filter);
+    where = expandWhere(where, filter, m_aggregating);
 
     QContactManager::Error error = QContactManager::NoError;
     if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, table, join, where, orderBy, bindings)) {
@@ -2121,7 +2122,7 @@ QContactManager::Error ContactReader::readContactIds(
         return QContactManager::UnspecifiedError;
     }
 
-    where = expandWhere(where, filter);
+    where = expandWhere(where, filter, m_aggregating);
 
     QString queryString = QString(QLatin1String(
                 "\n SELECT DISTINCT Contacts.contactId"
