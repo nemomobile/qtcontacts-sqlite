@@ -91,6 +91,7 @@ public:
     QContactManager &contactManager();
 
 protected:
+    virtual bool testAccountProvenance(const QContact &contact, const QString &accountId);
     virtual void ensureAccountProvenance(QList<QContact> *locallyAdded,
                                          QList<QContact> *locallyModified,
                                          QList<QContact> *locallyDeleted,
@@ -106,7 +107,7 @@ protected:
                     QList<QContact> *remoteAddedModified,
                     QList<QContactId> *exportedIds,
                     QList<QContact> *mutatedPrevRemote,
-                    QMap<int, int> *additionIndices,
+                    QList<QPair<int, int> > *additionIndices,
                     bool needToApplyDelta = true,
                     const QSet<QContactDetail::DetailType> &ignorableDetailTypes = QSet<QContactDetail::DetailType>()) const;
     QContact applyRemoteDeltaToPrev(const QContact &prev, const QContact &curr) const;

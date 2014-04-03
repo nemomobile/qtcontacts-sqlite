@@ -53,46 +53,40 @@ TestSyncAdapter::~TestSyncAdapter()
 
 void TestSyncAdapter::addRemoteContact(const QString &accountId, const QString &fname, const QString &lname, const QString &phone)
 {
-    QString contactGuidStr(TSA_GUID_STRING(accountId, fname, lname));
-    QContact newContact;
-
     QContactName ncn;
     ncn.setFirstName(fname);
     ncn.setLastName(lname);
+
     QContactPhoneNumber ncp;
     ncp.setNumber(phone);
-    QContactGuid nguid;
-    nguid.setGuid(contactGuidStr);
 
+    QContact newContact;
     newContact.saveDetail(&ncn);
     newContact.saveDetail(&ncp);
-    newContact.saveDetail(&nguid);
 
+    const QString contactGuidStr(TSA_GUID_STRING(accountId, fname, lname));
     m_remoteServerContacts[accountId].insert(contactGuidStr, newContact);
     m_remoteAddMods[accountId].insert(contactGuidStr);
 }
 
 void TestSyncAdapter::removeRemoteContact(const QString &accountId, const QString &fname, const QString &lname)
 {
-    QString contactGuidStr(TSA_GUID_STRING(accountId, fname, lname));
+    const QString contactGuidStr(TSA_GUID_STRING(accountId, fname, lname));
     QContact remContact = m_remoteServerContacts[accountId][contactGuidStr];
 
     // stop tracking the contact if we are currently tracking it.
     m_remoteAddMods[accountId].remove(contactGuidStr);
 
-    // remote it from our remote cache
+    // remove it from our remote cache
     m_remoteServerContacts[accountId].remove(contactGuidStr);
 
-    // detect whether we need to delete it on the local device
-    // we need to delete it if it has a synctarget constituent (ie, has a guid)
-    if (!remContact.detail<QContactGuid>().guid().isEmpty()) {
-        m_remoteDeletions[accountId].append(remContact);
-    }
+    // report the contact as deleted
+    m_remoteDeletions[accountId].append(remContact);
 }
 
 void TestSyncAdapter::setRemoteContact(const QString &accountId, const QString &fname, const QString &lname, const QContact &contact)
 {
-    QString contactGuidStr(TSA_GUID_STRING(accountId, fname, lname));
+    const QString contactGuidStr(TSA_GUID_STRING(accountId, fname, lname));
     QContact setContact = contact;
 
     QContactGuid sguid = setContact.detail<QContactGuid>();
@@ -109,7 +103,7 @@ void TestSyncAdapter::setRemoteContact(const QString &accountId, const QString &
 
 void TestSyncAdapter::changeRemoteContactPhone(const QString &accountId,  const QString &fname, const QString &lname, const QString &modPhone)
 {
-    QString contactGuidStr(TSA_GUID_STRING(accountId, fname, lname));
+    const QString contactGuidStr(TSA_GUID_STRING(accountId, fname, lname));
     if (!m_remoteServerContacts[accountId].contains(contactGuidStr)) {
         qWarning() << "Contact:" << contactGuidStr << "doesn't exist remotely!";
         return;
@@ -126,7 +120,7 @@ void TestSyncAdapter::changeRemoteContactPhone(const QString &accountId,  const 
 
 void TestSyncAdapter::changeRemoteContactEmail(const QString &accountId,  const QString &fname, const QString &lname, const QString &modEmail)
 {
-    QString contactGuidStr(TSA_GUID_STRING(accountId, fname, lname));
+    const QString contactGuidStr(TSA_GUID_STRING(accountId, fname, lname));
     if (!m_remoteServerContacts[accountId].contains(contactGuidStr)) {
         qWarning() << "Contact:" << contactGuidStr << "doesn't exist remotely!";
         return;
@@ -198,14 +192,26 @@ void TestSyncAdapter::continueTwoWaySync()
     // alternatively, we could set the state to StoredRemoteChanges manually, and skip
     // this call in the else block above, but we should test that it works properly anyway.
     QList<QContact> remoteAddMods;
+    QMap<int, QString> additions;
     foreach (const QString &contactGuidStr, m_remoteAddMods[accountId]) {
         remoteAddMods.append(m_remoteServerContacts[accountId].value(contactGuidStr));
+        if (remoteAddMods.last().id().isNull()) {
+            additions.insert(remoteAddMods.count() - 1, contactGuidStr);
+        }
     }
 
     if (!storeRemoteChanges(m_remoteDeletions[accountId], &remoteAddMods, accountId)) {
         qWarning() << Q_FUNC_INFO << "couldn't store remote changes";
         emit failed();
         return;
+    }
+
+    // Store the ID of any contact we added
+    QMap<int, QString>::const_iterator ait = additions.constBegin(), aend = additions.constEnd();
+    for ( ; ait != aend; ++ait) {
+        const QContact &added(remoteAddMods.at(ait.key()));
+        const QString &contactGuidStr(ait.value());
+        m_remoteServerContacts[accountId][contactGuidStr].setId(added.id());
     }
 
     m_modifiedIds[accountId].clear();
@@ -233,6 +239,17 @@ void TestSyncAdapter::continueTwoWaySync()
 
     upsyncLocalChanges(localSince, locallyAdded, locallyModified, locallyDeleted, accountId);
     // continued in finalizeTwoWaySync()
+}
+
+bool TestSyncAdapter::testAccountProvenance(const QContact &contact, const QString &accountId)
+{
+    foreach (const QContact &remoteContact, m_remoteServerContacts[accountId]) {
+        if (remoteContact.id() == contact.id()) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 void TestSyncAdapter::upsyncLocalChanges(const QDateTime &,
@@ -291,7 +308,8 @@ bool TestSyncAdapter::downsyncWasRequired(const QString &accountId) const
 
 QContact TestSyncAdapter::remoteContact(const QString &accountId, const QString &fname, const QString &lname) const
 {
-    return m_remoteServerContacts[accountId][TSA_GUID_STRING(accountId, fname, lname)];
+    const QString contactGuidStr(TSA_GUID_STRING(accountId, fname, lname));
+    return m_remoteServerContacts[accountId][contactGuidStr];
 }
 
 QSet<QContactId> TestSyncAdapter::modifiedIds(const QString &accountId) const

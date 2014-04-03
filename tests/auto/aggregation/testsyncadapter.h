@@ -75,6 +75,8 @@ protected:
     // implementing the TWCSA interface
     void determineRemoteChanges(const QDateTime &remoteSince,
                                 const QString &accountId);
+
+    bool testAccountProvenance(const QContact &contact, const QString &accountId);
     void upsyncLocalChanges(const QDateTime &localSince,
                             const QList<QContact> &locallyAdded,
                             const QList<QContact> &locallyModified,

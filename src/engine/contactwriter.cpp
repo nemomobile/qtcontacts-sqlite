@@ -4330,8 +4330,12 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
                 if (contactsToRemove.contains(contactId)) {
                     // This contact should be removed, only if it has our syncTarget
                     if (cst != syncTarget) {
-                        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Ignoring constituent removal for %1 with invalid sync target: %2")
-                                .arg(contactId).arg(cst));
+                        if (cst == localSyncTarget || cst == wasLocalSyncTarget) {
+                            // We have tried to remove a local contact that has no incidental sync target constituent - ignore
+                        } else {
+                            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Ignoring constituent removal for %1 with invalid sync target: %2")
+                                    .arg(contactId).arg(cst));
+                        }
                     } else {
                         removeIds.append(contactId);
                     }
