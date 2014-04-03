@@ -87,7 +87,9 @@ namespace QtContactsSqliteExtensions {
 QTCONTACTS_USE_NAMESPACE
 using namespace QtContactsSqliteExtensions;
 
-static void registerTypes()
+namespace {
+
+void registerTypes()
 {
     static bool registered = false;
     if (!registered) {
@@ -97,8 +99,57 @@ static void registerTypes()
     }
 }
 
+// Input must be UTC
+QString dateTimeString(const QDateTime &qdt)
+{
+    return qdt.toString(QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz"));
+}
+
+QDateTime fromDateTimeString(const QString &s)
+{
+    QDateTime rv(QDateTime::fromString(s, QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz")));
+    rv.setTimeSpec(Qt::UTC);
+    return rv;
+}
+
+QMap<QString, QString> checkParams(const QMap<QString, QString> &params)
+{
+    QMap<QString, QString> rv(params);
+
+    const QString presenceKey(QStringLiteral("mergePresenceChanges"));
+    if (!rv.contains(presenceKey)) {
+        // Don't report presence changes
+        rv.insert(presenceKey, QStringLiteral("false"));
+    }
+
+    return rv;
+}
+
+QSet<QContactDetail::DetailType> getDefaultIgnorableDetailTypes()
+{
+    QSet<QContactDetail::DetailType> rv;
+    rv.insert(QContactDetail__TypeDeactivated);
+    rv.insert(QContactDetail::TypeDisplayLabel);
+    rv.insert(QContactDetail::TypeGlobalPresence);
+    rv.insert(QContactDetail__TypeIncidental);
+    rv.insert(QContactDetail::TypePresence);
+    rv.insert(QContactDetail::TypeOnlineAccount);
+    rv.insert(QContactDetail__TypeStatusFlags);
+    rv.insert(QContactDetail::TypeSyncTarget);
+    rv.insert(QContactDetail::TypeTimestamp);
+    return rv;
+}
+
+const QSet<QContactDetail::DetailType> &defaultIgnorableDetailTypes()
+{
+    static QSet<QContactDetail::DetailType> types(getDefaultIgnorableDetailTypes());
+    return types;
+}
+
+}
+
 TwoWayContactSyncAdapterPrivate::TwoWayContactSyncAdapterPrivate(const QString &syncTarget, const QMap<QString, QString> &params)
-    : m_manager(new QContactManager(QStringLiteral("org.nemomobile.contacts.sqlite"), params))
+    : m_manager(new QContactManager(QStringLiteral("org.nemomobile.contacts.sqlite"), checkParams(params)))
     , m_engine(contactManagerEngine(*m_manager))
     , m_syncTarget(syncTarget)
     , m_deleteManager(true)
@@ -193,12 +244,12 @@ bool TwoWayContactSyncAdapter::readSyncStateData(QDateTime *remoteSince, const Q
     QString sinceStr = values.value(QStringLiteral("remoteSince")).toString();
     d->m_stateData[accountId].m_remoteSince = sinceStr.isEmpty()
                                             ? QDateTime()
-                                            : QDateTime::fromString(sinceStr, Qt::ISODate);
+                                            : fromDateTimeString(sinceStr);
 
     sinceStr = values.value(QStringLiteral("localSince")).toString();
     d->m_stateData[accountId].m_localSince = sinceStr.isEmpty()
                                            ? QDateTime()
-                                           : QDateTime::fromString(sinceStr, Qt::ISODate);
+                                           : fromDateTimeString(sinceStr);
 
     QByteArray cdata = values.value(QStringLiteral("prevRemote")).toByteArray();
     QDataStream readPrevRemote(cdata);
@@ -229,21 +280,22 @@ void TwoWayContactSyncAdapter::determineRemoteChanges(const QDateTime &remoteSin
     Q_UNUSED(accountId)
 
     // asynchronous and implementation specific.  Once done, call storeRemoteChanges().
-    // Important note: sync adapter implementations MUST ensure the following:
-    //  - every contact it receives from the remote service MUST have a QContactGuid detail in it
-    //    and that guid value should be of the form <accountId>:<remoteGuid>
-    //  - every contact it receives from the remote service which has a custom X-QCOMDGID property
-    //    value MUST have that value set in a QContactOriginMetadata::groupid() detail field.
+    // Important note: sync adapter implementations MUST ensure that the QContactId value
+    // remains stable for any remote contact from one sync to the next.
     // See step six for more information.
 }
 
 // step four: store the server-side changes to the local database.
 // the needToApplyDelta parameter should only be set to false if the adapter implementation
 // takes care of ensuring that the detailIds are preserved when making modifications.
+// Contacts passed in addModRemote with no QContactId will be modified to contain
+// the QContactId value they were assigned in the local database, which must be
+// preserved by the adapter when making subsequent modifications to that contact.
 bool TwoWayContactSyncAdapter::storeRemoteChanges(const QList<QContact> &deletedRemote,
-                                                  const QList<QContact> &addModRemote,
+                                                  QList<QContact> *addModRemote,
                                                   const QString &accountId,
-                                                  bool needToApplyDelta)
+                                                  bool needToApplyDelta,
+                                                  const QSet<QContactDetail::DetailType> &ignorableDetailTypes)
 {
     if (d->m_stateData[accountId].m_status != TwoWayContactSyncAdapterPrivate::ReadSyncStateData) {
         qWarning() << Q_FUNC_INFO << "invalid state" << d->m_stateData[accountId].m_status;
@@ -257,11 +309,15 @@ bool TwoWayContactSyncAdapter::storeRemoteChanges(const QList<QContact> &deleted
     // the future.
     // the first value in each pair will be a copy of a value in the prevRemote list.
     // the second value in each pair will be a copy of a (newly constructed) value in the mutatedPrevRemote list.
+    QList<QPair<int, int> > additionIndices;
     QList<QPair<QContact, QContact> > syncContactUpdates = createUpdateList(d->m_stateData[accountId].m_prevRemote,
-                                                                            deletedRemote, addModRemote,
+                                                                            deletedRemote,
+                                                                            addModRemote,
                                                                             &d->m_stateData[accountId].m_exportedIds,
                                                                             &d->m_stateData[accountId].m_mutatedPrevRemote,
-                                                                            needToApplyDelta);
+                                                                            &additionIndices,
+                                                                            needToApplyDelta,
+                                                                            ignorableDetailTypes);
     d->m_stateData[accountId].m_mutated = true; // createUpdateList will populate MUTATED_PREV_REMOTE from PREV_REMOTE
 
     // store them to qtcontacts-sqlite.
@@ -276,14 +332,24 @@ bool TwoWayContactSyncAdapter::storeRemoteChanges(const QList<QContact> &deleted
     if (syncContactUpdates.size()) {
         if (!d->m_engine->storeSyncContacts(d->m_syncTarget,
                                             QtContactsSqliteExtensions::ContactManagerEngine::PreserveLocalChanges,
-                                            syncContactUpdates,
+                                            &syncContactUpdates,
                                             &error)) {
             qWarning() << Q_FUNC_INFO << "error - couldn't store sync contacts!";
             d->clear(accountId);
             return false;
         }
-    } else {
-        qDebug() << Q_FUNC_INFO << "no substantial changes, no need to store remote changes.";
+
+        // Report IDs allocated for added contacts back to the caller, and update the contact
+        // instances in the mutated prev remote array to match
+        int additionIndex = d->m_stateData[accountId].m_mutatedPrevRemote.count() - additionIndices.count();
+        QList<QPair<int, int> >::const_iterator it = additionIndices.constBegin(), end = additionIndices.constEnd();
+        for ( ; it != end; ++it, ++additionIndex) {
+            const int addModIndex((*it).first);
+            const int updateIndex((*it).second);
+            const QContactId addedId(syncContactUpdates.at(updateIndex).second.id());
+            (*addModRemote)[addModIndex].setId(addedId);
+            d->m_stateData[accountId].m_mutatedPrevRemote[additionIndex].setId(addedId);
+        }
     }
 
     d->m_stateData[accountId].m_status = TwoWayContactSyncAdapterPrivate::StoredRemoteChanges;
@@ -295,7 +361,8 @@ bool TwoWayContactSyncAdapter::determineLocalChanges(QDateTime *localSince,
                                                      QList<QContact> *locallyAdded,
                                                      QList<QContact> *locallyModified,
                                                      QList<QContact> *locallyDeleted,
-                                                     const QString &accountId)
+                                                     const QString &accountId,
+                                                     const QSet<QContactDetail::DetailType> &ignorableDetailTypes)
 {
     if (d->m_stateData[accountId].m_status != TwoWayContactSyncAdapterPrivate::StoredRemoteChanges) {
         qWarning() << Q_FUNC_INFO << "invalid state" << d->m_stateData[accountId].m_status;
@@ -347,13 +414,14 @@ bool TwoWayContactSyncAdapter::determineLocalChanges(QDateTime *localSince,
         if (locallyModified) {
             for (int i = 0; i < locallyModified->size(); ++i) {
                 const QContact &lmc(locallyModified->at(i));
-                const QString &lmguid = lmc.detail<QContactGuid>().guid();
-                for (int j = 0; j < d->m_stateData[accountId].m_mutatedPrevRemote.size(); ++j) {
-                    if (d->m_stateData[accountId].m_mutatedPrevRemote[j].detail<QContactGuid>().guid() == lmguid) {
-                        // found matching prevRemote - replace it with the updated version.
-                        // this will ensure that the MUTATED_PREV_REMOTE version has the correct contactId.
-                        d->m_stateData[accountId].m_mutatedPrevRemote.replace(j, lmc);
-                        break;
+                const QContactId id(lmc.id());
+                if (!id.isNull()) {
+                    for (int j = 0; j < d->m_stateData[accountId].m_mutatedPrevRemote.size(); ++j) {
+                        if (d->m_stateData[accountId].m_mutatedPrevRemote[j].id() == id) {
+                            // found matching prevRemote - replace it with the updated version.
+                            d->m_stateData[accountId].m_mutatedPrevRemote.replace(j, lmc);
+                            break;
+                        }
                     }
                 }
             }
@@ -364,20 +432,14 @@ bool TwoWayContactSyncAdapter::determineLocalChanges(QDateTime *localSince,
         if (locallyDeleted) {
             bool foundPrevToDelete = false;
             foreach (const QContactId &id, locallyDeletedIds) {
-                foundPrevToDelete = false;
+                // May not exist, if already deleted remotely
                 for (int i = 0; i < d->m_stateData[accountId].m_mutatedPrevRemote.size(); ++i) {
                     const QContact &prev(d->m_stateData[accountId].m_mutatedPrevRemote[i]);
                     if (prev.id() == id) {
                         locallyDeleted->append(prev);
                         d->m_stateData[accountId].m_mutatedPrevRemote.removeAt(i); // we are deleting this contact from the remote server.
-                        foundPrevToDelete = true;
                         break;
                     }
-                }
-
-                if (!foundPrevToDelete) {
-                    // it was already deleted remotely and removed from the MUTATED_PREV_REMOTE list.
-                    qWarning() << Q_FUNC_INFO << "contact with id:" << id.toString() << "removed locally + remotely";
                 }
             }
         }
@@ -389,14 +451,14 @@ bool TwoWayContactSyncAdapter::determineLocalChanges(QDateTime *localSince,
             // check this contact to see whether it already represents one from the changes lists.
             QContact remoteContact = d->m_stateData[accountId].m_mutatedPrevRemote.at(i);
             if (locallyAdded) {
-                int matchIndex = exactContactMatchExistsInList(remoteContact, *locallyAdded);
+                int matchIndex = exactContactMatchExistsInList(remoteContact, *locallyAdded, ignorableDetailTypes);
                 if (matchIndex != -1) {
                     remoteContact = locallyAdded->takeAt(matchIndex);
                     d->m_stateData[accountId].m_mutatedPrevRemote.replace(i, remoteContact);
                 }
             }
             if (locallyModified) {
-                int matchIndex = exactContactMatchExistsInList(remoteContact, *locallyModified);
+                int matchIndex = exactContactMatchExistsInList(remoteContact, *locallyModified, ignorableDetailTypes);
                 if (matchIndex != -1) {
                     remoteContact = locallyModified->takeAt(matchIndex);
                     d->m_stateData[accountId].m_mutatedPrevRemote.replace(i, remoteContact);
@@ -415,10 +477,8 @@ bool TwoWayContactSyncAdapter::determineLocalChanges(QDateTime *localSince,
             QContact localContact = locallyAdded->at(i);
             d->m_stateData[accountId].m_exportedIds.append(localContact.id());
 
-            // we remove from the local contact any guid detail
-            // as we need to use the guid detail to store the remote UID of
-            // the contact.  In any event, a guid must be globally unique in the
-            // database, so we couldn't store it after round-trip in the synctarget
+            // we remove from the local contact any guid detail.  A guid must be globally
+            // unique in the database, so we couldn't store it after round-trip in the synctarget
             // constituent or we'd violate the global-uniqueness constraint.
             QContactGuid localContactGuid = localContact.detail<QContactGuid>();
             if (!localContactGuid.isEmpty()) {
@@ -426,14 +486,6 @@ bool TwoWayContactSyncAdapter::determineLocalChanges(QDateTime *localSince,
                 localContact.removeDetail(&localContactGuid);
             }
 
-            // we also need to add the id as a X-QCOMDGID field, so that we can do
-            // a reverse-mapping the next time we down-sync server-side changes.
-            QContactOriginMetadata omd = localContact.detail<QContactOriginMetadata>();
-            if (!omd.groupId().isEmpty()) {
-                qWarning() << Q_FUNC_INFO << "Clobbering QContactOriginMetadata::groupId() - cannot sync this field.";
-            }
-            omd.setGroupId(localContact.id().toString());
-            localContact.saveDetail(&omd);
             locallyAdded->replace(i, localContact);
         }
     }
@@ -454,13 +506,11 @@ bool TwoWayContactSyncAdapter::determineLocalChanges(QDateTime *localSince,
     if (locallyModified) {
         bool foundToReplace = false;
         for (int i = 0; i < locallyModified->size(); ++i) {
-            const QString &lguid(locallyModified->at(i).detail<QContactGuid>().guid());
-            const QString &lgid(locallyModified->at(i).id().toString()); // TODO: is this stable?  Could it change due to was_local?
+            const QContactId &lid(locallyModified->at(i).id());
             foundToReplace = false;
             for (int j = 0; j < d->m_stateData[accountId].m_mutatedPrevRemote.size(); ++j) {
-                const QString &pguid(d->m_stateData[accountId].m_mutatedPrevRemote[j].detail<QContactGuid>().guid());
-                const QString &pgid(d->m_stateData[accountId].m_mutatedPrevRemote[j].detail<QContactOriginMetadata>().groupId());
-                if (lguid == pguid || lgid == pgid) {
+                const QContactId &pid(d->m_stateData[accountId].m_mutatedPrevRemote[j].id());
+                if (pid == lid) {
                     foundToReplace = true;
                     d->m_stateData[accountId].m_mutatedPrevRemote.replace(j, locallyModified->at(i));
                     break;
@@ -469,7 +519,7 @@ bool TwoWayContactSyncAdapter::determineLocalChanges(QDateTime *localSince,
 
             if (!foundToReplace) {
                 // we shouldn't treat this as a local addition, this is always a bug.
-                qWarning() << Q_FUNC_INFO << "FIXME: local modification reported for non-upsynced local contact";
+                qWarning() << Q_FUNC_INFO << "FIXME: local modification reported for non-upsynced local contact:" << lid;
             }
         }
     }
@@ -494,15 +544,8 @@ void TwoWayContactSyncAdapter::upsyncLocalChanges(const QDateTime &localSince,
     Q_UNUSED(accountId)
 
     // asynchronous and implementation specific.  when finished, call storeSyncStateData().
-    // Important note: sync adapter implementations MUST ensure the following:
-    //  - any contact which is being upsynced which does NOT have a pre-existing
-    //    remote counterpart (and therefore, does not have a QContactGuid detail;
-    //    ie, a locallyAdded contact) MUST be upsynced with a custom X-QCOMDGID
-    //    value set (from the QContactOriginMetadata::groupId() field value).
-    //  - any contact which is being upsynced which DOES have a pre-existing
-    //    remote counterpart (and therefore, has a QContactGuid detail), may
-    //    have that X-QCOMDGID field deleted/removed as it is no longer used
-    //    for mapping the local-to-remote once a Guid is available.
+    // Important note: sync adapter implementations MUST ensure that the QContactId
+    // of the local contact is used to map to the correct remote instance of the contact.
     // See step three for more information.
 }
 
@@ -529,8 +572,8 @@ bool TwoWayContactSyncAdapter::storeSyncStateData(const QString &accountId)
     values.insert(QStringLiteral("exportedIds"), QVariant(cdata));
 
     // finally, store the new local and remote since timestamps to the OOB db
-    values.insert(QStringLiteral("remoteSince"), QVariant(d->m_stateData[accountId].m_newRemoteSince));
-    values.insert(QStringLiteral("localSince"), QVariant(d->m_stateData[accountId].m_newLocalSince));
+    values.insert(QStringLiteral("remoteSince"), QVariant(dateTimeString(d->m_stateData[accountId].m_newRemoteSince)));
+    values.insert(QStringLiteral("localSince"), QVariant(dateTimeString(d->m_stateData[accountId].m_newLocalSince)));
 
     // perform the store operation to the oob db.
     if (!d->m_engine->storeOOB(d->m_stateData[accountId].m_oobScope, values)) {
@@ -541,8 +584,6 @@ bool TwoWayContactSyncAdapter::storeSyncStateData(const QString &accountId)
 
     // finished the sync process successfully.
     d->m_stateData[accountId].m_status = TwoWayContactSyncAdapterPrivate::Finished;
-    qWarning() << Q_FUNC_INFO << "Sync process succeeded at"
-               << QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
     d->clear(accountId); // this actually sets state back to Inactive as required.
     return true;
 }
@@ -615,12 +656,20 @@ QDateTime TwoWayContactSyncAdapter::maxModificationTimestamp(const QList<QContac
     return since;
 }
 
+// Override this function to specify whether a contact belongs to the supplied
+// account; multi-account adapters must implement this feature.
+bool TwoWayContactSyncAdapter::testAccountProvenance(const QContact &contact, const QString &accountId)
+{
+    Q_UNUSED(contact)
+    Q_UNUSED(accountId)
+    return true;
+}
+
 // The function is called to remove from the lists of local changes which
 // are reported by the qtcontacts-sqlite backend any contacts which are
 // not from the correct account.
 // Implementations can override this function if they store such information
-// in a different way; the default implementation uses QContactGuid,
-// according to the formatting specified in the comment within getRemoteChangesSince().
+// in a different way; the default implementation calls testAccountProvenance().
 void TwoWayContactSyncAdapter::ensureAccountProvenance(QList<QContact> *locallyAdded,
                                                        QList<QContact> *locallyModified,
                                                        QList<QContact> *locallyDeleted,
@@ -631,49 +680,23 @@ void TwoWayContactSyncAdapter::ensureAccountProvenance(QList<QContact> *locallyA
     // The default implementation doesn't need to look at the prevRemote version.
     // Other implementations may need to check if a field value changes (eg OriginMetadata groupId)
     Q_UNUSED(prevRemote)
+    Q_UNUSED(locallyAdded)
 
-    // local additions are always upsynced, so we don't need to remove contacts from this list
-    // but we may need to modify which details each contact contains, as we don't upsync some
-    // details from local contacts (eg, guids from other constituents make no sense).
-    if (locallyAdded) {
-        for (int i = 0; i < locallyAdded->size(); ++i) {
-            QContact c = locallyAdded->at(i);
-            QContactGuid cguid = c.detail<QContactGuid>();
-            cguid.setGuid(QString());
-            c.saveDetail(&cguid);
-            locallyAdded->replace(i, c);
+    // For deletions and modifications, we check to see if each contact belongs to the account.
+    // If not, we remove it from the list (as it was never in this account). Contacts listed
+    // in exportedIds are explicitly claimed by the adapter for this account.
+    for (int i = locallyDeleted->size() - 1; i >= 0; --i) {
+        const QContact &contact(locallyDeleted->at(i));
+        if (!exportedIds.contains(contact.id()) && !testAccountProvenance(contact, accountId)) {                                         \
+            locallyDeleted->removeAt(i);
         }
     }
-
-    // For deletions and modifications, we check to see if guid starts with <accountId>.
-    // If not, we remove it from the list (as it was never in this account).
-    // Due to the way the remoteSince timestamp is calculated (ie, it's the timestamp of when
-    // readSyncStateData() was called during the previous sync, basically), a previously-upsynced
-    // contact will be returned as a remote addition in the server-side-changeset during a
-    // previous step, and we can map it to the correct entry in the prevRemote list via the
-    // contactId (constructed from the custom property which must store the contactId in stringified
-    // form, which must have been upsynced according to the contract).  Thus, it will get a guid.
-    // In short, any locallyModified/locallyDeleted contact which was previously upsynced,
-    // WILL in this function already have a QContactGuid detail within it, from the correct constituent.
-    QString accountIdPrefix = accountId + QChar::fromLatin1(':');
-#define FILTER_NONMATCHING_CONTACTS(list) \
-    if (list) {                                                                                               \
-        do {                                                                                                  \
-            for (int i = list->size() - 1; i >= 0; --i) {                                                     \
-                if (exportedIds.contains(list->at(i).id())) {                                                 \
-                    /* This contact might not have been downsynced since it was upsynced, but is exported. */ \
-                    continue;                                                                                 \
-                }                                                                                             \
-                if (!list->at(i).detail<QContactGuid>().guid().startsWith(accountIdPrefix)) {                 \
-                    /* This contact was modified/deleted locally, but was never upsynced to this account. */  \
-                    list->removeAt(i);                                                                        \
-                }                                                                                             \
-            }                                                                                                 \
-        } while (0);                                                                                          \
+    for (int i = locallyModified->size() - 1; i >= 0; --i) {
+        const QContact &contact(locallyModified->at(i));
+        if (!exportedIds.contains(contact.id()) && !testAccountProvenance(contact, accountId)) {                                         \
+            locallyModified->removeAt(i);
+        }
     }
-    FILTER_NONMATCHING_CONTACTS(locallyDeleted);
-    FILTER_NONMATCHING_CONTACTS(locallyModified);
-#undef FILTER_NONMATCHING_CONTACTS
 }
 
 // Given the list of PREV_REMOTE contacts which were stored in qtcontacts-sqlite's out-of-band database
@@ -682,133 +705,112 @@ void TwoWayContactSyncAdapter::ensureAccountProvenance(QList<QContact> *locallyA
 // contains the QContactIds of previously-upsynced contacts which did not have a synctarget
 // constituent (and therefore no GUID detail)), this function will create a list of update
 // pairs which can be passed to the qtcontacts-sqlite storeSyncContacts() function.
+// If any of the update pairs correspond to contact additions, the mapping of input index
+// (into "remoteAddedModified") to output index (into the result list) is added to the
+// "additionIndices" list.  This allows the eventual allocation of local IDs to be linked
+// back to the remote contact from which they were created.
 QList<QPair<QContact, QContact> > TwoWayContactSyncAdapter::createUpdateList(const QList<QContact> &prevRemote,
                                                                              const QList<QContact> &remoteDeleted,
-                                                                             const QList<QContact> &remoteAddedModified,
+                                                                             QList<QContact> *remoteAddedModified,
                                                                              QList<QContactId> *exportedIds,
                                                                              QList<QContact> *mutatedPrevRemote,
-                                                                             bool needToApplyDelta) const
+                                                                             QList<QPair<int, int> > *additionIndices,
+                                                                             bool needToApplyDelta,
+                                                                             const QSet<QContactDetail::DetailType> &ignorableDetailTypes) const
 {
     // <PREV_REMOTE, UPDATED_REMOTE> pairs.
     QList<QPair<QContact, QContact> > retn;
 
-    // build up some hashes for easy lookup.
-    QHash<QString, int> prevGuidToIndex;
-    QHash<QString, int> prevGIdToIndex;
+    // Index all existing contacts by their ID value
+    QHash<QContactId, int> prevIdToIndex;
     for (int i = 0; i < prevRemote.size(); ++i) {
-        if (prevRemote[i].detail<QContactGuid>().guid().isEmpty()) {
-            // This contact did not have a sync-target constituent
-            // when we synced it up last time (ie, it was a "local" contact)
-            // Instead of storing the QContactGuid in the hash, we store the
-            // QContactOriginMetadata::groupId()
-            QString gid = prevRemote[i].detail<QContactOriginMetadata>().groupId();
-            if (gid.isEmpty()) {
-                qWarning() << Q_FUNC_INFO << "error: contact has no origin metadata";
-            } else {
-                prevGIdToIndex.insert(gid, i);
-            }
+        const QContact &prevContact(prevRemote.at(i));
+        const QContactId id = prevContact.id();
+        if (!id.isNull()) {
+            prevIdToIndex.insert(id, i);
         } else {
-            prevGuidToIndex.insert(prevRemote[i].detail<QContactGuid>().guid(), i);
-        }
-    }
-    QHash<QString, int> deletedGuidToIndex;
-    QHash<QString, QString> deletedGuidToGId;
-    for (int i = 0; i < remoteDeleted.size(); ++i) {
-        // all contacts from the remote service will have a Guid.
-        QString remoteGuid = remoteDeleted[i].detail<QContactGuid>().guid();
-        deletedGuidToIndex.insert(remoteGuid, i);
-        QString gid = remoteDeleted[i].detail<QContactOriginMetadata>().groupId();
-        if (!gid.isEmpty()) {
-            // if the gid was stored server-side (as a custom/extended property)
-            // then it may have been because when we synced it up previously,
-            // it did not have a sync-target constituent associated with it.
-            deletedGuidToGId.insert(remoteGuid, gid);
-        }
-    }
-    QHash<QString, int> addedModifiedGuidToIndex;
-    QHash<QString, QString> addedModifiedGuidToGId;
-    for (int i = 0; i < remoteAddedModified.size(); ++i) {
-        // all contacts from the remote service will have a Guid.
-        QString remoteGuid = remoteAddedModified[i].detail<QContactGuid>().guid();
-        addedModifiedGuidToIndex.insert(remoteGuid, i);
-        QString gid = remoteAddedModified[i].detail<QContactOriginMetadata>().groupId();
-        if (!gid.isEmpty()) {
-            // if the gid was stored server-side (as a custom/extended property)
-            // then it may have been because when we synced it up previously,
-            // it did not have a sync-target constituent associated with it.
-            addedModifiedGuidToGId.insert(remoteGuid, gid);
+            qWarning() << Q_FUNC_INFO << "Invalid prev contact with no ID:" << prevContact;
         }
     }
 
-    // determine remote removals: <PREV_REMOTE, NULL>
-    QList<int> prevRemoteDeletionIndexes;
-    foreach (const QString &guid, deletedGuidToIndex.keys()) {
-        if (prevGuidToIndex.contains(guid)) {
-            // When we synced it up, it had a synctarget constituent.
-            // The qtcontacts-sqlite backend will delete that constituent, but not
-            // any local-constituent data which is associated with the partial
-            // aggregate (as that data is not owned by this sync adapter).
-            int prdIndex = prevGuidToIndex.value(guid);
-            prevRemoteDeletionIndexes.append(prdIndex);
-            retn.append(qMakePair(prevRemote.at(prdIndex), QContact()));
-        } else if (deletedGuidToGId.contains(guid) && prevGIdToIndex.contains(deletedGuidToGId.value(guid))) {
-            // When we synced it up, it did not have a synctarget constituent.
-            // If something else has added a synctarget constituent in the meantime,
-            // the backend will delete that, otherwise it will remain untouched.
-            int prdIndex = prevGIdToIndex.value(deletedGuidToGId.value(guid));
-            prevRemoteDeletionIndexes.append(prdIndex);
-            retn.append(qMakePair(prevRemote.at(prdIndex), QContact()));
-            // This sync adapter should remove that contact from the list of
-            // exported ids (as it no longer wishes to sync it up to the remote).
-            exportedIds->removeAll(QContactId::fromString(deletedGuidToGId.value(guid)));
+    QList<int> deletePositions;
+    QList<QPair<int, int> > modificationPositions;
+    QList<int> additionPositions;
+
+    for (int i = 0; i < remoteDeleted.size(); ++i) {
+        const QContact &prevContact(remoteDeleted.at(i));
+        const QContactId id = prevContact.id();
+
+        int prevIndex = -1;
+        QHash<QContactId, int>::const_iterator it = prevIdToIndex.find(id);
+        if (it != prevIdToIndex.end()) {
+            prevIndex = *it;
+        }
+        if (prevIndex == -1) {
+            // Ignore this removal, the contact may already have been removed remotely
         } else {
-            qWarning() << Q_FUNC_INFO << "removal of contact with unknown id, with guid =" << guid;
+            deletePositions.append(prevIndex);
+        }
+    }
+
+    for (int i = 0; i < remoteAddedModified->size(); ++i) {
+        const QContact &prevContact(remoteAddedModified->at(i));
+        const QContactId id = prevContact.id();
+
+        int prevIndex = -1;
+        QHash<QContactId, int>::const_iterator it = prevIdToIndex.find(id);
+        if (it != prevIdToIndex.end()) {
+            prevIndex = *it;
+        }
+        if (prevIndex == -1) {
+            // This must be an addition
+            additionPositions.append(i);
+        } else {
+            modificationPositions.append(qMakePair(prevIndex, i));
         }
     }
 
     // determine remote additions/modifications
+    QList<int> prevRemoteDeletionIndexes;
     QHash<int, QContact> prevRemoteModificationIndexes;
     QList<QContact> prevRemoteAdditions;
-    foreach (const QString &guid, addedModifiedGuidToIndex.keys()) {
-        if (prevGuidToIndex.contains(guid)) {
-            // modifications: <PREV_REMOTE, UPDATED_REMOTE>
-            // Note: we have to apply the delta to the old-prev contact
-            // to ensure that the detail ids are preserved.
-            int prmIndex = prevGuidToIndex.value(guid);
-            const QContact &prev(prevRemote[prmIndex]);
-            const QContact &curr(remoteAddedModified[addedModifiedGuidToIndex.value(guid)]);
-            QContact updated = needToApplyDelta ? applyRemoteDeltaToPrev(prev, curr) : curr;
-            if (exactContactMatchExistsInList(prev, QList<QContact>() << updated) == -1) {
-                // the change is substantial (ie, wasn't just an eTag update, for example)
-                prevRemoteModificationIndexes.insert(prmIndex, updated);
-                retn.append(qMakePair(prev, updated));
-            }
-        } else if (addedModifiedGuidToGId.contains(guid) && prevGIdToIndex.contains(addedModifiedGuidToGId.value(guid))) {
-            // When we synced it up last time, it did not have a synctarget constituent.
-            // It was modified server side, and so when we store it this time, the
-            // qtcontacts-sqlite backend will create a synctarget constituent within
-            // which to store the added GUID detail, plus any other added details.
-            // Note that any modifications to existing (local) details will be stored
-            // as modifications in the original local constituent contact.
-            // modifications: <PREV_REMOTE, UPDATED_REMOTE>
-            int prmIndex = prevGIdToIndex.value(addedModifiedGuidToGId.value(guid));
-            const QContact &prev(prevRemote[prmIndex]);
-            const QContact &curr(remoteAddedModified[addedModifiedGuidToIndex.value(guid)]);
-            QContact updated = needToApplyDelta ? applyRemoteDeltaToPrev(prev, curr) : curr;
-            // No need to check if the change is substantial - it is, it now has a guid.
-            prevRemoteModificationIndexes.insert(prmIndex, updated);
-            retn.append(qMakePair(prev, updated));
-        } else {
-            // this is a pure server-side addition.
-            // additions: <NULL, UPDATED_REMOTE>
-            QContact addedContact = remoteAddedModified.at(addedModifiedGuidToIndex.value(guid));
-            prevRemoteAdditions.append(addedContact);
-            retn.append(qMakePair(QContact(), addedContact));
+
+    foreach (int prevIndex, deletePositions) {
+        const QContact &prevContact(prevRemote.at(prevIndex));
+        // remote removal: <PREV_REMOTE, NULL>
+        retn.append(qMakePair(prevContact, QContact()));
+        prevRemoteDeletionIndexes.append(prevIndex);
+
+        const QContactId id = prevContact.id();
+        if (!id.isNull()) {
+            exportedIds->removeAll(id);
         }
     }
 
+    QList<QPair<int, int> >::const_iterator it = modificationPositions.constBegin(), end = modificationPositions.constEnd();
+    for ( ; it != end; ++it) {
+        const QContact &prevContact(prevRemote.at((*it).first));
+        const QContact &newContact(remoteAddedModified->at((*it).second));
+
+        QContact updated = needToApplyDelta ? applyRemoteDeltaToPrev(prevContact, newContact) : newContact;
+        if (exactContactMatchExistsInList(prevContact, QList<QContact>() << updated, ignorableDetailTypes) == -1) {
+            // the change is substantial (ie, wasn't just an eTag update, for example)
+            prevRemoteModificationIndexes.insert((*it).first, updated);
+            // modifications: <PREV_REMOTE, UPDATED_REMOTE>
+            retn.append(qMakePair(prevContact, updated));
+        }
+    }
+
+    foreach (int index, additionPositions) {
+        const int updateIndex = retn.count();
+        QContact addedContact = remoteAddedModified->at(index);
+        prevRemoteAdditions.append(addedContact);
+        // pure server-side addition: <NULL, UPDATED_REMOTE>
+        retn.append(qMakePair(QContact(), addedContact));
+        additionIndices->append(qMakePair(index, updateIndex));
+    }
+
     // finally, mutate the mutatedPrevRemote list according to the changes.
-    // modifications
     *mutatedPrevRemote = prevRemote;
     foreach (int idx, prevRemoteModificationIndexes.keys())
         mutatedPrevRemote->replace(idx, prevRemoteModificationIndexes.value(idx));
@@ -872,8 +874,8 @@ QPair<QList<QContactDetail>, QList<QContactDetail> > TwoWayContactSyncAdapter::f
     // ignore all exact matches, as they don't form part of the delta.
     for (int i = pdets.size() - 1; i >= 0; --i) {
         int idx = -1;
-        for (int j = 0; j < cdets.size(); ++j) {
-            if (pdets[i] == cdets[j]) {
+        for (int j = cdets.size() - 1; j >= 0; --j) {
+            if (detailPairExactlyMatches(pdets.at(i), cdets.at(j))) {
                 idx = j;
                 break;
             }
@@ -1141,43 +1143,30 @@ int TwoWayContactSyncAdapter::exactDetailMatchExistsInList(const QContactDetail 
     return -1;
 }
 
-void TwoWayContactSyncAdapter::removeIgnorableDetailsFromList(QList<QContactDetail> *dets) const
+void TwoWayContactSyncAdapter::removeIgnorableDetailsFromList(QList<QContactDetail> *dets, const QSet<QContactDetail::DetailType> &ignorableDetailTypes) const
 {
     // ignore differences in certain detail types
     for (int i = dets->size() - 1; i >= 0; --i) {
-        switch (dets->at(i).type()) {
-            case QContactDetail::TypeDisplayLabel:   // flow through
-            case QContactDetail::TypeGlobalPresence: // flow through
-            case QContactDetail::TypePresence:       // flow through
-            case QContactDetail::TypeOnlineAccount:  // flow through
-            case QContactDetail::TypeSyncTarget:     // flow through
-            case QContactDetail::TypeTimestamp:
-                dets->removeAt(i);      // we can ignore this detail
-                break;
-            default: {
-                if (dets->at(i).type() == QContactDetail__TypeStatusFlags ||
-                    dets->at(i).type() == QContactDetail__TypeDeactivated ||
-                    dets->at(i).type() == QContactDetail__TypeIncidental) {
-                    // we can ignore this detail
-                    dets->removeAt(i);
-                }
-                break;
-            }
+        const QContactDetail::DetailType type(dets->at(i).type());
+        if (ignorableDetailTypes.contains(type)) {
+            dets->removeAt(i);      // we can ignore this detail
         }
     }
 }
 
-int TwoWayContactSyncAdapter::exactContactMatchExistsInList(const QContact &c, const QList<QContact> &list) const
+int TwoWayContactSyncAdapter::exactContactMatchExistsInList(const QContact &c, const QList<QContact> &list, const QSet<QContactDetail::DetailType> &ignorableDetailTypes) const
 {
+    const QSet<QContactDetail::DetailType> &ignoreDetails(!ignorableDetailTypes.isEmpty() ? ignorableDetailTypes : defaultIgnorableDetailTypes());
+
     QList<QContactDetail> cdets = c.details();
-    removeIgnorableDetailsFromList(&cdets);
+    removeIgnorableDetailsFromList(&cdets, ignoreDetails);
 
     for (int i = 0; i < list.size(); ++i) {
         // for it to be an exact match:
         // a) every detail in cdets must exist in ldets
         // b) no extra details can exist in ldets
         QList<QContactDetail> ldets = list[i].details();
-        removeIgnorableDetailsFromList(&ldets);
+        removeIgnorableDetailsFromList(&ldets, ignoreDetails);
         if (ldets.size() != cdets.size()) {
             continue;
         }
@@ -1208,7 +1197,7 @@ int TwoWayContactSyncAdapter::exactContactMatchExistsInList(const QContact &c, c
 void TwoWayContactSyncAdapter::dumpContact(const QContact &c) const
 {
     QList<QContactDetail> cdets = c.details();
-    removeIgnorableDetailsFromList(&cdets);
+    removeIgnorableDetailsFromList(&cdets, defaultIgnorableDetailTypes());
     foreach (const QContactDetail &det, cdets) {
         qWarning() << "++ ---------" << det.type();
         QMap<int, QVariant> values = det.values();

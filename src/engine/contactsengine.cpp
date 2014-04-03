@@ -68,19 +68,20 @@ public:
     struct WriterProxy {
         const ContactsEngine &engine;
         QSqlDatabase &database;
+        bool aggregating;
         ContactNotifier &notifier;
         ContactReader &reader;
         mutable ContactWriter *writer;
 
-        WriterProxy(const ContactsEngine &e, QSqlDatabase &db, ContactNotifier &n, ContactReader &r)
-            : engine(e), database(db), notifier(n), reader(r), writer(0)
+        WriterProxy(const ContactsEngine &e, QSqlDatabase &db, bool a, ContactNotifier &n, ContactReader &r)
+            : engine(e), database(db), aggregating(a), notifier(n), reader(r), writer(0)
         {
         }
 
         ContactWriter *operator->() const
         {
             if (!writer) {
-                writer = new ContactWriter(engine, database, &notifier, &reader);
+                writer = new ContactWriter(engine, database, aggregating, &notifier, &reader);
             }
             return writer;
         }
@@ -406,7 +407,7 @@ public:
 
     void execute(ContactReader *, WriterProxy &writer)
     {
-        m_error = writer->save(m_relationships, &m_errorMap, false);
+        m_error = writer->save(m_relationships, &m_errorMap, false, false);
     }
 
     void updateState(QContactAbstractRequest::State state)
@@ -506,6 +507,7 @@ public:
         , m_running(true)
         , m_databaseUuid(databaseUuid)
         , m_nonprivileged(nonprivileged)
+        , m_aggregating(true)
     {
         start(QThread::IdlePriority);
     }
@@ -710,13 +712,14 @@ private:
     bool m_running;
     QString m_databaseUuid;
     bool m_nonprivileged;
+    bool m_aggregating;
 };
 
 class JobContactReader : public ContactReader
 {
 public:
-    JobContactReader(const QSqlDatabase &database, JobThread *thread)
-        : ContactReader(database)
+    JobContactReader(const QSqlDatabase &database, bool aggregating, JobThread *thread)
+        : ContactReader(database, aggregating)
         , m_thread(thread)
     {
     }
@@ -755,9 +758,14 @@ void JobThread::run()
         return;
     }
 
+    // Use aggregation only for the privileged database
+    if (m_nonprivileged) {
+        m_aggregating = false;
+    }
+
     ContactNotifier notifier(m_nonprivileged);
-    JobContactReader reader(database, this);
-    Job::WriterProxy writer(*m_engine, database, notifier, reader);
+    JobContactReader reader(database, m_aggregating, this);
+    Job::WriterProxy writer(*m_engine, database, m_aggregating, notifier, reader);
 
     QMutexLocker locker(&m_mutex);
 
@@ -793,6 +801,7 @@ ContactsEngine::ContactsEngine(const QString &name, const QMap<QString, QString>
     , m_synchronousWriter(0)
     , m_notifier(0)
     , m_jobThread(0)
+    , m_aggregating(true)
 {
     static bool registered = qRegisterMetaType<QList<int> >("QList<int>");
     Q_UNUSED(registered)
@@ -834,6 +843,11 @@ QContactManager::Error ContactsEngine::open()
 {
     m_database = ContactsDatabase::open(QString(QLatin1String("qtcontacts-sqlite-%1")).arg(databaseUuid()), m_nonprivileged);
     if (m_database.isOpen()) {
+        // Use aggregation only for the privileged database
+        if (m_nonprivileged) {
+            m_aggregating = false;
+        }
+
         m_notifier = new ContactNotifier(m_nonprivileged);
         m_notifier->connect("contactsAdded", "au", this, SLOT(_q_contactsAdded(QVector<quint32>)));
         m_notifier->connect("contactsChanged", "au", this, SLOT(_q_contactsChanged(QVector<quint32>)));
@@ -1024,7 +1038,7 @@ bool ContactsEngine::saveRelationships(
         QMap<int, QContactManager::Error> *errorMap,
         QContactManager::Error *error)
 {
-    QContactManager::Error err = writer()->save(*relationships, errorMap, false);
+    QContactManager::Error err = writer()->save(*relationships, errorMap, false, false);
     if (error)
         *error = err;
 
@@ -1132,7 +1146,6 @@ void ContactsEngine::regenerateDisplayLabel(QContact &contact) const
     setContactDisplayLabel(&contact, label);
 }
 
-#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
 bool ContactsEngine::fetchSyncContacts(const QString &syncTarget, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
                                        QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
                                        QContactManager::Error *error)
@@ -1159,11 +1172,23 @@ bool ContactsEngine::storeSyncContacts(const QString &syncTarget, ConflictResolu
                                        const QList<QPair<QContact, QContact> > &remoteChanges, QContactManager::Error *error)
 {
     Q_ASSERT(error);
+    // This function is deprecated and exists for backward compatibility only!
+    qWarning() << Q_FUNC_INFO << "DEPRECATED: use the alternate overload instead!";
+
+    QList<QPair<QContact, QContact> > remoteChangesCopy(remoteChanges);
+
+    *error = writer()->updateSyncContacts(syncTarget, conflictPolicy, &remoteChangesCopy);
+    return (*error == QContactManager::NoError);
+}
+
+bool ContactsEngine::storeSyncContacts(const QString &syncTarget, ConflictResolutionPolicy conflictPolicy,
+                                       QList<QPair<QContact, QContact> > *remoteChanges, QContactManager::Error *error)
+{
+    Q_ASSERT(error);
 
     *error = writer()->updateSyncContacts(syncTarget, conflictPolicy, remoteChanges);
     return (*error == QContactManager::NoError);
 }
-#endif
 
 bool ContactsEngine::fetchOOB(const QString &scope, const QString &key, QVariant *value)
 {
@@ -1344,7 +1369,7 @@ void ContactsEngine::_q_relationshipsRemoved(const QVector<quint32> &contactIds)
 ContactReader *ContactsEngine::reader() const
 {
     if (!m_synchronousReader) {
-        m_synchronousReader = new ContactReader(m_database);
+        m_synchronousReader = new ContactReader(m_database, m_aggregating);
     }
     return m_synchronousReader;
 }
@@ -1352,7 +1377,7 @@ ContactReader *ContactsEngine::reader() const
 ContactWriter *ContactsEngine::writer()
 {
     if (!m_synchronousWriter) {
-        m_synchronousWriter = new ContactWriter(*this, m_database, m_notifier, reader());
+        m_synchronousWriter = new ContactWriter(*this, m_database, m_aggregating, m_notifier, reader());
     }
     return m_synchronousWriter;
 }

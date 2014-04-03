@@ -152,9 +152,7 @@ private slots:
     void contactType();
     void lateDeletion();
     void compareVariant();
-#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     void constituentOfSelf();
-#endif
     void searchSensitivity();
 
 #if defined(USE_VERSIT_PLZ)
@@ -2127,18 +2125,9 @@ void tst_QContactManager::signalEmission()
     QVERIFY(m1->saveContact(&c));
     QContactId cid = ContactId::apiId(c);
     addSigCount += 1;
-#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     QTest::qWait(500); // wait for signal coalescing.
     QTRY_VERIFY(spyCA.count() >= addSigCount);
     addSigCount = spyCA.count();
-#else
-    QTRY_COMPARE(spyCA.count(), addSigCount);
-    args = spyCA.takeFirst();
-    addSigCount -= 1;
-    arg = args.first().value<QList<QContactId> >();
-    QVERIFY(arg.count() == 1);
-    QCOMPARE(QContactId(arg.at(0)), cid);
-#endif
 
     QScopedPointer<QContactObserver> c1Observer(new QContactObserver(m1.data(), cid));
     QScopedPointer<QSignalSpy> spyCOM1(new QSignalSpy(c1Observer.data(), SIGNAL(contactChanged())));
@@ -2159,16 +2148,11 @@ void tst_QContactManager::signalEmission()
     args = spyCM.takeFirst();
     modSigCount -= 1;
     arg = args.first().value<QList<QContactId> >();
-#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     while (spyCM.count()) {
         arg.append(spyCM.takeFirst().first().value<QList<QContactId> >());
     }
     modSigCount = spyCM.count();
     QVERIFY(arg.contains(cid));
-#else
-    QVERIFY(arg.count() == 1);
-    QCOMPARE(QContactId(arg.at(0)), cid);
-#endif
 
     // verify remove emits signal removed
     m1->removeContact(removalId(c));
@@ -2178,16 +2162,11 @@ void tst_QContactManager::signalEmission()
     args = spyCR.takeFirst();
     remSigCount -= 1;
     arg = args.first().value<QList<QContactId> >();
-#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     while (spyCR.count()) {
         arg.append(spyCM.takeFirst().first().value<QList<QContactId> >());
     }
     remSigCount = spyCR.count();
     QVERIFY(arg.contains(cid));
-#else
-    QVERIFY(arg.count() == 1);
-    QCOMPARE(QContactId(arg.at(0)), cid);
-#endif
 
     // verify multiple adds works as advertised
     QContact c2, c3;
@@ -2203,22 +2182,11 @@ void tst_QContactManager::signalEmission()
     addSigCount += 1;
     QVERIFY(m1->saveContact(&c3));
     addSigCount += 1;
-#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     QTRY_VERIFY(spyCA.count() >= (addSigCount-1));
     QVERIFY(spyCA.count() == (addSigCount-1)        // if all of the signals are coalesced
          || spyCA.count() == (addSigCount)          // if all but one of the signals are coalesced
          || spyCA.count() == (addSigCount+1)        // if only two of the signals are coalesced
          || spyCA.count() == (addSigCount+2));      // if no signals were coalesced.
-#else
-    if(uri.contains(QLatin1String("tracker")) || uri.contains(QLatin1String("sqlite"))) {
-        // tracker backend coalesces signals for performance reasons
-        QTRY_COMPARE_SIGNALS_LOCALID_COUNT(spyCM, modSigCount);
-        QTRY_COMPARE_SIGNALS_LOCALID_COUNT(spyCA, addSigCount);
-    } else {
-        QTRY_COMPARE(spyCM.count(), modSigCount);
-        QTRY_COMPARE(spyCA.count(), addSigCount);
-    }
-#endif
 
     spyCOM1->clear();
     spyCOR1->clear();
@@ -2252,16 +2220,7 @@ void tst_QContactManager::signalEmission()
     modSigCount += 1;
     QVERIFY(m1->saveContact(&c3));
     modSigCount += 1;
-#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     QTRY_VERIFY(spyCM.count() >= (modSigCount - 2)); // it may coalesce signals, and it may update aggregates.
-#else
-    if(uri.contains(QLatin1String("tracker")) || uri.contains(QLatin1String("sqlite"))) {
-        // tracker backend coalesces signals for performance reasons
-        QTRY_COMPARE_SIGNALS_LOCALID_COUNT(spyCM, modSigCount);
-    } else {
-        QTRY_COMPARE(spyCM.count(), modSigCount);
-    }
-#endif
     QTRY_COMPARE(spyCOM2->count(), 2);
     QTRY_COMPARE(spyCOM3->count(), 1);
     QCOMPARE(spyCOM1->count(), 0);
@@ -2271,16 +2230,7 @@ void tst_QContactManager::signalEmission()
     remSigCount += 1;
     m1->removeContact(removalId(c2));
     remSigCount += 1;
-#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     QTRY_VERIFY(spyCM.count() >= (remSigCount - 2)); // it may coalesce signals, and it may remove aggregates.
-#else
-    if(uri.contains(QLatin1String("tracker")) || uri.contains(QLatin1String("sqlite"))) {
-        // tracker backend coalesces signals for performance reasons
-        QTRY_COMPARE_SIGNALS_LOCALID_COUNT(spyCR, remSigCount);
-    } else {
-        QTRY_COMPARE(spyCR.count(), remSigCount);
-    }
-#endif
     QTRY_COMPARE(spyCOR2->count(), 1);
     QTRY_COMPARE(spyCOR3->count(), 1);
     QCOMPARE(spyCOR1->count(), 0);
@@ -2315,9 +2265,8 @@ void tst_QContactManager::signalEmission()
     sigids.clear();
 
     QTRY_WAIT( while(spyCA.size() > 0) {sigids += spyCA.takeFirst().at(0).value<QList<QContactId> >(); }, sigids.contains(ContactId::apiId(c)) && sigids.contains(ContactId::apiId(c2)) && sigids.contains(ContactId::apiId(c3)));
-#ifndef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
-    QTRY_COMPARE(spyCM.count(), 0); // if we perform aggregation, aggregates might get updated
-#endif
+    // if we perform aggregation, aggregates might get updated; this cannot be verified:
+    //QTRY_COMPARE(spyCM.count(), 0);
 
     c1Observer.reset(new QContactObserver(m1.data(), ContactId::apiId(c)));
     c2Observer.reset(new QContactObserver(m1.data(), ContactId::apiId(c2)));
@@ -2368,9 +2317,8 @@ void tst_QContactManager::signalEmission()
     QTRY_COMPARE(spyCOR3->count(), 1);
 
     QTRY_COMPARE(spyCA.count(), 0);
-#ifndef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
-    QTRY_COMPARE(spyCM.count(), 0); // if we perform aggregation, removes can cause regenerates of aggregates
-#endif
+    // if we perform aggregation, removes can cause regenerates of aggregates; this cannot be verified:
+    //QTRY_COMPARE(spyCM.count(), 0);
 
     QScopedPointer<QContactManager> m2(QContactManager::fromUri(uri));
     
@@ -2393,17 +2341,10 @@ void tst_QContactManager::signalEmission()
         saveContactName(&c, nameDef, &ncs, "Test2");
 #endif
         QVERIFY(m2->saveContact(&c));
-#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
         QTRY_VERIFY(spyCA.count() >= 1); // check that we received the update signals.
         QTRY_VERIFY(spyCM.count() >= 1); // check that we received the update signals.
         m2->removeContact(removalId(c));
         QTRY_VERIFY(spyCR.count() >= 1); // check that we received the remove signal.
-#else
-        QTRY_COMPARE(spyCA.count(), 1); // check that we received the update signal.
-        QTRY_COMPARE(spyCM.count(), 1); // check that we received the update signal.
-        m2->removeContact(removalId(c));
-        QTRY_COMPARE(spyCR.count(), 1); // check that we received the remove signal.
-#endif
     }
 }
 
@@ -3328,11 +3269,7 @@ void tst_QContactManager::relationships()
 
     // removing the source contact should result in removal of the relationship.
     QVERIFY(cm->removeContact(removalId(source)));
-#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     QCOMPARE(cm->relationships().count(), relationshipsCount - 2); // the relationship should have been removed, as well as an Aggregates.
-#else
-    QCOMPARE(cm->relationships().count(), relationshipsCount - 1); // the relationship should have been removed.
-#endif
 
     // now ensure that qcontact relationship caching works as required - perhaps this should be in tst_QContact?
     source.setId(QContactId());         // reset id so we can resave
@@ -3358,15 +3295,11 @@ void tst_QContactManager::relationships()
     source = cm->contact(retrievalId(source));
 
     // and test again.
-#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     // when we aggregate, the source will be the second in an Aggregated relationship
     QVERIFY(!relatedContactIds(source.relatedContacts(QString(), QContactRelationship::First)).contains(dest1.id()));
     QVERIFY(!relatedContactIds(source.relatedContacts(QString(), QContactRelationship::First)).contains(dest2.id()));
     QVERIFY(!relatedContactIds(source.relatedContacts(QString(), QContactRelationship::First)).contains(dest3.id()));
     QVERIFY(!relatedContactIds(source.relatedContacts(QString(), QContactRelationship::First)).contains(dest4.id()));
-#else
-    QVERIFY(relatedContactIds(source.relatedContacts(QString(), QContactRelationship::First)).isEmpty()); // source is always the first, so this should be empty.
-#endif
     QVERIFY(relatedContactIds(source.relatedContacts(QString(), QContactRelationship::Second)).contains(dest2.id()));
     QVERIFY(relatedContactIds(source.relatedContacts(QString(), QContactRelationship::Either)).contains(dest2.id()));
     QVERIFY(relatedContactIds(source.relatedContacts(QString(), QContactRelationship::Second)).contains(dest3.id()));
@@ -3394,15 +3327,11 @@ void tst_QContactManager::relationships()
     QList<QContactRelationship>::iterator it = relats.begin();
 
     while (it != relats.end()) {
-#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
         if (it->first() != relatedContact(source)) {
             // assume it's the aggregate and ignore it...
             it++;
             continue;
         }
-#else
-        QVERIFY(relatedContactId(it->first()) == source.id());
-#endif
         QVERIFY(relatedContactId(it->second()) == dest2.id() || relatedContactId(it->second()) == dest3.id());
         it++;
     }
@@ -4157,7 +4086,6 @@ void tst_QContactManager::compareVariant_data()
     QTest::newRow("datetimes dt5 = dt5") << QVariant(dt5) << QVariant(dt5) << Qt::CaseInsensitive << 0;
 }
 
-#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
 void tst_QContactManager::constituentOfSelf()
 {
     QScopedPointer<QContactManager> m(newContactManager());
@@ -4303,7 +4231,6 @@ void tst_QContactManager::constituentOfSelf()
     newContact = m->contact(retrievalId(newContact));
     QVERIFY(!relatedContactIds(newContact.relatedContacts()).contains(m->selfContactId()));
 }
-#endif
 
 void tst_QContactManager::searchSensitivity()
 {

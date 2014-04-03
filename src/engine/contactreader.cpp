@@ -526,9 +526,10 @@ template <typename T> static void readDetail(
         const int accessConstraints = query->value(3).toInt();
         const QString provenance = query->value(4).toString();
         const bool modifiable = query->value(5).toBool();
+        const bool nonexportable = query->value(6).toBool();
         /* Unused:
-        const quint32 detailId = query->value(6).toUInt();
-        const quint32 detailContactId = query->value(7).toUInt();
+        const quint32 detailId = query->value(7).toUInt();
+        const quint32 detailContactId = query->value(8).toUInt();
         */
 
         if (!detailUriValue.isEmpty()) {
@@ -561,16 +562,21 @@ template <typename T> static void readDetail(
             setValue(&detail, QContactDetail__FieldModifiable, modifiable);
         }
 
+        // Only include non-exportable if it is set
+        if (nonexportable) {
+            setValue(&detail, QContactDetail__FieldNonexportable, nonexportable);
+        }
+
         // Constraints should be applied unless generating a partial aggregate; the partial aggregate
         // is intended for modification, so adding constraints prevents it from being used correctly
         if (!relaxConstraints) {
             QContactManagerEngine::setDetailAccessConstraints(&detail, static_cast<QContactDetail::AccessConstraints>(accessConstraints));
         }
 
-        setValues(&detail, query, 8);
+        setValues(&detail, query, 9);
 
         contact->saveDetail(&detail);
-    } while (query->next() && (currentId = query->value(7).toUInt()) == contactId);
+    } while (query->next() && (currentId = query->value(8).toUInt()) == contactId);
 }
 
 static QContactRelationship makeRelationship(const QString &type, quint32 firstId, quint32 secondId)
@@ -747,17 +753,16 @@ static QString convertFilterValueToString(const QContactDetailFilter &filter, co
     return defaultValue;
 }
 
-static QString dateString(bool dateOnly, const QDateTime &qdt)
+// Input must be UTC
+static QString dateTimeString(const QDateTime &qdt)
 {
-    if (dateOnly) {
-        //return QString(QLatin1String("date('%1')")).arg(qdt.toUTC().toString(Qt::ISODate));
-        return qdt.toUTC().toString(Qt::ISODate).mid(0, 10); // 'yyyy-MM-dd'
-    }
+    return qdt.toString(QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz"));
+}
 
-    // note: quoting (via QString("'%1'").arg(...)) causes unit test failures
-    // because we bind the resultant value rather than use substring replacement
-    // and a bound string value is quoted by Qt.
-    return qdt.toUTC().toString(Qt::ISODate);
+// Input must be UTC
+static QString dateString(const QDateTime &qdt)
+{
+    return qdt.toString(QStringLiteral("yyyy-MM-dd"));
 }
 
 static QString dateString(const DetailInfo &detail, const QDateTime &qdt)
@@ -765,12 +770,18 @@ static QString dateString(const DetailInfo &detail, const QDateTime &qdt)
     if (detail.detail == QContactBirthday::Type
             || detail.detail == QContactAnniversary::Type) {
         // just interested in the date, not the whole date time
-        return dateString(true, qdt);
+        return dateString(qdt.toUTC());
     }
 
-    return dateString(false, qdt);
+    return dateTimeString(qdt.toUTC());
 }
 
+static QDateTime fromDateTimeString(const QString &s)
+{
+    QDateTime rv(QDateTime::fromString(s, QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz")));
+    rv.setTimeSpec(Qt::UTC);
+    return rv;
+}
 
 static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bindings, bool *failed)
 {
@@ -1158,7 +1169,7 @@ static QString buildWhere(const QContactRelationshipFilter &filter, QVariantList
 static QString buildWhere(const QContactChangeLogFilter &filter, QVariantList *bindings, bool *failed)
 {
     static const QString statement(QLatin1String("Contacts.%1 >= ?"));
-    bindings->append(dateString(false, filter.since()));
+    bindings->append(dateTimeString(filter.since().toUTC()));
     switch (filter.eventType()) {
         case QContactChangeLogFilter::EventAdded:
             return statement.arg(QLatin1String("created"));
@@ -1343,8 +1354,9 @@ static QSqlQuery prepare(const char *statement, const QSqlDatabase &database)
     return ContactsDatabase::prepare(statement, database);
 }
 
-ContactReader::ContactReader(const QSqlDatabase &database)
+ContactReader::ContactReader(const QSqlDatabase &database, bool aggregating)
     : m_database(database)
+    , m_aggregating(aggregating)
     , m_identityId(prepare(identityId, database))
 {
 }
@@ -1586,7 +1598,7 @@ static bool deletedContactFilter(const QContactFilter &filter)
     return false;
 }
 
-QString expandWhere(const QString &where, const QContactFilter &filter)
+QString expandWhere(const QString &where, const QContactFilter &filter, const bool aggregating)
 {
     QStringList constraints;
 
@@ -1597,12 +1609,12 @@ QString expandWhere(const QString &where, const QContactFilter &filter)
 
     // if the filter does not specify contacts by ID
     if (!includesIdFilter(filter)) {
-#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
-        // exclude non-aggregates, unless the filter specifies syncTarget
-        if (!includesSyncTarget(filter)) {
-            constraints.append("Contacts.syncTarget = 'aggregate' ");
+        if (aggregating) {
+            // exclude non-aggregates, unless the filter specifies syncTarget
+            if (!includesSyncTarget(filter)) {
+                constraints.append("Contacts.syncTarget = 'aggregate' ");
+            }
         }
-#endif
 
         // exclude deactivated unless they're explicitly included
         if (!includesDeactivated(filter)) {
@@ -1660,7 +1672,7 @@ QContactManager::Error ContactReader::readContacts(
         return QContactManager::UnspecifiedError;
     }
 
-    where = expandWhere(where, filter);
+    where = expandWhere(where, filter, m_aggregating);
 
     QContactManager::Error error = QContactManager::NoError;
     if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, table, join, where, orderBy, bindings)) {
@@ -1752,12 +1764,16 @@ QContactManager::Error ContactReader::queryContacts(
             "\n  Details.contexts,"
             "\n  Details.accessConstraints,"
             "\n  Details.provenance,"
-            "\n  Details.modifiable,"
+            "\n  COALESCE(Details.modifiable, 0),"
+            "\n  COALESCE(Details.nonexportable, 0),"
             "\n  %2.*"
             "\n FROM temp.%1"
             "\n  INNER JOIN %2 ON temp.%1.contactId = %2.contactId"
             "\n  LEFT JOIN Details ON %2.detailId = Details.detailId AND Details.detail = :detail"
             "\n ORDER BY temp.%1.rowId ASC;")).arg(tableName);
+
+    // This is the zero-based offset of the contact ID value in the table query above:
+    const int idValueOffset = 8;
 
     const ContactWriter::DetailList &details = fetchHint.detailTypesHint();
 
@@ -1799,7 +1815,7 @@ QContactManager::Error ContactReader::queryContacts(
                             .arg(detail.table)
                             .arg(table.query.lastError().text()));
                 } else if (table.query.next()) {
-                    table.currentId = table.query.value(7).toUInt();
+                    table.currentId = table.query.value(idValueOffset).toUInt();
                     tables.append(table);
                 }
             }
@@ -1851,8 +1867,8 @@ QContactManager::Error ContactReader::queryContacts(
                 contact.saveDetail(&starget);
 
             QContactTimestamp timestamp;
-            setValue(&timestamp, QContactTimestamp::FieldCreationTimestamp    , query.value(11));
-            setValue(&timestamp, QContactTimestamp::FieldModificationTimestamp, query.value(12));
+            setValue(&timestamp, QContactTimestamp::FieldCreationTimestamp    , fromDateTimeString(query.value(11).toString()));
+            setValue(&timestamp, QContactTimestamp::FieldModificationTimestamp, fromDateTimeString(query.value(12).toString()));
             if (!timestamp.isEmpty())
                 contact.saveDetail(&timestamp);
 
@@ -2032,7 +2048,7 @@ QContactManager::Error ContactReader::readDeletedContactIds(
     QVariantList bindings;
     if (!since.isNull()) {
         restrictions.append(QString::fromLatin1("deleted >= ?"));
-        bindings.append(since);
+        bindings.append(dateTimeString(since.toUTC()));
     }
     if (!syncTarget.isNull()) {
         restrictions.append(QString::fromLatin1("syncTarget = ?"));
@@ -2106,7 +2122,7 @@ QContactManager::Error ContactReader::readContactIds(
         return QContactManager::UnspecifiedError;
     }
 
-    where = expandWhere(where, filter);
+    where = expandWhere(where, filter, m_aggregating);
 
     QString queryString = QString(QLatin1String(
                 "\n SELECT DISTINCT Contacts.contactId"
