@@ -2925,7 +2925,7 @@ static void removeEquivalentDetails(QList<QPair<QContactDetail, StringPair> > &o
     while (oit != original.end()) {
         QList<QPair<QContactDetail, StringPair> >::iterator uit = updated.begin(), uend = updated.end();
         for ( ; uit != uend; ++uit) {
-            if (detailsSuperset((*oit).first, (*uit).first)) {
+            if (detailsEquivalent((*oit).first, (*uit).first)) {
                 // These details match - remove from the lists
                 updated.erase(uit);
                 break;
