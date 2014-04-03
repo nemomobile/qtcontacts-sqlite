@@ -350,8 +350,6 @@ bool TwoWayContactSyncAdapter::storeRemoteChanges(const QList<QContact> &deleted
             (*addModRemote)[addModIndex].setId(addedId);
             d->m_stateData[accountId].m_mutatedPrevRemote[additionIndex].setId(addedId);
         }
-    } else {
-        qDebug() << Q_FUNC_INFO << "no substantial changes, no need to store remote changes.";
     }
 
     d->m_stateData[accountId].m_status = TwoWayContactSyncAdapterPrivate::StoredRemoteChanges;
@@ -434,20 +432,14 @@ bool TwoWayContactSyncAdapter::determineLocalChanges(QDateTime *localSince,
         if (locallyDeleted) {
             bool foundPrevToDelete = false;
             foreach (const QContactId &id, locallyDeletedIds) {
-                foundPrevToDelete = false;
+                // May not exist, if already deleted remotely
                 for (int i = 0; i < d->m_stateData[accountId].m_mutatedPrevRemote.size(); ++i) {
                     const QContact &prev(d->m_stateData[accountId].m_mutatedPrevRemote[i]);
                     if (prev.id() == id) {
                         locallyDeleted->append(prev);
                         d->m_stateData[accountId].m_mutatedPrevRemote.removeAt(i); // we are deleting this contact from the remote server.
-                        foundPrevToDelete = true;
                         break;
                     }
-                }
-
-                if (!foundPrevToDelete) {
-                    // it was already deleted remotely and removed from the MUTATED_PREV_REMOTE list.
-                    qWarning() << Q_FUNC_INFO << "contact with id:" << id.toString() << "removed locally + remotely";
                 }
             }
         }
@@ -592,8 +584,6 @@ bool TwoWayContactSyncAdapter::storeSyncStateData(const QString &accountId)
 
     // finished the sync process successfully.
     d->m_stateData[accountId].m_status = TwoWayContactSyncAdapterPrivate::Finished;
-    qWarning() << Q_FUNC_INFO << "Sync process succeeded at"
-               << dateTimeString(QDateTime::currentDateTimeUtc());
     d->clear(accountId); // this actually sets state back to Inactive as required.
     return true;
 }
