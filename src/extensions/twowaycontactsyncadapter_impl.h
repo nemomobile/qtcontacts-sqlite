@@ -430,7 +430,6 @@ bool TwoWayContactSyncAdapter::determineLocalChanges(QDateTime *localSince,
     } else {
         // a) find contacts which were deleted locally
         if (locallyDeleted) {
-            bool foundPrevToDelete = false;
             foreach (const QContactId &id, locallyDeletedIds) {
                 // May not exist, if already deleted remotely
                 for (int i = 0; i < d->m_stateData[accountId].m_mutatedPrevRemote.size(); ++i) {
