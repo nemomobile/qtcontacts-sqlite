@@ -6043,6 +6043,9 @@ void tst_Aggregation::storeSyncContacts()
     QVERIFY(contactIds.contains(fstc.id()));
     QVERIFY(contactIds.contains(faId));
 
+    // Wait for the delivery of any pending delete signals
+    QTest::qWait(500);
+
     // Now remove the sync target contact
     QSignalSpy remSpy(m_cm, contactsRemovedSignal);
     int remSpyCount = remSpy.count();
