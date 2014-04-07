@@ -37,6 +37,16 @@
 
 QTCONTACTS_USE_NAMESPACE
 
+void QContactIncidental::setInitialAggregateId(const QContactId &id)
+{
+    setValue(FieldInitialAggregateId, id.toString());
+}
+
+QContactId QContactIncidental::initialAggregateId() const
+{
+    return QContactId::fromString(value<QString>(FieldInitialAggregateId));
+}
+
 const QContactDetail::DetailType QContactIncidental::Type(static_cast<QContactDetail::DetailType>(QContactDetail__TypeIncidental));
 
 #endif

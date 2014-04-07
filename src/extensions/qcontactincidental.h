@@ -40,6 +40,14 @@ class QContactIncidental : public QContactDetail
 {
 public:
     Q_DECLARE_CUSTOM_CONTACT_DETAIL(QContactIncidental)
+
+    enum {
+        FieldInitialAggregateId = 0
+    };
+
+    // This field is not available after contact creation
+    void setInitialAggregateId(const QContactId &id);
+    QContactId initialAggregateId() const;
 };
 
 QT_END_NAMESPACE_CONTACTS

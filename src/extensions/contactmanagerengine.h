@@ -38,6 +38,17 @@ QTCONTACTS_USE_NAMESPACE
 
 namespace QtContactsSqliteExtensions {
 
+/*
+ * Parameters recognized by the qtcontact-sqlite engine include:
+ *  'mergePresenceChanges' - if true, contact presence changes will be merged with other changes,
+ *                           and reported via the contactsChanged signal. Otherwise presence
+ *                           changes will be reported separately, via the contactsPresenceChanged
+ *                           signal of the QContactManager's engine object.
+ * 'nonprivileged'         - if true, the engine will not attempt to use the privileged database
+ *                           of contact details, which is not accessible to normal processes. Otherwise
+ *                           the privileged database will be preferred if accessible.
+ */
+
 class Q_DECL_EXPORT ContactManagerEngine
     : public QContactManagerEngine
 {
@@ -49,18 +60,22 @@ public:
         PreserveRemoteChanges
     };
 
-    ContactManagerEngine() : m_mergePresenceChanges(false) {}
+    ContactManagerEngine() : m_nonprivileged(false), m_mergePresenceChanges(false) {}
 
+    void setNonprivileged(bool b) { m_nonprivileged = b; }
     void setMergePresenceChanges(bool b) { m_mergePresenceChanges = b; }
 
-#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
+    virtual bool Q_DECL_DEPRECATED fetchSyncContacts(const QString &syncTarget, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
+                                   QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
+                                   QContactManager::Error *error) = 0; // DEPRECATED
     virtual bool fetchSyncContacts(const QString &syncTarget, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
                                    QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
-                                   QContactManager::Error *error) = 0;
+                                   QDateTime *maxTimestamp, QContactManager::Error *error) = 0;
 
-    virtual bool storeSyncContacts(const QString &syncTarget, ConflictResolutionPolicy conflictPolicy,
+    virtual bool Q_DECL_DEPRECATED storeSyncContacts(const QString &syncTarget, ConflictResolutionPolicy conflictPolicy,
                                    const QList<QPair<QContact, QContact> > &remoteChanges, QContactManager::Error *error) = 0;
-#endif
+    virtual bool storeSyncContacts(const QString &syncTarget, ConflictResolutionPolicy conflictPolicy,
+                                   QList<QPair<QContact, QContact> > *remoteChanges, QContactManager::Error *error) = 0;
 
     virtual bool fetchOOB(const QString &scope, const QString &key, QVariant *value) = 0;
     virtual bool fetchOOB(const QString &scope, const QStringList &keys, QMap<QString, QVariant> *values) = 0;
@@ -78,6 +93,7 @@ Q_SIGNALS:
     void syncContactsChanged(const QStringList &syncTargets);
 
 protected:
+    bool m_nonprivileged;
     bool m_mergePresenceChanges;
 };
 

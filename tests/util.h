@@ -66,6 +66,8 @@
 #include "../../../src/extensions/qcontactstatusflags.h"
 #include "../../../src/extensions/qcontactstatusflags_impl.h"
 
+#include "../../../src/extensions/contactmanagerengine.h"
+
 // qtpim doesn't support the customLabel field natively, but qtcontact-sqlite provides it
 #define CUSTOM_LABEL_STORAGE_SUPPORTED
 

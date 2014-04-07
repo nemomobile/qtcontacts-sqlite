@@ -1,5 +1,4 @@
 include(../../config.pri)
-include(../../aggregate.pri)
 
 TEMPLATE = lib
 TARGET = qtcontacts_sqlite

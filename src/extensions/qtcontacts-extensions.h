@@ -47,6 +47,7 @@ QT_BEGIN_NAMESPACE_CONTACTS
 // In QContactDetail, we support the provenance and modifiable properties
 static const int QContactDetail__FieldProvenance = (QContactDetail::FieldLinkedDetailUris+1);
 static const int QContactDetail__FieldModifiable = (QContactDetail::FieldLinkedDetailUris+2);
+static const int QContactDetail__FieldNonexportable = (QContactDetail::FieldLinkedDetailUris+3);
 
 // In QContactName, we support the customLabel property
 static const int QContactName__FieldCustomLabel = (QContactName::FieldSuffix+1);
@@ -76,6 +77,7 @@ static const QContactDetail::DetailType QContactDetail__TypeStatusFlags = static
 // We support the QContactDeactivated detail type
 static const QContactDetail::DetailType QContactDetail__TypeDeactivated = static_cast<QContactDetail::DetailType>(QContactDetail::TypeVersion + 3);
 
+// Incidental is an internal property of a contact relating to the contact's inception
 static const QContactDetail::DetailType QContactDetail__TypeIncidental = static_cast<QContactDetail::DetailType>(QContactDetail::TypeVersion + 4);
 
 QT_END_NAMESPACE_CONTACTS

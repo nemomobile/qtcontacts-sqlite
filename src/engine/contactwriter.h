@@ -33,6 +33,7 @@
 #define QTCONTACTSSQLITE_CONTACTWRITER
 
 #include "contactsdatabase.h"
+#include "contactnotifier.h"
 #include "contactid_p.h"
 
 #include "../extensions/qtcontacts-extensions.h"
@@ -72,7 +73,7 @@ class ContactWriter
 public:
     typedef QList<QContactDetail::DetailType> DetailList;
 
-    ContactWriter(const ContactsEngine &engine, const QSqlDatabase &database, ContactReader *reader);
+    ContactWriter(const ContactsEngine &engine, const QSqlDatabase &database, bool aggregating, ContactNotifier *notifier, ContactReader *reader);
     ~ContactWriter();
 
     QContactManager::Error save(
@@ -92,20 +93,20 @@ public:
     QContactManager::Error save(
             const QList<QContactRelationship> &relationships,
             QMap<int, QContactManager::Error> *errorMap,
-            bool withinTransaction);
+            bool withinTransaction,
+            bool withinAggregateUpdate);
     QContactManager::Error remove(
             const QList<QContactRelationship> &relationships,
             QMap<int, QContactManager::Error> *errorMap,
             bool withinTransaction);
 
-#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     QContactManager::Error fetchSyncContacts(const QString &syncTarget, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
-                                             QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds);
+                                             QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
+                                             QDateTime *maxTimestamp);
 
     QContactManager::Error updateSyncContacts(const QString &syncTarget,
                                               QtContactsSqliteExtensions::ContactManagerEngine::ConflictResolutionPolicy conflictPolicy,
-                                              const QList<QPair<QContact, QContact> > &remoteChanges);
-#endif
+                                              QList<QPair<QContact, QContact> > *remoteChanges);
 
     bool storeOOB(const QString &scope, const QMap<QString, QVariant> &values);
     bool removeOOB(const QString &scope, const QStringList &keys);
@@ -119,12 +120,11 @@ private:
     QContactManager::Error update(QContact *contact, const DetailList &definitionMask, bool *aggregateUpdated, bool withinTransaction, bool withinAggregateUpdate);
     QContactManager::Error write(quint32 contactId, QContact *contact, const DetailList &definitionMask);
 
-    QContactManager::Error saveRelationships(const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap);
+    QContactManager::Error saveRelationships(const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap, bool withinAggregateUpdate);
     QContactManager::Error removeRelationships(const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap);
 
     QContactManager::Error removeContacts(const QVariantList &ids);
 
-#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
     QContactManager::Error setAggregate(QContact *contact, quint32 contactId, bool update, const DetailList &definitionMask, bool withinTransaction);
     QContactManager::Error calculateDelta(QContact *contact, const ContactWriter::DetailList &definitionMask,
                                           QList<QContactDetail> *addDelta, QList<QContactDetail> *removeDelta, QList<QContact> *writeList);
@@ -136,12 +136,12 @@ private:
     QContactManager::Error recordAffectedSyncTargets(const QVariantList &ids);
 
     QContactManager::Error syncFetch(const QString &syncTarget, const QDateTime &lastSync, const QSet<quint32> &exportedIds,
-                                     QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds);
+                                     QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
+                                     QDateTime *maxTimestamp);
 
     QContactManager::Error syncUpdate(const QString &syncTarget,
                                       QtContactsSqliteExtensions::ContactManagerEngine::ConflictResolutionPolicy conflictPolicy,
-                                      const QList<QPair<QContact, QContact> > &remoteChanges);
-#endif
+                                      QList<QPair<QContact, QContact> > *remoteChanges);
 
     void bindContactDetails(const QContact &contact, QSqlQuery &query, const DetailList &definitionMask = DetailList(), quint32 contactId = 0);
 
@@ -187,7 +187,10 @@ private:
 
     const ContactsEngine &m_engine;
     QSqlDatabase m_database;
-    ProcessMutex *m_databaseMutex;
+    bool m_aggregating;
+    ContactNotifier *m_notifier;
+    ContactReader *m_reader;
+
     QSqlQuery m_findConstituentsForAggregate;
     QSqlQuery m_findLocalForAggregate;
     QSqlQuery m_findAggregateForContact;
@@ -200,8 +203,10 @@ private:
     QSqlQuery m_modifiableDetails;
     QSqlQuery m_selfContactId;
     QSqlQuery m_syncContactIds;
+    QSqlQuery m_exportContactIds;
     QSqlQuery m_aggregateContactIds;
     QSqlQuery m_constituentContactDetails;
+    QSqlQuery m_localConstituentForAggregate;
     QSqlQuery m_heuristicallyMatchData;
     QSqlQuery m_syncTargetConstituentIds;
     QSqlQuery m_affectedSyncTargets;
@@ -258,7 +263,6 @@ private:
     QSqlQuery m_findConstituentsForAggregateIds;
     QSqlQuery m_findAggregateForContactIds;
     QSqlQuery m_selectAggregateContactIds;
-    ContactReader *m_reader;
 
     QSet<QContactId> m_addedIds;
     QSet<QContactId> m_removedIds;

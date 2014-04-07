@@ -77,7 +77,8 @@ static const char *createContactsTable =
         "\n hasOnlineAccount BOOL DEFAULT 0,"
         "\n isOnline BOOL DEFAULT 0,"
         "\n isDeactivated BOOL DEFAULT 0,"
-        "\n isIncidental BOOL DEFAULT 0);";
+        "\n isIncidental BOOL DEFAULT 0,"
+        "\n type INTEGER DEFAULT 0);"; // QContactType::TypeContact
 
 static const char *createAddressesTable =
         "\n CREATE TABLE Addresses ("
@@ -244,7 +245,8 @@ static const char *createDetailsTable =
         "\n contexts TEXT,"
         "\n accessConstraints INTEGER,"
         "\n provenance TEXT,"
-        "\n modifiable BOOL);";
+        "\n modifiable BOOL,"
+        "\n nonexportable BOOL);";
 
 static const char *createDetailsJoinIndex =
         "\n CREATE INDEX DetailsJoinIndex ON Details(detailId, detail);";
@@ -319,7 +321,7 @@ static const char *createRemoveTrigger =
         "\n BEFORE DELETE"
         "\n ON Contacts"
         "\n BEGIN"
-        "\n  INSERT INTO DeletedContacts (contactId, syncTarget, deleted) VALUES (old.contactId, old.syncTarget, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'));"
+        "\n  INSERT INTO DeletedContacts (contactId, syncTarget, deleted) VALUES (old.contactId, old.syncTarget, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));"
         "\n  DELETE FROM Addresses WHERE contactId = old.contactId;"
         "\n  DELETE FROM Anniversaries WHERE contactId = old.contactId;"
         "\n  DELETE FROM Avatars WHERE contactId = old.contactId;"
@@ -344,7 +346,6 @@ static const char *createRemoveTrigger =
         "\n  DELETE FROM Relationships WHERE firstId = old.contactId OR secondId = old.contactId;"
         "\n END;";
 
-#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
 static const char *createLocalSelfContact =
         "\n INSERT INTO Contacts ("
         "\n contactId,"
@@ -413,8 +414,8 @@ static const char *createAggregateSelfContact =
         "\n 0);";
 static const char *createSelfContactRelationship =
         "\n INSERT INTO Relationships (firstId, secondId, type) VALUES (2, 1, 'Aggregates');";
-#else
-static const char *createLocalSelfContact =
+
+static const char *createSelfContact =
         "\n INSERT INTO Contacts ("
         "\n contactId,"
         "\n displayLabel,"
@@ -447,7 +448,6 @@ static const char *createLocalSelfContact =
         "\n '',"
         "\n '',"
         "\n 0);";
-#endif
 
 static const char *createContactsSyncTargetIndex =
         "\n CREATE INDEX ContactsSyncTargetIndex ON Contacts(syncTarget);";
@@ -478,6 +478,9 @@ static const char *createContactsIsOnlineIndex =
 
 static const char *createContactsIsDeactivatedIndex =
         "\n CREATE INDEX ContactsIsDeactivatedIndex ON Contacts(isDeactivated);";
+
+static const char *createContactsTypeIndex =
+        "\n CREATE INDEX ContactsTypeIndex ON Contacts(type);";
 
 static const char *createRelationshipsFirstIdIndex =
         "\n CREATE INDEX RelationshipsFirstIdIndex ON Relationships(firstId);";
@@ -555,11 +558,6 @@ static const char *createStatements[] =
     createDeletedContactsTable,
     createOOBTable,
     createRemoveTrigger,
-    createLocalSelfContact,
-#ifdef QTCONTACTS_SQLITE_PERFORM_AGGREGATION
-    createAggregateSelfContact,
-    createSelfContactRelationship,
-#endif
     createContactsSyncTargetIndex,
     createContactsFirstNameIndex,
     createContactsLastNameIndex,
@@ -578,6 +576,8 @@ static const char *createStatements[] =
     createContactsHasEmailAddressIndex,
     createContactsHasOnlineAccountIndex,
     createContactsIsOnlineIndex,
+    createContactsIsDeactivatedIndex,
+    createContactsTypeIndex,
 };
 
 // Upgrade statement indexed by old version
@@ -615,6 +615,19 @@ static const char *upgradeVersion4[] = {
     "PRAGMA user_version=5",
     0 // NULL-terminated
 };
+static const char *upgradeVersion5[] = {
+    // Create the isDeactivated index, if it was previously missed
+    "CREATE INDEX IF NOT EXISTS ContactsIsDeactivatedIndex ON Contacts(isDeactivated)",
+    "ALTER TABLE Contacts ADD COLUMN type INTEGER DEFAULT 0",
+    createContactsTypeIndex,
+    "PRAGMA user_version=6",
+    0 // NULL-terminated
+};
+static const char *upgradeVersion6[] = {
+    "ALTER TABLE Details ADD COLUMN nonexportable BOOL DEFAULT 0",
+    "PRAGMA user_version=7",
+    0 // NULL-terminated
+};
 
 static const char **upgradeVersions[] = {
     upgradeVersion0,
@@ -622,9 +635,11 @@ static const char **upgradeVersions[] = {
     upgradeVersion2,
     upgradeVersion3,
     upgradeVersion4,
+    upgradeVersion5,
+    upgradeVersion6,
 };
 
-static const int currentSchemaVersion = 5;
+static const int currentSchemaVersion = 7;
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {
@@ -718,6 +733,22 @@ static bool executeUpgradeStatements(QSqlDatabase &database)
     return true;
 }
 
+static bool checkDatabase(QSqlDatabase &database)
+{
+    QSqlQuery query(database);
+    if (query.exec(QLatin1String("PRAGMA integrity_check"))) {
+        while (query.next()) {
+            const QString result(query.value(0).toString());
+            if (result == QLatin1String("ok")) {
+                return true;
+            }
+            qWarning() << "Integrity problem:" << result;
+        }
+    }
+
+    return false;
+}
+
 static bool upgradeDatabase(QSqlDatabase &database)
 {
     if (!beginTransaction(database))
@@ -762,7 +793,34 @@ static bool executeCreationStatements(QSqlDatabase &database)
     return true;
 }
 
-static bool prepareDatabase(QSqlDatabase &database)
+static bool executeSelfContactStatements(QSqlDatabase &database, const bool aggregating)
+{
+    const char *createStatements[] = {
+        createSelfContact,
+        0
+    };
+    const char *aggregatingCreateStatements[] = {
+        createLocalSelfContact,
+        createAggregateSelfContact,
+        createSelfContactRelationship,
+        0
+    };
+
+    const char **statement = (aggregating ? aggregatingCreateStatements : createStatements);
+    for ( ; *statement != 0; ++statement) {
+        QSqlQuery query(database);
+        if (!query.exec(QString::fromLatin1(*statement))) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Database creation failed: %1\n%2")
+                    .arg(query.lastError().text())
+                    .arg(*statement));
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool prepareDatabase(QSqlDatabase &database, const bool aggregating)
 {
     if (!configureDatabase(database))
         return false;
@@ -771,6 +829,9 @@ static bool prepareDatabase(QSqlDatabase &database)
         return false;
 
     bool success = executeCreationStatements(database);
+    if (success) {
+        success = executeSelfContactStatements(database, aggregating);
+    }
 
     return finalizeTransaction(database, success);
 }
@@ -1128,6 +1189,49 @@ static bool createTransientContactIdsTable(QSqlDatabase &db, const QString &tabl
     return true;
 }
 
+static const int initialSemaphoreValues[] = { 1, 1 };
+
+static size_t databaseOwnershipIndex = 0;
+static size_t writeAccessIndex = 1;
+
+// Adapted from the inter-process mutex in QMF
+// The first user creates the semaphore that all subsequent instances
+// attach to.  We rely on undo semantics to release locked semaphores
+// on process failure.
+ContactsDatabase::ProcessMutex::ProcessMutex(const QString &path)
+    : m_semaphore(path.toLatin1(), 2, initialSemaphoreValues)
+    , m_initialProcess(false)
+{
+    // Only the first process to open the database is able to decrement the first semaphore
+    m_initialProcess = m_semaphore.decrement(databaseOwnershipIndex, false);
+}
+
+bool ContactsDatabase::ProcessMutex::lock()
+{
+    return m_semaphore.decrement(writeAccessIndex);
+}
+
+bool ContactsDatabase::ProcessMutex::unlock()
+{
+    return m_semaphore.increment(writeAccessIndex);
+}
+
+bool ContactsDatabase::ProcessMutex::isLocked() const
+{
+    return (m_semaphore.value(writeAccessIndex) == 0);
+}
+
+bool ContactsDatabase::ProcessMutex::isInitialProcess() const
+{
+    return m_initialProcess;
+}
+
+ContactsDatabase::ProcessMutex &ContactsDatabase::processMutex(const QSqlDatabase &database)
+{
+    static ContactsDatabase::ProcessMutex mutex(database.databaseName());
+    return mutex;
+}
+
 // QDir::isReadable() doesn't support group permissions, only user permissions.
 bool directoryIsRW(const QString &dirPath)
 {
@@ -1136,7 +1240,7 @@ bool directoryIsRW(const QString &dirPath)
        || databaseDirInfo.permission(QFile::ReadUser  | QFile::WriteUser));
 }
 
-QSqlDatabase ContactsDatabase::open(const QString &databaseName)
+QSqlDatabase ContactsDatabase::open(const QString &connectionName, bool &nonprivileged, bool secondaryConnection)
 {
     QMutexLocker locker(accessMutex());
 
@@ -1146,32 +1250,44 @@ QSqlDatabase ContactsDatabase::open(const QString &databaseName)
             .arg(QString::fromLatin1(QTCONTACTS_SQLITE_PRIVILEGED_DIR)));
     QString unprivilegedDataDir(QString::fromLatin1(QTCONTACTS_SQLITE_CENTRAL_DATA_DIR));
 
-    // See if we can access the privileged version of the DB
-    QDir databaseDir(privilegedDataDir);
-    if (databaseDir.exists() && directoryIsRW(privilegedDataDir)) {
+    QDir databaseDir;
+    if (!nonprivileged && databaseDir.mkpath(privilegedDataDir + QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR))) {
+        // privileged.
         databaseDir = privilegedDataDir + QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR);
     } else {
+        // not privileged.
+        if (!databaseDir.mkpath(unprivilegedDataDir + QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR))) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to create contacts database directory: %1").arg(unprivilegedDataDir + QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR)));
+            return QSqlDatabase();
+        }
         databaseDir = unprivilegedDataDir + QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR);
-    }
-
-    if (!databaseDir.exists() && !databaseDir.mkpath(QString::fromLatin1("."))) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to create contacts database directory: %1").arg(databaseDir.path()));
-        return QSqlDatabase();
+        if (!nonprivileged) {
+            QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Could not access privileged data directory; using nonprivileged"));
+            nonprivileged = true;
+        }
     }
 
     const QString databaseFile = databaseDir.absoluteFilePath(QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_NAME));
     const bool exists = QFile::exists(databaseFile);
 
-    QSqlDatabase database = QSqlDatabase::addDatabase(QString::fromLatin1("QSQLITE"), databaseName);
+    QSqlDatabase database = QSqlDatabase::addDatabase(QString::fromLatin1("QSQLITE"), connectionName);
     database.setDatabaseName(databaseFile);
 
     if (!database.open()) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to open contacts database: %1")
                 .arg(database.lastError().text()));
         return database;
+    } else if (secondaryConnection) {
+        // The database must already be created/checked/opened by a primary connection
+        if (!configureDatabase(database)) {
+            database.close();
+        }
+        return database;
     }
 
-    if (!exists && !prepareDatabase(database)) {
+    // For now, we aggregate in the privileged DB and not otherwise
+    const bool aggregating = !nonprivileged;
+    if (!exists && !prepareDatabase(database, aggregating)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare contacts database - removing: %1")
                 .arg(database.lastError().text()));
 
@@ -1180,13 +1296,29 @@ QSqlDatabase ContactsDatabase::open(const QString &databaseName)
 
         return database;
     } else {
-        if (!upgradeDatabase(database)) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to upgrade contacts database: %1")
-                    .arg(database.lastError().text()));
-            return database;
+        // Get the process mutex for this database
+        ProcessMutex &processMutex(ContactsDatabase::processMutex(database));
+
+        // Only the first process to concurrently open the DB should try to upgrade it
+        if (processMutex.isInitialProcess()) {
+            // Perform an integrity check
+            if (!checkDatabase(database)) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to check integrity of contacts database: %1")
+                        .arg(database.lastError().text()));
+                database.close();
+                return database;
+            }
+
+            if (!upgradeDatabase(database)) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to upgrade contacts database: %1")
+                        .arg(database.lastError().text()));
+                database.close();
+                return database;
+            }
         }
 
         if (!configureDatabase(database)) {
+            database.close();
             return database;
         }
     }
@@ -1197,17 +1329,51 @@ QSqlDatabase ContactsDatabase::open(const QString &databaseName)
 
 bool ContactsDatabase::beginTransaction(QSqlDatabase &database)
 {
-    return ::beginTransaction(database);
+    ProcessMutex &processMutex(ContactsDatabase::processMutex(database));
+
+    // We use a cross-process mutex to ensure only one process can write
+    // to the DB at once.  Without external locking, SQLite will back off
+    // on write contention, and the backed-off process may never get access
+    // if other processes are performing regular writes.
+    if (processMutex.lock()) {
+        if (::beginTransaction(database))
+            return true;
+
+        processMutex.unlock();
+    }
+
+    return false;
 }
 
 bool ContactsDatabase::commitTransaction(QSqlDatabase &database)
 {
-    return ::commitTransaction(database);
+    ProcessMutex &processMutex(ContactsDatabase::processMutex(database));
+
+    if (::commitTransaction(database)) {
+        if (processMutex.isLocked()) {
+            processMutex.unlock();
+        } else {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Lock error: no lock held on commit"));
+        }
+        return true;
+    }
+
+    return false;
 }
 
 bool ContactsDatabase::rollbackTransaction(QSqlDatabase &database)
 {
-    return ::rollbackTransaction(database);
+    ProcessMutex &processMutex(ContactsDatabase::processMutex(database));
+
+    const bool rv = ::commitTransaction(database);
+
+    if (processMutex.isLocked()) {
+        processMutex.unlock();
+    } else {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Lock error: no lock held on rollback"));
+    }
+
+    return rv;
 }
 
 QSqlQuery ContactsDatabase::prepare(const char *statement, const QSqlDatabase &database)

@@ -62,15 +62,17 @@ public:
     virtual void determineRemoteChanges(const QDateTime &remoteSince, const QString &accountId);
     // step four: store those changes to the local database.
     virtual bool storeRemoteChanges(const QList<QContact> &deletedRemote,
-                                    const QList<QContact> &addModRemote,
+                                    QList<QContact> *addModRemote,
                                     const QString &accountId,
-                                    bool needToApplyDelta = true);
+                                    bool needToApplyDelta = true,
+                                    const QSet<QContactDetail::DetailType> &ignorableDetailTypes = QSet<QContactDetail::DetailType>());
     // step five: determine which contact changes occurred locally.
     virtual bool determineLocalChanges(QDateTime *localSince,
                                        QList<QContact> *locallyAdded,
                                        QList<QContact> *locallyModified,
                                        QList<QContact> *locallyDeleted,
-                                       const QString &accountId);
+                                       const QString &accountId,
+                                       const QSet<QContactDetail::DetailType> &ignorableDetailTypes = QSet<QContactDetail::DetailType>());
     // step six: store those changes to the remote server
     //   this is asynchronous and implementation-specific.
     virtual void upsyncLocalChanges(const QDateTime &localSince,
@@ -89,6 +91,7 @@ public:
     QContactManager &contactManager();
 
 protected:
+    virtual bool testAccountProvenance(const QContact &contact, const QString &accountId);
     virtual void ensureAccountProvenance(QList<QContact> *locallyAdded,
                                          QList<QContact> *locallyModified,
                                          QList<QContact> *locallyDeleted,
@@ -101,10 +104,12 @@ protected:
     QList<QPair<QContact, QContact> > createUpdateList(
                     const QList<QContact> &prevRemote,
                     const QList<QContact> &remoteRemoved,
-                    const QList<QContact> &remoteAddedModified,
+                    QList<QContact> *remoteAddedModified,
                     QList<QContactId> *exportedIds,
                     QList<QContact> *mutatedPrevRemote,
-                    bool needToApplyDelta = true) const;
+                    QList<QPair<int, int> > *additionIndices,
+                    bool needToApplyDelta = true,
+                    const QSet<QContactDetail::DetailType> &ignorableDetailTypes = QSet<QContactDetail::DetailType>()) const;
     QContact applyRemoteDeltaToPrev(const QContact &prev, const QContact &curr) const;
 
 private:
@@ -115,11 +120,11 @@ private:
     int scoreForValuePair(const QVariant &removal, const QVariant &addition) const;
     bool detailPairExactlyMatches(const QContactDetail &a, const QContactDetail &b) const;
     int exactDetailMatchExistsInList(const QContactDetail &det, const QList<QContactDetail> &list) const;
-    void removeIgnorableDetailsFromList(QList<QContactDetail> *dets) const;
-    int exactContactMatchExistsInList(const QContact &c, const QList<QContact> &list) const;
-    void dumpContact(const QContact &c) const; // debugging.
+    void removeIgnorableDetailsFromList(QList<QContactDetail> *dets, const QSet<QContactDetail::DetailType> &ignorableDetailTypes) const;
+    int exactContactMatchExistsInList(const QContact &c, const QList<QContact> &list, const QSet<QContactDetail::DetailType> &ignorableDetailTypes) const;
 
 protected:
+    void dumpContact(const QContact &c) const; // debugging.
     TwoWayContactSyncAdapterPrivate *d;
 };
 }
