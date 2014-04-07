@@ -67,13 +67,13 @@ class Job
 public:
     struct WriterProxy {
         const ContactsEngine &engine;
-        QSqlDatabase &database;
+        ContactsDatabase &database;
         bool aggregating;
         ContactNotifier &notifier;
         ContactReader &reader;
         mutable ContactWriter *writer;
 
-        WriterProxy(const ContactsEngine &e, QSqlDatabase &db, bool a, ContactNotifier &n, ContactReader &r)
+        WriterProxy(const ContactsEngine &e, ContactsDatabase &db, bool a, ContactNotifier &n, ContactReader &r)
             : engine(e), database(db), aggregating(a), notifier(n), reader(r), writer(0)
         {
         }
@@ -718,7 +718,7 @@ private:
 class JobContactReader : public ContactReader
 {
 public:
-    JobContactReader(const QSqlDatabase &database, bool aggregating, JobThread *thread)
+    JobContactReader(ContactsDatabase &database, bool aggregating, JobThread *thread)
         : ContactReader(database, aggregating)
         , m_thread(thread)
     {
@@ -740,8 +740,8 @@ private:
 
 void JobThread::run()
 {
-    QSqlDatabase database = ContactsDatabase::open(QString(QLatin1String("qtcontacts-sqlite-job-%1")).arg(m_databaseUuid), m_nonprivileged, true);
-    if (!database.isOpen()) {
+    ContactsDatabase database;
+    if (!database.open(QString(QLatin1String("qtcontacts-sqlite-job-%1")).arg(m_databaseUuid), m_nonprivileged, true)) {
         while (m_running) {
             if (m_pendingJobs.isEmpty()) {
                 m_wait.wait(&m_mutex);
@@ -790,8 +790,6 @@ void JobThread::run()
             m_finishedWait.wakeOne();
         }
     }
-
-    database.close();
 }
 
 ContactsEngine::ContactsEngine(const QString &name, const QMap<QString, QString> &parameters)
@@ -823,7 +821,6 @@ ContactsEngine::ContactsEngine(const QString &name, const QMap<QString, QString>
 
 ContactsEngine::~ContactsEngine()
 {
-    m_database.close();
     delete m_synchronousWriter;
     delete m_synchronousReader;
     delete m_notifier;
@@ -841,8 +838,7 @@ QString ContactsEngine::databaseUuid()
 
 QContactManager::Error ContactsEngine::open()
 {
-    m_database = ContactsDatabase::open(QString(QLatin1String("qtcontacts-sqlite-%1")).arg(databaseUuid()), m_nonprivileged);
-    if (m_database.isOpen()) {
+    if (m_database.open(QString(QLatin1String("qtcontacts-sqlite-%1")).arg(databaseUuid()), m_nonprivileged)) {
         // Use aggregation only for the privileged database
         if (m_nonprivileged) {
             m_aggregating = false;
@@ -1369,7 +1365,7 @@ void ContactsEngine::_q_relationshipsRemoved(const QVector<quint32> &contactIds)
 ContactReader *ContactsEngine::reader() const
 {
     if (!m_synchronousReader) {
-        m_synchronousReader = new ContactReader(m_database, m_aggregating);
+        m_synchronousReader = new ContactReader(const_cast<ContactsDatabase &>(m_database), m_aggregating);
     }
     return m_synchronousReader;
 }

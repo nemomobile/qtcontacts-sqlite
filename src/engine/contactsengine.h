@@ -36,6 +36,7 @@
 
 #include <QSqlDatabase>
 
+#include "contactsdatabase.h"
 #include "contactnotifier.h"
 #include "contactreader.h"
 #include "contactwriter.h"
@@ -180,7 +181,7 @@ private:
     QString m_databaseUuid;
     const QString m_name;
     QMap<QString, QString> m_parameters;
-    QSqlDatabase m_database;
+    ContactsDatabase m_database;
     mutable ContactReader *m_synchronousReader;
     ContactWriter *m_synchronousWriter;
     ContactNotifier *m_notifier;

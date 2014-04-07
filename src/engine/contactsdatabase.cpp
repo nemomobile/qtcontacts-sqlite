@@ -41,8 +41,6 @@
 
 #include <QtDebug>
 
-Q_GLOBAL_STATIC_WITH_ARGS(QMutex, databaseMutex, (QMutex::Recursive));
-
 static const char *setupEncoding =
         "\n PRAGMA encoding = \"UTF-16\";";
 
@@ -925,8 +923,6 @@ template<typename ValueContainer>
 bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool filter, const QVariantList &boundIds, 
                                     const QString &join, const QString &where, const QString &orderBy, const ValueContainer &boundValues)
 {
-    QMutexLocker locker(ContactsDatabase::accessMutex());
-
     static const QString createStatement(QString::fromLatin1("CREATE TABLE IF NOT EXISTS temp.%1 (contactId INTEGER)"));
     static const QString insertFilterStatement(QString::fromLatin1("INSERT INTO temp.%1 (contactId) SELECT Contacts.contactId FROM Contacts %2 %3"));
 
@@ -1039,8 +1035,6 @@ void dropOrDeleteTable(QSqlDatabase &db, const QString &table)
 
 void clearTemporaryContactIdsTable(QSqlDatabase &db, const QString &table)
 {
-    QMutexLocker locker(ContactsDatabase::accessMutex());
-
     // Drop any transient tables associated with this table
     dropTransientTables(db, table);
 
@@ -1049,8 +1043,6 @@ void clearTemporaryContactIdsTable(QSqlDatabase &db, const QString &table)
 
 bool createTemporaryValuesTable(QSqlDatabase &db, const QString &table, const QVariantList &values)
 {
-    QMutexLocker locker(ContactsDatabase::accessMutex());
-
     static const QString createStatement(QString::fromLatin1("CREATE TABLE IF NOT EXISTS temp.%1 (value BLOB)"));
 
     // Create the temporary table (if we haven't already).
@@ -1116,15 +1108,11 @@ bool createTemporaryValuesTable(QSqlDatabase &db, const QString &table, const QV
 
 void clearTemporaryValuesTable(QSqlDatabase &db, const QString &table)
 {
-    QMutexLocker locker(ContactsDatabase::accessMutex());
-
     dropOrDeleteTable(db, table);
 }
 
 static bool createTransientContactIdsTable(QSqlDatabase &db, const QString &table, const QVariantList &ids, QString *transientTableName)
 {
-    QMutexLocker locker(ContactsDatabase::accessMutex());
-
     static const QString createTableStatement(QString::fromLatin1("CREATE TABLE %1 (contactId INTEGER)"));
     static const QString insertIdsStatement(QString::fromLatin1("INSERT INTO %1 (contactId) VALUES(:contactId)"));
 
@@ -1226,10 +1214,28 @@ bool ContactsDatabase::ProcessMutex::isInitialProcess() const
     return m_initialProcess;
 }
 
-ContactsDatabase::ProcessMutex &ContactsDatabase::processMutex(const QSqlDatabase &database)
+ContactsDatabase::ContactsDatabase()
+    : m_mutex(QMutex::Recursive)
 {
-    static ContactsDatabase::ProcessMutex mutex(database.databaseName());
-    return mutex;
+}
+
+ContactsDatabase::~ContactsDatabase()
+{
+    m_database.close();
+}
+
+QMutex *ContactsDatabase::accessMutex() const
+{
+    return const_cast<QMutex *>(&m_mutex);
+}
+
+ContactsDatabase::ProcessMutex *ContactsDatabase::processMutex() const
+{
+    if (!m_processMutex) {
+        Q_ASSERT(m_database.isOpen());
+        m_processMutex.reset(new ProcessMutex(m_database.databaseName()));
+    }
+    return m_processMutex.data();
 }
 
 // QDir::isReadable() doesn't support group permissions, only user permissions.
@@ -1240,9 +1246,14 @@ bool directoryIsRW(const QString &dirPath)
        || databaseDirInfo.permission(QFile::ReadUser  | QFile::WriteUser));
 }
 
-QSqlDatabase ContactsDatabase::open(const QString &connectionName, bool &nonprivileged, bool secondaryConnection)
+bool ContactsDatabase::open(const QString &connectionName, bool &nonprivileged, bool secondaryConnection)
 {
     QMutexLocker locker(accessMutex());
+
+    if (m_database.isOpen()) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to open database when already open: %1").arg(connectionName));
+        return false;
+    }
 
     // horrible hack: Qt4 didn't have GenericDataLocation so we hardcode DATA_DIR location.
     QString privilegedDataDir(QString("%1/%2/")
@@ -1258,7 +1269,7 @@ QSqlDatabase ContactsDatabase::open(const QString &connectionName, bool &nonpriv
         // not privileged.
         if (!databaseDir.mkpath(unprivilegedDataDir + QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR))) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to create contacts database directory: %1").arg(unprivilegedDataDir + QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR)));
-            return QSqlDatabase();
+            return false;
         }
         databaseDir = unprivilegedDataDir + QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR);
         if (!nonprivileged) {
@@ -1270,88 +1281,107 @@ QSqlDatabase ContactsDatabase::open(const QString &connectionName, bool &nonpriv
     const QString databaseFile = databaseDir.absoluteFilePath(QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_NAME));
     const bool exists = QFile::exists(databaseFile);
 
-    QSqlDatabase database = QSqlDatabase::addDatabase(QString::fromLatin1("QSQLITE"), connectionName);
-    database.setDatabaseName(databaseFile);
+    m_database = QSqlDatabase::addDatabase(QString::fromLatin1("QSQLITE"), connectionName);
+    m_database.setDatabaseName(databaseFile);
 
-    if (!database.open()) {
+    if (!m_database.open()) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to open contacts database: %1")
-                .arg(database.lastError().text()));
-        return database;
+                .arg(m_database.lastError().text()));
+        return false;
     } else if (secondaryConnection) {
         // The database must already be created/checked/opened by a primary connection
-        if (!configureDatabase(database)) {
-            database.close();
+        if (!configureDatabase(m_database)) {
+            m_database.close();
+            return false;
         }
-        return database;
+        return true;
     }
 
     // For now, we aggregate in the privileged DB and not otherwise
     const bool aggregating = !nonprivileged;
-    if (!exists && !prepareDatabase(database, aggregating)) {
+    if (!exists && !prepareDatabase(m_database, aggregating)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare contacts database - removing: %1")
-                .arg(database.lastError().text()));
+                .arg(m_database.lastError().text()));
 
-        database.close();
+        m_database.close();
         QFile::remove(databaseFile);
-
-        return database;
+        return false;
     } else {
         // Get the process mutex for this database
-        ProcessMutex &processMutex(ContactsDatabase::processMutex(database));
+        ProcessMutex *mutex(processMutex());
 
-        // Only the first process to concurrently open the DB should try to upgrade it
-        if (processMutex.isInitialProcess()) {
-            // Perform an integrity check
-            if (!checkDatabase(database)) {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to check integrity of contacts database: %1")
-                        .arg(database.lastError().text()));
-                database.close();
-                return database;
+        if (mutex->lock()) {
+            // Only the first process to concurrently open the DB should try to upgrade it
+            if (mutex->isInitialProcess()) {
+                // Perform an integrity check
+                if (!checkDatabase(m_database)) {
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to check integrity of contacts database: %1")
+                            .arg(m_database.lastError().text()));
+                    m_database.close();
+                    return false;
+                }
+
+                if (!upgradeDatabase(m_database)) {
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to upgrade contacts database: %1")
+                            .arg(m_database.lastError().text()));
+                    m_database.close();
+                    return false;
+                }
             }
 
-            if (!upgradeDatabase(database)) {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to upgrade contacts database: %1")
-                        .arg(database.lastError().text()));
-                database.close();
-                return database;
-            }
+            mutex->unlock();
         }
 
-        if (!configureDatabase(database)) {
-            database.close();
-            return database;
+        if (!configureDatabase(m_database)) {
+            m_database.close();
+            return false;
         }
     }
 
     QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Opened contacts database: %1").arg(databaseFile));
-    return database;
+    return true;
 }
 
-bool ContactsDatabase::beginTransaction(QSqlDatabase &database)
+ContactsDatabase::operator QSqlDatabase &()
 {
-    ProcessMutex &processMutex(ContactsDatabase::processMutex(database));
+    return m_database;
+}
+
+ContactsDatabase::operator QSqlDatabase const &() const
+{
+    return m_database;
+}
+
+QSqlError ContactsDatabase::lastError() const
+{
+    return m_database.lastError();
+}
+
+bool ContactsDatabase::beginTransaction()
+{
+    ProcessMutex *mutex(processMutex());
 
     // We use a cross-process mutex to ensure only one process can write
     // to the DB at once.  Without external locking, SQLite will back off
     // on write contention, and the backed-off process may never get access
     // if other processes are performing regular writes.
-    if (processMutex.lock()) {
-        if (::beginTransaction(database))
+    if (mutex->lock()) {
+        if (::beginTransaction(m_database))
             return true;
 
-        processMutex.unlock();
+        mutex->unlock();
     }
 
     return false;
 }
 
-bool ContactsDatabase::commitTransaction(QSqlDatabase &database)
+bool ContactsDatabase::commitTransaction()
 {
-    ProcessMutex &processMutex(ContactsDatabase::processMutex(database));
+    ProcessMutex *mutex(processMutex());
 
-    if (::commitTransaction(database)) {
-        if (processMutex.isLocked()) {
-            processMutex.unlock();
+    if (::commitTransaction(m_database)) {
+        if (mutex->isLocked()) {
+            mutex->unlock();
         } else {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Lock error: no lock held on commit"));
         }
@@ -1361,14 +1391,14 @@ bool ContactsDatabase::commitTransaction(QSqlDatabase &database)
     return false;
 }
 
-bool ContactsDatabase::rollbackTransaction(QSqlDatabase &database)
+bool ContactsDatabase::rollbackTransaction()
 {
-    ProcessMutex &processMutex(ContactsDatabase::processMutex(database));
+    ProcessMutex *mutex(processMutex());
 
-    const bool rv = ::commitTransaction(database);
+    const bool rv = ::commitTransaction(m_database);
 
-    if (processMutex.isLocked()) {
-        processMutex.unlock();
+    if (mutex->isLocked()) {
+        mutex->unlock();
     } else {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Lock error: no lock held on rollback"));
     }
@@ -1376,9 +1406,9 @@ bool ContactsDatabase::rollbackTransaction(QSqlDatabase &database)
     return rv;
 }
 
-QSqlQuery ContactsDatabase::prepare(const char *statement, const QSqlDatabase &database)
+QSqlQuery ContactsDatabase::prepare(const char *statement)
 {
-    QSqlQuery query(database);
+    QSqlQuery query(m_database);
     query.setForwardOnly(true);
     if (!query.prepare(statement)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query: %1\n%2")
@@ -1450,49 +1480,52 @@ QString ContactsDatabase::expandQuery(const QSqlQuery &query)
     return expandQuery(query.lastQuery(), query.boundValues());
 }
 
-bool ContactsDatabase::createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, const QVariantList &boundIds)
+bool ContactsDatabase::createTemporaryContactIdsTable(const QString &table, const QVariantList &boundIds)
 {
-    return ::createTemporaryContactIdsTable(db, table, false, boundIds, QString(), QString(), QString(), QVariantList());
+    QMutexLocker locker(accessMutex());
+    return ::createTemporaryContactIdsTable(m_database, table, false, boundIds, QString(), QString(), QString(), QVariantList());
 }
 
-bool ContactsDatabase::createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, const QString &join, const QString &where, const QString &orderBy, const QVariantList &boundValues)
+bool ContactsDatabase::createTemporaryContactIdsTable(const QString &table, const QString &join, const QString &where, const QString &orderBy, const QVariantList &boundValues)
 {
-    return ::createTemporaryContactIdsTable(db, table, true, QVariantList(), join, where, orderBy, boundValues);
+    QMutexLocker locker(accessMutex());
+    return ::createTemporaryContactIdsTable(m_database, table, true, QVariantList(), join, where, orderBy, boundValues);
 }
 
-bool ContactsDatabase::createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, const QString &join, const QString &where, const QString &orderBy, const QMap<QString, QVariant> &boundValues)
+bool ContactsDatabase::createTemporaryContactIdsTable(const QString &table, const QString &join, const QString &where, const QString &orderBy, const QMap<QString, QVariant> &boundValues)
 {
-    return ::createTemporaryContactIdsTable(db, table, true, QVariantList(), join, where, orderBy, boundValues);
+    QMutexLocker locker(accessMutex());
+    return ::createTemporaryContactIdsTable(m_database, table, true, QVariantList(), join, where, orderBy, boundValues);
 }
 
-void ContactsDatabase::clearTemporaryContactIdsTable(QSqlDatabase &db, const QString &table)
+void ContactsDatabase::clearTemporaryContactIdsTable(const QString &table)
 {
-    ::clearTemporaryContactIdsTable(db, table);
+    QMutexLocker locker(accessMutex());
+    ::clearTemporaryContactIdsTable(m_database, table);
 }
 
-bool ContactsDatabase::createTemporaryValuesTable(QSqlDatabase &db, const QString &table, const QVariantList &values)
+bool ContactsDatabase::createTemporaryValuesTable(const QString &table, const QVariantList &values)
 {
-    return ::createTemporaryValuesTable(db, table, values);
+    QMutexLocker locker(accessMutex());
+    return ::createTemporaryValuesTable(m_database, table, values);
 }
 
-void ContactsDatabase::clearTemporaryValuesTable(QSqlDatabase &db, const QString &table)
+void ContactsDatabase::clearTemporaryValuesTable(const QString &table)
 {
-    ::clearTemporaryValuesTable(db, table);
+    QMutexLocker locker(accessMutex());
+    ::clearTemporaryValuesTable(m_database, table);
 }
 
-bool ContactsDatabase::createTransientContactIdsTable(QSqlDatabase &db, const QString &table, const QVariantList &ids, QString *transientTableName)
+bool ContactsDatabase::createTransientContactIdsTable(const QString &table, const QVariantList &ids, QString *transientTableName)
 {
-    return ::createTransientContactIdsTable(db, table, ids, transientTableName);
+    QMutexLocker locker(accessMutex());
+    return ::createTransientContactIdsTable(m_database, table, ids, transientTableName);
 }
 
-void ContactsDatabase::clearTransientContactIdsTable(QSqlDatabase &db, const QString &table)
+void ContactsDatabase::clearTransientContactIdsTable(const QString &table)
 {
-    ::dropTransientTables(db, table);
-}
-
-QMutex *ContactsDatabase::accessMutex()
-{
-    return databaseMutex();
+    QMutexLocker locker(accessMutex());
+    ::dropTransientTables(m_database, table);
 }
 
 #include "../extensions/qcontactdeactivated_impl.h"

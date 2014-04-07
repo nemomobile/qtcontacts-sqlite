@@ -35,6 +35,7 @@
 #include "semaphore_p.h"
 
 #include <QMutex>
+#include <QScopedPointer>
 #include <QSqlDatabase>
 #include <QVariantList>
 
@@ -61,33 +62,45 @@ public:
         bool isInitialProcess() const;
     };
 
-    static ProcessMutex &processMutex(const QSqlDatabase &database);
+    ContactsDatabase();
+    ~ContactsDatabase();
 
-    static QSqlDatabase open(const QString &databaseName, bool &nonprivileged, bool secondaryConnection = false);
-    static QSqlQuery prepare(const char *statement, const QSqlDatabase &database);
+    QMutex *accessMutex() const;
+    ProcessMutex *processMutex() const;
 
-    static bool beginTransaction(QSqlDatabase &database);
-    static bool commitTransaction(QSqlDatabase &database);
-    static bool rollbackTransaction(QSqlDatabase &database);
+    bool open(const QString &databaseName, bool &nonprivileged, bool secondaryConnection = false);
+    QSqlQuery prepare(const char *statement);
 
-    static bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, const QVariantList &boundIds);
-    static bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, const QString &join, const QString &where, const QString &orderBy, const QVariantList &boundValues);
-    static bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, const QString &join, const QString &where, const QString &orderBy, const QMap<QString, QVariant> &boundValues);
+    operator QSqlDatabase &();
+    operator QSqlDatabase const &() const;
 
-    static void clearTemporaryContactIdsTable(QSqlDatabase &db, const QString &table);
+    QSqlError lastError() const;
 
-    static bool createTemporaryValuesTable(QSqlDatabase &db, const QString &table, const QVariantList &values);
-    static void clearTemporaryValuesTable(QSqlDatabase &db, const QString &table);
+    bool beginTransaction();
+    bool commitTransaction();
+    bool rollbackTransaction();
 
-    static bool createTransientContactIdsTable(QSqlDatabase &db, const QString &table, const QVariantList &ids, QString *transientTableName);
+    bool createTemporaryContactIdsTable(const QString &table, const QVariantList &boundIds);
+    bool createTemporaryContactIdsTable(const QString &table, const QString &join, const QString &where, const QString &orderBy, const QVariantList &boundValues);
+    bool createTemporaryContactIdsTable(const QString &table, const QString &join, const QString &where, const QString &orderBy, const QMap<QString, QVariant> &boundValues);
 
-    static void clearTransientContactIdsTable(QSqlDatabase &db, const QString &table);
+    void clearTemporaryContactIdsTable(const QString &table);
+
+    bool createTemporaryValuesTable(const QString &table, const QVariantList &values);
+    void clearTemporaryValuesTable(const QString &table);
+
+    bool createTransientContactIdsTable(const QString &table, const QVariantList &ids, QString *transientTableName);
+
+    void clearTransientContactIdsTable(const QString &table);
 
     static QString expandQuery(const QString &queryString, const QVariantList &bindings);
     static QString expandQuery(const QString &queryString, const QMap<QString, QVariant> &bindings);
     static QString expandQuery(const QSqlQuery &query);
 
-    static QMutex *accessMutex();
+private:
+    QSqlDatabase m_database;
+    QMutex m_mutex;
+    mutable QScopedPointer<ProcessMutex> m_processMutex;
 };
 
 #endif

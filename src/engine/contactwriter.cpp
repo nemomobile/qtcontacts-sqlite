@@ -674,12 +674,12 @@ static const char *insertIdentity =
         "\n  :contactId);";
 
 
-static QSqlQuery prepare(const char *statement, const QSqlDatabase &database)
+static QSqlQuery prepare(const char *statement, ContactsDatabase &database)
 {
-    return ContactsDatabase::prepare(statement, database);
+    return database.prepare(statement);
 }
 
-ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &database, bool aggregating, ContactNotifier *notifier, ContactReader *reader)
+ContactWriter::ContactWriter(const ContactsEngine &engine, ContactsDatabase &database, bool aggregating, ContactNotifier *notifier, ContactReader *reader)
     : m_engine(engine)
     , m_database(database)
     , m_aggregating(aggregating)
@@ -752,7 +752,7 @@ ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &d
     Q_ASSERT(reader);
 
     // These queries need the 'temp.aggregationIds' to exist to prepare
-    if (ContactsDatabase::createTemporaryContactIdsTable(m_database, aggregationIdsTable, QVariantList())) {
+    if (m_database.createTemporaryContactIdsTable(aggregationIdsTable, QVariantList())) {
         m_findConstituentsForAggregateIds = prepare(findConstituentsForAggregateIds, database);
         m_findAggregateForContactIds = prepare(findAggregateForContactIds, database);
         m_selectAggregateContactIds = prepare(selectAggregateContactIds, database);
@@ -761,7 +761,7 @@ ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &d
     }
 
     // These queries needs the 'temp.syncConstituents' to exist to prepare
-    if (ContactsDatabase::createTemporaryContactIdsTable(m_database, syncConstituentsTable, QVariantList())) {
+    if (m_database.createTemporaryContactIdsTable(syncConstituentsTable, QVariantList())) {
         m_aggregateContactIds = prepare(aggregateContactIds, database);
         m_syncTargetConstituentIds = prepare(syncTargetConstituentIds, database);
         m_affectedSyncTargets = prepare(affectedSyncTargets, database);
@@ -770,7 +770,7 @@ ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &d
     }
 
     // These queries need the 'temp.syncAggregates' table to exist to prepare
-    if (ContactsDatabase::createTemporaryContactIdsTable(m_database, syncAggregatesTable, QVariantList())) {
+    if (m_database.createTemporaryContactIdsTable(syncAggregatesTable, QVariantList())) {
         m_constituentContactDetails = prepare(constituentContactDetails, database);
         m_localConstituentForAggregate = prepare(localConstituentForAggregate, database);
     } else {
@@ -778,17 +778,17 @@ ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &d
     }
 
     // This query needs the 'temp.modifiableContacts' to exist to prepare
-    if (ContactsDatabase::createTemporaryContactIdsTable(m_database, modifiableContactsTable, QVariantList())) {
+    if (m_database.createTemporaryContactIdsTable(modifiableContactsTable, QVariantList())) {
         m_modifiableDetails = prepare(modifiableDetails, database);
     } else {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary %1 table").arg(modifiableContactsTable));
     }
 
     // This query needs the temporary aggregation tables to exist
-    if (ContactsDatabase::createTemporaryContactIdsTable(m_database, possibleAggregatesTable, QVariantList())) {
-        if (ContactsDatabase::createTemporaryValuesTable(m_database, matchEmailAddressesTable, QVariantList()) &&
-            ContactsDatabase::createTemporaryValuesTable(m_database, matchPhoneNumbersTable, QVariantList()) &&
-            ContactsDatabase::createTemporaryValuesTable(m_database, matchOnlineAccountsTable, QVariantList())) {
+    if (m_database.createTemporaryContactIdsTable(possibleAggregatesTable, QVariantList())) {
+        if (m_database.createTemporaryValuesTable(matchEmailAddressesTable, QVariantList()) &&
+            m_database.createTemporaryValuesTable(matchPhoneNumbersTable, QVariantList()) &&
+            m_database.createTemporaryValuesTable(matchOnlineAccountsTable, QVariantList())) {
             m_heuristicallyMatchData = prepare(heuristicallyMatchData, database);
         } else {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary match tables"));
@@ -804,7 +804,7 @@ ContactWriter::~ContactWriter()
 
 bool ContactWriter::beginTransaction()
 {
-    return ContactsDatabase::beginTransaction(m_database);
+    return m_database.beginTransaction();
 }
 
 bool ContactWriter::commitTransaction()
@@ -825,7 +825,7 @@ bool ContactWriter::commitTransaction()
     m_suppressedSyncTargets.clear();
     m_changedLocalIds.clear();
 
-    if (!ContactsDatabase::commitTransaction(m_database)) {
+    if (!m_database.commitTransaction()) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Commit error: %1").arg(m_database.lastError().text()));
         rollbackTransaction();
         return false;
@@ -856,7 +856,7 @@ bool ContactWriter::commitTransaction()
 
 void ContactWriter::rollbackTransaction()
 {
-    ContactsDatabase::rollbackTransaction(m_database);
+    m_database.rollbackTransaction();
 
     m_removedIds.clear();
     m_suppressedSyncTargets.clear();
@@ -870,7 +870,7 @@ void ContactWriter::rollbackTransaction()
 QContactManager::Error ContactWriter::setIdentity(
         ContactsDatabase::Identity identity, QContactId contactId)
 {
-    QMutexLocker locker(ContactsDatabase::accessMutex());
+    QMutexLocker locker(m_database.accessMutex());
 
     QSqlQuery *query = 0;
 
@@ -966,7 +966,7 @@ static QContactManager::Error bindRelationships(
 QContactManager::Error ContactWriter::save(
         const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap, bool withinTransaction, bool withinAggregateUpdate)
 {
-    QMutexLocker locker(ContactsDatabase::accessMutex());
+    QMutexLocker locker(m_database.accessMutex());
 
     if (relationships.isEmpty())
         return QContactManager::NoError;
@@ -1135,7 +1135,7 @@ QContactManager::Error ContactWriter::saveRelationships(
 QContactManager::Error ContactWriter::remove(
         const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap, bool withinTransaction)
 {
-    QMutexLocker locker(ContactsDatabase::accessMutex());
+    QMutexLocker locker(m_database.accessMutex());
 
     if (relationships.isEmpty())
         return QContactManager::NoError;
@@ -1291,7 +1291,7 @@ QContactManager::Error ContactWriter::removeContacts(const QVariantList &ids)
 
 QContactManager::Error ContactWriter::remove(const QList<QContactId> &contactIds, QMap<int, QContactManager::Error> *errorMap, bool withinTransaction)
 {
-    QMutexLocker locker(ContactsDatabase::accessMutex());
+    QMutexLocker locker(m_database.accessMutex());
 
     if (contactIds.isEmpty())
         return QContactManager::NoError;
@@ -1381,9 +1381,9 @@ QContactManager::Error ContactWriter::remove(const QList<QContactId> &contactIds
     QList<quint32> aggregatesOfRemoved;
     QList<quint32> aggregatesToRemove;
 
-    ContactsDatabase::clearTemporaryContactIdsTable(m_database, aggregationIdsTable);
+    m_database.clearTemporaryContactIdsTable(aggregationIdsTable);
 
-    if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, aggregationIdsTable, boundRealRemoveIds)) {
+    if (!m_database.createTemporaryContactIdsTable(aggregationIdsTable, boundRealRemoveIds)) {
         return QContactManager::UnspecifiedError;
     } else {
         // Use the temporary table for both queries
@@ -1441,9 +1441,9 @@ QContactManager::Error ContactWriter::remove(const QList<QContactId> &contactIds
 
     // remove the aggregate contacts - and any contacts they aggregate
     if (boundAggregatesToRemove.size() > 0) {
-        ContactsDatabase::clearTemporaryContactIdsTable(m_database, aggregationIdsTable);
+        m_database.clearTemporaryContactIdsTable(aggregationIdsTable);
 
-        if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, aggregationIdsTable, boundAggregatesToRemove)) {
+        if (!m_database.createTemporaryContactIdsTable(aggregationIdsTable, boundAggregatesToRemove)) {
             if (!withinTransaction) {
                 // only rollback the transaction if we created it
                 rollbackTransaction();
@@ -1805,7 +1805,7 @@ QContactManager::Error ContactWriter::fetchSyncContacts(const QString &syncTarge
                                                         QDateTime *maxTimestamp)
 {
     // Although this is a read operation, it's probably best to make it a transaction
-    QMutexLocker locker(ContactsDatabase::accessMutex());
+    QMutexLocker locker(m_database.accessMutex());
 
     // Exported IDs are those that the sync adaptor has previously exported, that originate locally
     QSet<quint32> exportedDbIds;
@@ -1836,7 +1836,7 @@ QContactManager::Error ContactWriter::updateSyncContacts(const QString &syncTarg
                                                          QtContactsSqliteExtensions::ContactManagerEngine::ConflictResolutionPolicy conflictPolicy,
                                                          QList<QPair<QContact, QContact> > *remoteChanges)
 {
-    QMutexLocker locker(ContactsDatabase::accessMutex());
+    QMutexLocker locker(m_database.accessMutex());
 
     if (conflictPolicy != QtContactsSqliteExtensions::ContactManagerEngine::PreserveLocalChanges) {
         // We only support one policy for now
@@ -1869,7 +1869,7 @@ QContactManager::Error ContactWriter::updateSyncContacts(const QString &syncTarg
 
 bool ContactWriter::storeOOB(const QString &scope, const QMap<QString, QVariant> &values)
 {
-    QMutexLocker locker(ContactsDatabase::accessMutex());
+    QMutexLocker locker(m_database.accessMutex());
 
     if (values.isEmpty())
         return true;
@@ -1921,7 +1921,7 @@ bool ContactWriter::storeOOB(const QString &scope, const QMap<QString, QVariant>
 
 bool ContactWriter::removeOOB(const QString &scope, const QStringList &keys)
 {
-    QMutexLocker locker(ContactsDatabase::accessMutex());
+    QMutexLocker locker(m_database.accessMutex());
 
     if (!beginTransaction()) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to begin database transaction while removing OOB"));
@@ -2153,7 +2153,7 @@ QContactManager::Error ContactWriter::save(
             bool withinAggregateUpdate,
             bool withinSyncUpdate)
 {
-    QMutexLocker locker(ContactsDatabase::accessMutex());
+    QMutexLocker locker(m_database.accessMutex());
 
     if (contacts->isEmpty())
         return QContactManager::NoError;
@@ -2981,9 +2981,9 @@ QContactManager::Error ContactWriter::calculateDelta(QContact *contact, const Co
             ids.append(id);
         }
 
-        ContactsDatabase::clearTemporaryContactIdsTable(m_database, modifiableContactsTable);
+        m_database.clearTemporaryContactIdsTable(modifiableContactsTable);
 
-        if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, modifiableContactsTable, ids)) {
+        if (!m_database.createTemporaryContactIdsTable(modifiableContactsTable, ids)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error populating temporary table %1").arg(modifiableContactsTable));
             return QContactManager::UnspecifiedError;
         }
@@ -3159,7 +3159,7 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
         // or accumulating points for name matches (including partial matches of first name).
 
         // step one: build the temporary table which contains all "possible" aggregate contact ids.
-        ContactsDatabase::clearTemporaryContactIdsTable(m_database, possibleAggregatesTable);
+        m_database.clearTemporaryContactIdsTable(possibleAggregatesTable);
 
         QString orderBy = QLatin1String("contactId ASC ");
         QString where = QLatin1String(possibleAggregatesWhere);
@@ -3167,7 +3167,7 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
         bindings.insert(":lastName", lastName);
         bindings.insert(":contactId", ContactId::databaseId(*contact));
         bindings.insert(":excludeGender", excludeGender);
-        if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, possibleAggregatesTable,
+        if (!m_database.createTemporaryContactIdsTable(possibleAggregatesTable,
                                                               QString(), where, orderBy, bindings)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error creating possibleAggregates temporary table"));
             return QContactManager::UnspecifiedError;
@@ -3178,13 +3178,13 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
         m_heuristicallyMatchData.bindValue(":lastName", lastName);
         m_heuristicallyMatchData.bindValue(":nickname", nickname);
 
-        ContactsDatabase::clearTemporaryValuesTable(m_database, matchEmailAddressesTable);
-        ContactsDatabase::clearTemporaryValuesTable(m_database, matchPhoneNumbersTable);
-        ContactsDatabase::clearTemporaryValuesTable(m_database, matchOnlineAccountsTable);
+        m_database.clearTemporaryValuesTable(matchEmailAddressesTable);
+        m_database.clearTemporaryValuesTable(matchPhoneNumbersTable);
+        m_database.clearTemporaryValuesTable(matchOnlineAccountsTable);
 
-        if (!ContactsDatabase::createTemporaryValuesTable(m_database, matchEmailAddressesTable, emailAddresses) ||
-            !ContactsDatabase::createTemporaryValuesTable(m_database, matchPhoneNumbersTable, phoneNumbers) ||
-            !ContactsDatabase::createTemporaryValuesTable(m_database, matchOnlineAccountsTable, accountUris)) {
+        if (!m_database.createTemporaryValuesTable(matchEmailAddressesTable, emailAddresses) ||
+            !m_database.createTemporaryValuesTable(matchPhoneNumbersTable, phoneNumbers) ||
+            !m_database.createTemporaryValuesTable(matchOnlineAccountsTable, accountUris)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error creating possibleAggregates match tables"));
             return QContactManager::UnspecifiedError;
         }
@@ -3496,9 +3496,9 @@ QContactManager::Error ContactWriter::aggregateOrphanedContacts(bool withinTrans
 
 QContactManager::Error ContactWriter::recordAffectedSyncTargets(const QVariantList &ids)
 {
-    ContactsDatabase::clearTemporaryContactIdsTable(m_database, syncConstituentsTable);
+    m_database.clearTemporaryContactIdsTable(syncConstituentsTable);
 
-    if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, syncConstituentsTable, ids)) {
+    if (!m_database.createTemporaryContactIdsTable(syncConstituentsTable, ids)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error populating syncConstituents temporary table"));
     } else if (!m_affectedSyncTargets.exec()) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to fetch affected sync targets:\n%1")
@@ -3618,9 +3618,9 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
                         ids.append(id);
                     }
 
-                    ContactsDatabase::clearTemporaryContactIdsTable(m_database, syncConstituentsTable);
+                    m_database.clearTemporaryContactIdsTable(syncConstituentsTable);
 
-                    if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, syncConstituentsTable, ids)) {
+                    if (!m_database.createTemporaryContactIdsTable(syncConstituentsTable, ids)) {
                         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error populating syncConstituents temporary table"));
                         return QContactManager::UnspecifiedError;
                     }
@@ -3672,9 +3672,9 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
                     ids.append(id);
                 }
 
-                ContactsDatabase::clearTemporaryContactIdsTable(m_database, syncAggregatesTable);
+                m_database.clearTemporaryContactIdsTable(syncAggregatesTable);
 
-                if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, syncAggregatesTable, ids)) {
+                if (!m_database.createTemporaryContactIdsTable(syncAggregatesTable, ids)) {
                     QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error populating syncAggregates temporary table"));
                     return QContactManager::UnspecifiedError;
                 }
@@ -4047,9 +4047,9 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
             }
 
             // If these changes are for aggregate IDs - we need to find the local constituents to modify instead
-            ContactsDatabase::clearTemporaryContactIdsTable(m_database, syncAggregatesTable);
+            m_database.clearTemporaryContactIdsTable(syncAggregatesTable);
 
-            if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, syncAggregatesTable, ids)) {
+            if (!m_database.createTemporaryContactIdsTable(syncAggregatesTable, ids)) {
                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error populating syncAggregates temporary table"));
                 return QContactManager::UnspecifiedError;
             }
@@ -4118,9 +4118,9 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
             ids.append(id);
         }
 
-        ContactsDatabase::clearTemporaryContactIdsTable(m_database, syncConstituentsTable);
+        m_database.clearTemporaryContactIdsTable(syncConstituentsTable);
 
-        if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, syncConstituentsTable, ids)) {
+        if (!m_database.createTemporaryContactIdsTable(syncConstituentsTable, ids)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error populating syncConstituents temporary table"));
             return QContactManager::UnspecifiedError;
         }
@@ -4155,9 +4155,9 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
                 ids.append(id);
             }
 
-            ContactsDatabase::clearTemporaryContactIdsTable(m_database, aggregationIdsTable);
+            m_database.clearTemporaryContactIdsTable(aggregationIdsTable);
 
-            if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, aggregationIdsTable, ids)) {
+            if (!m_database.createTemporaryContactIdsTable(aggregationIdsTable, ids)) {
                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error populating aggregation IDs temporary table"));
                 return QContactManager::UnspecifiedError;
             }
@@ -4186,9 +4186,9 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
                 ids.append(id);
             }
 
-            ContactsDatabase::clearTemporaryContactIdsTable(m_database, syncConstituentsTable);
+            m_database.clearTemporaryContactIdsTable(syncConstituentsTable);
 
-            if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, syncConstituentsTable, ids)) {
+            if (!m_database.createTemporaryContactIdsTable(syncConstituentsTable, ids)) {
                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error populating syncConstituents temporary table"));
                 return QContactManager::UnspecifiedError;
             }
@@ -4503,8 +4503,8 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
                     addedIds.append(ContactId::databaseId(additionId));
                 }
 
-                ContactsDatabase::clearTemporaryContactIdsTable(m_database, aggregationIdsTable);
-                if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, aggregationIdsTable, addedIds)) {
+                m_database.clearTemporaryContactIdsTable(aggregationIdsTable);
+                if (!m_database.createTemporaryContactIdsTable(aggregationIdsTable, addedIds)) {
                     return QContactManager::UnspecifiedError;
                 } else {
                     if (!m_findAggregateForContactIds.exec()) {
@@ -4544,8 +4544,8 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
             QList<quint32> aggregatesOfRemoved;
 
             // determine which aggregates will need regeneration after removing the synctarget constituents.
-            ContactsDatabase::clearTemporaryContactIdsTable(m_database, aggregationIdsTable);
-            if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, aggregationIdsTable, removeIds)) {
+            m_database.clearTemporaryContactIdsTable(aggregationIdsTable);
+            if (!m_database.createTemporaryContactIdsTable(aggregationIdsTable, removeIds)) {
                 return QContactManager::UnspecifiedError;
             } else {
                 if (!m_findAggregateForContactIds.exec()) {
