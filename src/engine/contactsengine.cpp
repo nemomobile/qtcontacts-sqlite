@@ -68,20 +68,19 @@ public:
     struct WriterProxy {
         const ContactsEngine &engine;
         ContactsDatabase &database;
-        bool aggregating;
         ContactNotifier &notifier;
         ContactReader &reader;
         mutable ContactWriter *writer;
 
-        WriterProxy(const ContactsEngine &e, ContactsDatabase &db, bool a, ContactNotifier &n, ContactReader &r)
-            : engine(e), database(db), aggregating(a), notifier(n), reader(r), writer(0)
+        WriterProxy(const ContactsEngine &e, ContactsDatabase &db, ContactNotifier &n, ContactReader &r)
+            : engine(e), database(db), notifier(n), reader(r), writer(0)
         {
         }
 
         ContactWriter *operator->() const
         {
             if (!writer) {
-                writer = new ContactWriter(engine, database, aggregating, &notifier, &reader);
+                writer = new ContactWriter(engine, database, &notifier, &reader);
             }
             return writer;
         }
@@ -507,7 +506,6 @@ public:
         , m_running(true)
         , m_databaseUuid(databaseUuid)
         , m_nonprivileged(nonprivileged)
-        , m_aggregating(true)
     {
         start(QThread::IdlePriority);
     }
@@ -712,14 +710,13 @@ private:
     bool m_running;
     QString m_databaseUuid;
     bool m_nonprivileged;
-    bool m_aggregating;
 };
 
 class JobContactReader : public ContactReader
 {
 public:
-    JobContactReader(ContactsDatabase &database, bool aggregating, JobThread *thread)
-        : ContactReader(database, aggregating)
+    JobContactReader(ContactsDatabase &database, JobThread *thread)
+        : ContactReader(database)
         , m_thread(thread)
     {
     }
@@ -758,14 +755,9 @@ void JobThread::run()
         return;
     }
 
-    // Use aggregation only for the privileged database
-    if (m_nonprivileged) {
-        m_aggregating = false;
-    }
-
-    ContactNotifier notifier(m_nonprivileged);
-    JobContactReader reader(database, m_aggregating, this);
-    Job::WriterProxy writer(*m_engine, database, m_aggregating, notifier, reader);
+    ContactNotifier notifier(database.nonprivileged());
+    JobContactReader reader(database, this);
+    Job::WriterProxy writer(*m_engine, database, notifier, reader);
 
     QMutexLocker locker(&m_mutex);
 
@@ -795,11 +787,6 @@ void JobThread::run()
 ContactsEngine::ContactsEngine(const QString &name, const QMap<QString, QString> &parameters)
     : m_name(name)
     , m_parameters(parameters)
-    , m_synchronousReader(0)
-    , m_synchronousWriter(0)
-    , m_notifier(0)
-    , m_jobThread(0)
-    , m_aggregating(true)
 {
     static bool registered = qRegisterMetaType<QList<int> >("QList<int>");
     Q_UNUSED(registered)
@@ -821,10 +808,6 @@ ContactsEngine::ContactsEngine(const QString &name, const QMap<QString, QString>
 
 ContactsEngine::~ContactsEngine()
 {
-    delete m_synchronousWriter;
-    delete m_synchronousReader;
-    delete m_notifier;
-    delete m_jobThread;
 }
 
 QString ContactsEngine::databaseUuid()
@@ -839,12 +822,9 @@ QString ContactsEngine::databaseUuid()
 QContactManager::Error ContactsEngine::open()
 {
     if (m_database.open(QString(QLatin1String("qtcontacts-sqlite-%1")).arg(databaseUuid()), m_nonprivileged)) {
-        // Use aggregation only for the privileged database
-        if (m_nonprivileged) {
-            m_aggregating = false;
-        }
+        setNonprivileged(m_database.nonprivileged());
 
-        m_notifier = new ContactNotifier(m_nonprivileged);
+        m_notifier.reset(new ContactNotifier(m_nonprivileged));
         m_notifier->connect("contactsAdded", "au", this, SLOT(_q_contactsAdded(QVector<quint32>)));
         m_notifier->connect("contactsChanged", "au", this, SLOT(_q_contactsChanged(QVector<quint32>)));
         m_notifier->connect("contactsPresenceChanged", "au", this, SLOT(_q_contactsPresenceChanged(QVector<quint32>)));
@@ -1096,7 +1076,7 @@ bool ContactsEngine::startRequest(QContactAbstractRequest* request)
     }
 
     if (!m_jobThread)
-        m_jobThread = new JobThread(this, databaseUuid(), m_nonprivileged);
+        m_jobThread.reset(new JobThread(this, databaseUuid(), m_nonprivileged));
     job->updateState(QContactAbstractRequest::ActiveState);
     m_jobThread->enqueue(job);
 
@@ -1365,16 +1345,16 @@ void ContactsEngine::_q_relationshipsRemoved(const QVector<quint32> &contactIds)
 ContactReader *ContactsEngine::reader() const
 {
     if (!m_synchronousReader) {
-        m_synchronousReader = new ContactReader(const_cast<ContactsDatabase &>(m_database), m_aggregating);
+        m_synchronousReader.reset(new ContactReader(const_cast<ContactsDatabase &>(m_database)));
     }
-    return m_synchronousReader;
+    return m_synchronousReader.data();
 }
 
 ContactWriter *ContactsEngine::writer()
 {
     if (!m_synchronousWriter) {
-        m_synchronousWriter = new ContactWriter(*this, m_database, m_aggregating, m_notifier, reader());
+        m_synchronousWriter.reset(new ContactWriter(*this, m_database, m_notifier.data(), reader()));
     }
-    return m_synchronousWriter;
+    return m_synchronousWriter.data();
 }
 

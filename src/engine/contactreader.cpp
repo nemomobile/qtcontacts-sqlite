@@ -1354,9 +1354,8 @@ static QSqlQuery prepare(const char *statement, ContactsDatabase &database)
     return database.prepare(statement);
 }
 
-ContactReader::ContactReader(ContactsDatabase &database, bool aggregating)
+ContactReader::ContactReader(ContactsDatabase &database)
     : m_database(database)
-    , m_aggregating(aggregating)
     , m_identityId(prepare(identityId, database))
 {
 }
@@ -1672,7 +1671,7 @@ QContactManager::Error ContactReader::readContacts(
         return QContactManager::UnspecifiedError;
     }
 
-    where = expandWhere(where, filter, m_aggregating);
+    where = expandWhere(where, filter, m_database.aggregating());
 
     QContactManager::Error error = QContactManager::NoError;
     if (!m_database.createTemporaryContactIdsTable(table, join, where, orderBy, bindings)) {
@@ -2122,7 +2121,7 @@ QContactManager::Error ContactReader::readContactIds(
         return QContactManager::UnspecifiedError;
     }
 
-    where = expandWhere(where, filter, m_aggregating);
+    where = expandWhere(where, filter, m_database.aggregating());
 
     QString queryString = QString(QLatin1String(
                 "\n SELECT DISTINCT Contacts.contactId"

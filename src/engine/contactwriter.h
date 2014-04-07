@@ -73,7 +73,7 @@ class ContactWriter
 public:
     typedef QList<QContactDetail::DetailType> DetailList;
 
-    ContactWriter(const ContactsEngine &engine, ContactsDatabase &database, bool aggregating, ContactNotifier *notifier, ContactReader *reader);
+    ContactWriter(const ContactsEngine &engine, ContactsDatabase &database, ContactNotifier *notifier, ContactReader *reader);
     ~ContactWriter();
 
     QContactManager::Error save(
@@ -187,7 +187,6 @@ private:
 
     const ContactsEngine &m_engine;
     ContactsDatabase &m_database;
-    bool m_aggregating;
     ContactNotifier *m_notifier;
     ContactReader *m_reader;
 

@@ -1216,6 +1216,7 @@ bool ContactsDatabase::ProcessMutex::isInitialProcess() const
 
 ContactsDatabase::ContactsDatabase()
     : m_mutex(QMutex::Recursive)
+    , m_nonprivileged(false)
 {
 }
 
@@ -1246,7 +1247,7 @@ bool directoryIsRW(const QString &dirPath)
        || databaseDirInfo.permission(QFile::ReadUser  | QFile::WriteUser));
 }
 
-bool ContactsDatabase::open(const QString &connectionName, bool &nonprivileged, bool secondaryConnection)
+bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, bool secondaryConnection)
 {
     QMutexLocker locker(accessMutex());
 
@@ -1274,8 +1275,8 @@ bool ContactsDatabase::open(const QString &connectionName, bool &nonprivileged, 
         databaseDir = unprivilegedDataDir + QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR);
         if (!nonprivileged) {
             QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Could not access privileged data directory; using nonprivileged"));
-            nonprivileged = true;
         }
+        m_nonprivileged = true;
     }
 
     const QString databaseFile = databaseDir.absoluteFilePath(QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_NAME));
@@ -1297,9 +1298,7 @@ bool ContactsDatabase::open(const QString &connectionName, bool &nonprivileged, 
         return true;
     }
 
-    // For now, we aggregate in the privileged DB and not otherwise
-    const bool aggregating = !nonprivileged;
-    if (!exists && !prepareDatabase(m_database, aggregating)) {
+    if (!exists && !prepareDatabase(m_database, aggregating())) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare contacts database - removing: %1")
                 .arg(m_database.lastError().text()));
 
@@ -1355,6 +1354,17 @@ ContactsDatabase::operator QSqlDatabase const &() const
 QSqlError ContactsDatabase::lastError() const
 {
     return m_database.lastError();
+}
+
+bool ContactsDatabase::nonprivileged() const
+{
+    return m_nonprivileged;
+}
+
+bool ContactsDatabase::aggregating() const
+{
+    // Currently true only in the privileged database
+    return !m_nonprivileged;
 }
 
 bool ContactsDatabase::beginTransaction()

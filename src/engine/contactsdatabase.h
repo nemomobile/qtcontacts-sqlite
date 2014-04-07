@@ -68,13 +68,16 @@ public:
     QMutex *accessMutex() const;
     ProcessMutex *processMutex() const;
 
-    bool open(const QString &databaseName, bool &nonprivileged, bool secondaryConnection = false);
+    bool open(const QString &databaseName, bool nonprivileged, bool secondaryConnection = false);
     QSqlQuery prepare(const char *statement);
 
     operator QSqlDatabase &();
     operator QSqlDatabase const &() const;
 
     QSqlError lastError() const;
+
+    bool nonprivileged() const;
+    bool aggregating() const;
 
     bool beginTransaction();
     bool commitTransaction();
@@ -101,6 +104,7 @@ private:
     QSqlDatabase m_database;
     QMutex m_mutex;
     mutable QScopedPointer<ProcessMutex> m_processMutex;
+    bool m_nonprivileged;
 };
 
 #endif

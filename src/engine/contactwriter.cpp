@@ -679,10 +679,9 @@ static QSqlQuery prepare(const char *statement, ContactsDatabase &database)
     return database.prepare(statement);
 }
 
-ContactWriter::ContactWriter(const ContactsEngine &engine, ContactsDatabase &database, bool aggregating, ContactNotifier *notifier, ContactReader *reader)
+ContactWriter::ContactWriter(const ContactsEngine &engine, ContactsDatabase &database, ContactNotifier *notifier, ContactReader *reader)
     : m_engine(engine)
     , m_database(database)
-    , m_aggregating(aggregating)
     , m_notifier(notifier)
     , m_reader(reader)
     , m_findConstituentsForAggregate(prepare(findConstituentsForAggregate, database))
@@ -1092,7 +1091,7 @@ QContactManager::Error ContactWriter::saveRelationships(
             bucketedRelationships.insert(firstId, qMakePair(type, secondId));
             realInsertions += 1;
 
-            if (m_aggregating && (type == relationshipString(QContactRelationship::Aggregates))) {
+            if (m_database.aggregating() && (type == relationshipString(QContactRelationship::Aggregates))) {
                 // This aggregate needs to be regenerated
                 aggregatesAffected.insert(firstId);
             }
@@ -1123,7 +1122,7 @@ QContactManager::Error ContactWriter::saveRelationships(
         return QContactManager::InvalidRelationshipError;
     }
 
-    if (m_aggregating && !aggregatesAffected.isEmpty() && !withinAggregateUpdate) {
+    if (m_database.aggregating() && !aggregatesAffected.isEmpty() && !withinAggregateUpdate) {
         QContactManager::Error writeError = regenerateAggregates(aggregatesAffected.toList(), DetailList(), true);
         if (writeError != QContactManager::NoError)
             return writeError;
@@ -1220,7 +1219,7 @@ QContactManager::Error ContactWriter::removeRelationships(
         removeRelationship.bindValue(":secondId", currSecond);
         removeRelationship.bindValue(":type", type);
 
-        if (m_aggregating && (type == relationshipString(QContactRelationship::Aggregates))) {
+        if (m_database.aggregating() && (type == relationshipString(QContactRelationship::Aggregates))) {
             // This aggregate needs to be regenerated
             aggregatesAffected.insert(currFirst);
         }
@@ -1241,7 +1240,7 @@ QContactManager::Error ContactWriter::removeRelationships(
         return QContactManager::DoesNotExistError;
     }
 
-    if (m_aggregating) {
+    if (m_database.aggregating()) {
         // remove any aggregates that no longer aggregate any contacts.
         QList<QContactId> removedIds;
         QContactManager::Error removeError = removeChildlessAggregates(&removedIds);
@@ -1270,7 +1269,7 @@ QContactManager::Error ContactWriter::removeRelationships(
 
 QContactManager::Error ContactWriter::removeContacts(const QVariantList &ids)
 {
-    if (m_aggregating) {
+    if (m_database.aggregating()) {
         // If this is a local contact, it may cause changes to sync target contacts aggregated with it
         if (recordAffectedSyncTargets(ids) != QContactManager::NoError) {
             return QContactManager::UnspecifiedError;
@@ -1344,7 +1343,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactId> &contactIds
         }
     }
 
-    if (!m_aggregating) {
+    if (!m_database.aggregating()) {
         // If we don't perform aggregation, we simply need to remove every
         // (valid, non-self) contact specified in the list.
         if (realRemoveIds.size() > 0) {
@@ -2166,8 +2165,8 @@ QContactManager::Error ContactWriter::save(
             // retrieve current contact's sync target
             QString currSyncTarget = contact.detail<QContactSyncTarget>().syncTarget();
             if (currSyncTarget.isEmpty()) {
-                currSyncTarget = m_aggregating ? localSyncTarget : aggregateSyncTarget;
-            } else if (!m_aggregating) {
+                currSyncTarget = m_database.aggregating() ? localSyncTarget : aggregateSyncTarget;
+            } else if (!m_database.aggregating()) {
                 if (currSyncTarget != aggregateSyncTarget) {
                     QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error: sync target cannot be specified for non-aggregating manager"));
                     return QContactManager::UnspecifiedError;
@@ -4656,7 +4655,7 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
     const QString stv = starget.syncTarget();
     if (stv.isEmpty()) {
         // When not using aggregation, all contacts are aggregates
-        starget.setSyncTarget(m_aggregating ? localSyncTarget : aggregateSyncTarget);
+        starget.setSyncTarget(m_database.aggregating() ? localSyncTarget : aggregateSyncTarget);
         contact->saveDetail(&starget);
     }
 
@@ -4680,7 +4679,7 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
     m_engine.regenerateDisplayLabel(*contact);
 
     // update the timestamp if necessary (aggregate contacts should have a composed timestamp value)
-    if (!m_aggregating || (stv != aggregateSyncTarget)) {
+    if (!m_database.aggregating() || (stv != aggregateSyncTarget)) {
         updateTimestamp(contact, true); // set creation timestamp
     }
 
@@ -4704,7 +4703,7 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
         // successfully saved all data.  Update id.
         contact->setId(ContactId::contactId(ContactId::apiId(contactId)));
 
-        if (m_aggregating && !withinAggregateUpdate) {
+        if (m_database.aggregating() && !withinAggregateUpdate) {
             // and either update the aggregate contact (if it exists) or create a new one (unless it is an aggregate contact).
             if (contact->detail<QContactSyncTarget>().value(QContactSyncTarget::FieldSyncTarget) != aggregateSyncTarget) {
                 writeErr = setAggregate(contact, contactId, false, definitionMask, withinTransaction);
@@ -4763,11 +4762,11 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
     }
 
     // update the modification timestamp (aggregate contacts should have a composed timestamp value)
-    if (!m_aggregating || (newSyncTarget != aggregateSyncTarget)) {
+    if (!m_database.aggregating() || (newSyncTarget != aggregateSyncTarget)) {
         updateTimestamp(contact, false);
     }
 
-    if (m_aggregating && (!withinAggregateUpdate && oldSyncTarget == aggregateSyncTarget)) {
+    if (m_database.aggregating() && (!withinAggregateUpdate && oldSyncTarget == aggregateSyncTarget)) {
         // Attempting to update the aggregate contact.
         // We calculate the delta (old contact / new contact)
         // and save the delta to the 'local' contact (might
@@ -4798,7 +4797,7 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
 
     writeError = write(contactId, contact, definitionMask);
 
-    if (m_aggregating && writeError == QContactManager::NoError) {
+    if (m_database.aggregating() && writeError == QContactManager::NoError) {
         if (oldSyncTarget != aggregateSyncTarget) {
             QList<quint32> aggregatesOfUpdated;
             m_findAggregateForContact.bindValue(":localId", contactId);
