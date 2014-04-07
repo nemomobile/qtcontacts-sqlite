@@ -190,7 +190,6 @@ private:
     bool m_aggregating;
     ContactNotifier *m_notifier;
     ContactReader *m_reader;
-    ProcessMutex *m_databaseMutex;
 
     QSqlQuery m_findConstituentsForAggregate;
     QSqlQuery m_findLocalForAggregate;

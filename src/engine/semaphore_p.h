@@ -38,18 +38,18 @@ class Semaphore
 {
 public:
     Semaphore(const char *identifier, int initial);
+    Semaphore(const char *identifier, size_t count, const int *initialValues);
     ~Semaphore();
 
-    bool decrement();
-    bool increment();
+    bool decrement(size_t index = 0, bool wait = true);
+    bool increment(size_t index = 0, bool wait = true);
 
-    int value() const;
+    int value(size_t index = 0) const;
 
 private:
     void error(const char *msg, int error);
 
-    const char *m_identifier;
-    int m_initialValue;
+    QString m_identifier;
     int m_id;
 };
 

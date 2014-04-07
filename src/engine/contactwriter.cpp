@@ -34,7 +34,6 @@
 #include "contactsengine.h"
 #include "contactreader.h"
 #include "conversion_p.h"
-#include "semaphore_p.h"
 #include "trace_p.h"
 
 #include "../extensions/qcontactdeactivated.h"
@@ -680,44 +679,12 @@ static QSqlQuery prepare(const char *statement, const QSqlDatabase &database)
     return ContactsDatabase::prepare(statement, database);
 }
 
-// Adapted from the inter-process mutex in QMF
-// The first user creates the semaphore that all subsequent instances
-// attach to.  We rely on undo semantics to release locked semaphores
-// on process failure.
-class ProcessMutex
-{
-    Semaphore m_semaphore;
-
-public:
-    ProcessMutex(const QString &path)
-        : m_semaphore(path.toLatin1(), 1)
-    {
-    }
-
-    bool lock()
-    {
-        return m_semaphore.decrement();
-    }
-
-    bool unlock()
-    {
-        return m_semaphore.increment();
-    }
-
-    bool isLocked() const
-    {
-        return (m_semaphore.value() == 0);
-    }
-};
-
-
 ContactWriter::ContactWriter(const ContactsEngine &engine, const QSqlDatabase &database, bool aggregating, ContactNotifier *notifier, ContactReader *reader)
     : m_engine(engine)
     , m_database(database)
     , m_aggregating(aggregating)
     , m_notifier(notifier)
     , m_reader(reader)
-    , m_databaseMutex(new ProcessMutex(database.databaseName()))
     , m_findConstituentsForAggregate(prepare(findConstituentsForAggregate, database))
     , m_findLocalForAggregate(prepare(findLocalForAggregate, database))
     , m_findAggregateForContact(prepare(findAggregateForContact, database))
@@ -837,18 +804,7 @@ ContactWriter::~ContactWriter()
 
 bool ContactWriter::beginTransaction()
 {
-    // We use a cross-process mutex to ensure only one process can
-    // write to the DB at once.  Without locking, sqlite will back off
-    // on write contention, and the backed-off process may never get access
-    // if other processes are performing regular writes.
-    if (m_databaseMutex->lock()) {
-        if (ContactsDatabase::beginTransaction(m_database))
-            return true;
-
-        m_databaseMutex->unlock();
-    }
-
-    return false;
+    return ContactsDatabase::beginTransaction(m_database);
 }
 
 bool ContactWriter::commitTransaction()
@@ -873,12 +829,6 @@ bool ContactWriter::commitTransaction()
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Commit error: %1").arg(m_database.lastError().text()));
         rollbackTransaction();
         return false;
-    }
-
-    if (m_databaseMutex->isLocked()) {
-        m_databaseMutex->unlock();
-    } else {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Lock error: no lock held on commit"));
     }
 
     if (!m_addedIds.isEmpty()) {
@@ -907,11 +857,6 @@ bool ContactWriter::commitTransaction()
 void ContactWriter::rollbackTransaction()
 {
     ContactsDatabase::rollbackTransaction(m_database);
-    if (m_databaseMutex->isLocked()) {
-        m_databaseMutex->unlock();
-    } else {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Lock error: no lock held on rollback"));
-    }
 
     m_removedIds.clear();
     m_suppressedSyncTargets.clear();

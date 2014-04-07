@@ -733,6 +733,22 @@ static bool executeUpgradeStatements(QSqlDatabase &database)
     return true;
 }
 
+static bool checkDatabase(QSqlDatabase &database)
+{
+    QSqlQuery query(database);
+    if (query.exec(QLatin1String("PRAGMA integrity_check"))) {
+        while (query.next()) {
+            const QString result(query.value(0).toString());
+            if (result == QLatin1String("ok")) {
+                return true;
+            }
+            qWarning() << "Integrity problem:" << result;
+        }
+    }
+
+    return false;
+}
+
 static bool upgradeDatabase(QSqlDatabase &database)
 {
     if (!beginTransaction(database))
@@ -1173,6 +1189,49 @@ static bool createTransientContactIdsTable(QSqlDatabase &db, const QString &tabl
     return true;
 }
 
+static const int initialSemaphoreValues[] = { 1, 1 };
+
+static size_t databaseOwnershipIndex = 0;
+static size_t writeAccessIndex = 1;
+
+// Adapted from the inter-process mutex in QMF
+// The first user creates the semaphore that all subsequent instances
+// attach to.  We rely on undo semantics to release locked semaphores
+// on process failure.
+ContactsDatabase::ProcessMutex::ProcessMutex(const QString &path)
+    : m_semaphore(path.toLatin1(), 2, initialSemaphoreValues)
+    , m_initialProcess(false)
+{
+    // Only the first process to open the database is able to decrement the first semaphore
+    m_initialProcess = m_semaphore.decrement(databaseOwnershipIndex, false);
+}
+
+bool ContactsDatabase::ProcessMutex::lock()
+{
+    return m_semaphore.decrement(writeAccessIndex);
+}
+
+bool ContactsDatabase::ProcessMutex::unlock()
+{
+    return m_semaphore.increment(writeAccessIndex);
+}
+
+bool ContactsDatabase::ProcessMutex::isLocked() const
+{
+    return (m_semaphore.value(writeAccessIndex) == 0);
+}
+
+bool ContactsDatabase::ProcessMutex::isInitialProcess() const
+{
+    return m_initialProcess;
+}
+
+ContactsDatabase::ProcessMutex &ContactsDatabase::processMutex(const QSqlDatabase &database)
+{
+    static ContactsDatabase::ProcessMutex mutex(database.databaseName());
+    return mutex;
+}
+
 // QDir::isReadable() doesn't support group permissions, only user permissions.
 bool directoryIsRW(const QString &dirPath)
 {
@@ -1181,7 +1240,7 @@ bool directoryIsRW(const QString &dirPath)
        || databaseDirInfo.permission(QFile::ReadUser  | QFile::WriteUser));
 }
 
-QSqlDatabase ContactsDatabase::open(const QString &databaseName, bool &nonprivileged)
+QSqlDatabase ContactsDatabase::open(const QString &connectionName, bool &nonprivileged, bool secondaryConnection)
 {
     QMutexLocker locker(accessMutex());
 
@@ -1211,12 +1270,18 @@ QSqlDatabase ContactsDatabase::open(const QString &databaseName, bool &nonprivil
     const QString databaseFile = databaseDir.absoluteFilePath(QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_NAME));
     const bool exists = QFile::exists(databaseFile);
 
-    QSqlDatabase database = QSqlDatabase::addDatabase(QString::fromLatin1("QSQLITE"), databaseName);
+    QSqlDatabase database = QSqlDatabase::addDatabase(QString::fromLatin1("QSQLITE"), connectionName);
     database.setDatabaseName(databaseFile);
 
     if (!database.open()) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to open contacts database: %1")
                 .arg(database.lastError().text()));
+        return database;
+    } else if (secondaryConnection) {
+        // The database must already be created/checked/opened by a primary connection
+        if (!configureDatabase(database)) {
+            database.close();
+        }
         return database;
     }
 
@@ -1231,13 +1296,29 @@ QSqlDatabase ContactsDatabase::open(const QString &databaseName, bool &nonprivil
 
         return database;
     } else {
-        if (!upgradeDatabase(database)) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to upgrade contacts database: %1")
-                    .arg(database.lastError().text()));
-            return database;
+        // Get the process mutex for this database
+        ProcessMutex &processMutex(ContactsDatabase::processMutex(database));
+
+        // Only the first process to concurrently open the DB should try to upgrade it
+        if (processMutex.isInitialProcess()) {
+            // Perform an integrity check
+            if (!checkDatabase(database)) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to check integrity of contacts database: %1")
+                        .arg(database.lastError().text()));
+                database.close();
+                return database;
+            }
+
+            if (!upgradeDatabase(database)) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to upgrade contacts database: %1")
+                        .arg(database.lastError().text()));
+                database.close();
+                return database;
+            }
         }
 
         if (!configureDatabase(database)) {
+            database.close();
             return database;
         }
     }
@@ -1248,17 +1329,51 @@ QSqlDatabase ContactsDatabase::open(const QString &databaseName, bool &nonprivil
 
 bool ContactsDatabase::beginTransaction(QSqlDatabase &database)
 {
-    return ::beginTransaction(database);
+    ProcessMutex &processMutex(ContactsDatabase::processMutex(database));
+
+    // We use a cross-process mutex to ensure only one process can write
+    // to the DB at once.  Without external locking, SQLite will back off
+    // on write contention, and the backed-off process may never get access
+    // if other processes are performing regular writes.
+    if (processMutex.lock()) {
+        if (::beginTransaction(database))
+            return true;
+
+        processMutex.unlock();
+    }
+
+    return false;
 }
 
 bool ContactsDatabase::commitTransaction(QSqlDatabase &database)
 {
-    return ::commitTransaction(database);
+    ProcessMutex &processMutex(ContactsDatabase::processMutex(database));
+
+    if (::commitTransaction(database)) {
+        if (processMutex.isLocked()) {
+            processMutex.unlock();
+        } else {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Lock error: no lock held on commit"));
+        }
+        return true;
+    }
+
+    return false;
 }
 
 bool ContactsDatabase::rollbackTransaction(QSqlDatabase &database)
 {
-    return ::rollbackTransaction(database);
+    ProcessMutex &processMutex(ContactsDatabase::processMutex(database));
+
+    const bool rv = ::commitTransaction(database);
+
+    if (processMutex.isLocked()) {
+        processMutex.unlock();
+    } else {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Lock error: no lock held on rollback"));
+    }
+
+    return rv;
 }
 
 QSqlQuery ContactsDatabase::prepare(const char *statement, const QSqlDatabase &database)

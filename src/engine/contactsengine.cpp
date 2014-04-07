@@ -740,7 +740,7 @@ private:
 
 void JobThread::run()
 {
-    QSqlDatabase database = ContactsDatabase::open(QString(QLatin1String("qtcontacts-sqlite-job-%1")).arg(m_databaseUuid), m_nonprivileged);
+    QSqlDatabase database = ContactsDatabase::open(QString(QLatin1String("qtcontacts-sqlite-job-%1")).arg(m_databaseUuid), m_nonprivileged, true);
     if (!database.isOpen()) {
         while (m_running) {
             if (m_pendingJobs.isEmpty()) {
