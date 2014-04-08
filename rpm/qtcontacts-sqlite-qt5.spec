@@ -1,5 +1,5 @@
 Name: qtcontacts-sqlite-qt5
-Version: 0.1.53
+Version: 0.1.54
 Release: 0
 Summary: SQLite-based plugin for QtPIM Contacts
 Group: System/Plugins
