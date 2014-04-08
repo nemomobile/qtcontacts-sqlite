@@ -69,7 +69,7 @@ int semaphoreInit(const char *id, size_t count, const int *initialValues)
             semaphoreError("Unable to get semaphore", id, errno);
         } else {
             // The semaphore does not currently exist
-            rv = ::semget(key, count, IPC_CREAT | IPC_EXCL | S_IRWXU);
+            rv = ::semget(key, count, IPC_CREAT | IPC_EXCL | S_IRWXO | S_IRWXG | S_IRWXU);
             if (rv == -1) {
                 if (errno == EEXIST) {
                     // Someone else won the race to create the semaphore - retry get 
