@@ -85,11 +85,6 @@ static const QString aggregateSyncTarget(QString::fromLatin1("aggregate"));
 static const QString localSyncTarget(QString::fromLatin1("local"));
 static const QString wasLocalSyncTarget(QString::fromLatin1("was_local"));
 
-static const char *identityId =
-    "\n SELECT contactId"
-    "\n FROM Identities"
-    "\n WHERE identity = :identity";
-
 enum FieldType {
     StringField = 0,
     StringListField,
@@ -1349,14 +1344,8 @@ static void debugFilterExpansion(const QString &description, const QString &quer
     }
 }
 
-static QSqlQuery prepare(const char *statement, ContactsDatabase &database)
-{
-    return database.prepare(statement);
-}
-
 ContactReader::ContactReader(ContactsDatabase &database)
     : m_database(database)
-    , m_identityId(prepare(identityId, database))
 {
 }
 
@@ -2171,19 +2160,24 @@ QContactManager::Error ContactReader::getIdentity(
         // we don't allow setting the self contact id, it's always static
         *contactId = ContactId::apiId(selfId);
     } else {
-        m_identityId.bindValue(":identity", identity);
-        if (!m_identityId.exec()) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to fetch contact identity:\n%1")
-                    .arg(m_identityId.lastError().text()));
+        const QString identityId(QStringLiteral(
+            " SELECT contactId"
+            " FROM Identities"
+            " WHERE identity = :identity"
+        ));
+
+        ContactsDatabase::Query query(m_database.prepare(identityId));
+        query.bindValue(":identity", identity);
+        if (!query.exec()) {
+            query.reportError("Failed to fetch contact identity");
             return QContactManager::UnspecifiedError;
         }
-        if (!m_identityId.next()) {
+        if (!query.next()) {
             *contactId = QContactId();
             return QContactManager::UnspecifiedError;
         } else {
-            *contactId = ContactId::apiId(m_identityId.value(0).toUInt());
+            *contactId = ContactId::apiId(query.value<quint32>(0));
         }
-        m_identityId.finish();
     }
 
     return QContactManager::NoError;

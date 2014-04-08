@@ -61,7 +61,6 @@
 #include <QContactManager>
 
 #include <QSet>
-#include <QSqlQuery>
 
 QTCONTACTS_USE_NAMESPACE
 
@@ -143,12 +142,11 @@ private:
                                       QtContactsSqliteExtensions::ContactManagerEngine::ConflictResolutionPolicy conflictPolicy,
                                       QList<QPair<QContact, QContact> > *remoteChanges);
 
-    void bindContactDetails(const QContact &contact, QSqlQuery &query, const DetailList &definitionMask = DetailList(), quint32 contactId = 0);
+    ContactsDatabase::Query bindContactDetails(const QContact &contact, const DetailList &definitionMask = DetailList(), quint32 contactId = 0);
 
     template <typename T> bool writeDetails(
             quint32 contactId,
             QContact *contact,
-            QSqlQuery &removeQuery,
             const DetailList &definitionMask,
             const QString &syncTarget,
             bool syncable,
@@ -165,103 +163,30 @@ private:
 
     template <typename T> bool removeCommonDetails(quint32 contactId, QContactManager::Error *error);
 
-    QSqlQuery &bindDetail(quint32 contactId, const QContactAddress &detail);
-    QSqlQuery &bindDetail(quint32 contactId, const QContactAnniversary &detail);
-    QSqlQuery &bindDetail(quint32 contactId, const QContactAvatar &detail);
-    QSqlQuery &bindDetail(quint32 contactId, const QContactBirthday &detail);
-    QSqlQuery &bindDetail(quint32 contactId, const QContactEmailAddress &detail);
-    QSqlQuery &bindDetail(quint32 contactId, const QContactGlobalPresence &detail);
-    QSqlQuery &bindDetail(quint32 contactId, const QContactGuid &detail);
-    QSqlQuery &bindDetail(quint32 contactId, const QContactHobby &detail);
-    QSqlQuery &bindDetail(quint32 contactId, const QContactNickname &detail);
-    QSqlQuery &bindDetail(quint32 contactId, const QContactNote &detail);
-    QSqlQuery &bindDetail(quint32 contactId, const QContactOnlineAccount &detail);
-    QSqlQuery &bindDetail(quint32 contactId, const QContactOrganization &detail);
-    QSqlQuery &bindDetail(quint32 contactId, const QContactPhoneNumber &detail);
-    QSqlQuery &bindDetail(quint32 contactId, const QContactPresence &detail);
-    QSqlQuery &bindDetail(quint32 contactId, const QContactRingtone &detail);
-    QSqlQuery &bindDetail(quint32 contactId, const QContactTag &detail);
-    QSqlQuery &bindDetail(quint32 contactId, const QContactUrl &detail);
-    QSqlQuery &bindDetail(quint32 contactId, const QContactOriginMetadata &detail);
-    QSqlQuery &bindDetail(quint32 contactId, const QContactExtendedDetail &detail);
+    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactAddress &detail);
+    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactAnniversary &detail);
+    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactAvatar &detail);
+    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactBirthday &detail);
+    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactEmailAddress &detail);
+    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactGlobalPresence &detail);
+    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactGuid &detail);
+    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactHobby &detail);
+    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactNickname &detail);
+    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactNote &detail);
+    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactOnlineAccount &detail);
+    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactOrganization &detail);
+    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactPhoneNumber &detail);
+    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactPresence &detail);
+    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactRingtone &detail);
+    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactTag &detail);
+    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactUrl &detail);
+    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactOriginMetadata &detail);
+    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactExtendedDetail &detail);
 
     const ContactsEngine &m_engine;
     ContactsDatabase &m_database;
     ContactNotifier *m_notifier;
     ContactReader *m_reader;
-
-    QSqlQuery m_findConstituentsForAggregate;
-    QSqlQuery m_findLocalForAggregate;
-    QSqlQuery m_findAggregateForContact;
-    QSqlQuery m_childlessAggregateIds;
-    QSqlQuery m_orphanContactIds;
-    QSqlQuery m_countLocalConstituents;
-    QSqlQuery m_updateSyncTarget;
-    QSqlQuery m_checkContactExists;
-    QSqlQuery m_existingContactIds;
-    QSqlQuery m_modifiableDetails;
-    QSqlQuery m_selfContactId;
-    QSqlQuery m_syncContactIds;
-    QSqlQuery m_exportContactIds;
-    QSqlQuery m_aggregateContactIds;
-    QSqlQuery m_constituentContactDetails;
-    QSqlQuery m_localConstituentForAggregate;
-    QSqlQuery m_heuristicallyMatchData;
-    QSqlQuery m_syncTargetConstituentIds;
-    QSqlQuery m_affectedSyncTargets;
-    QSqlQuery m_addedSyncContactIds;
-    QSqlQuery m_deletedSyncContactIds;
-    QSqlQuery m_insertContact;
-    QSqlQuery m_updateContact;
-    QSqlQuery m_removeContact;
-    QSqlQuery m_existingRelationships;
-    QSqlQuery m_insertRelationship;
-    QSqlQuery m_removeRelationship;
-    QSqlQuery m_insertAddress;
-    QSqlQuery m_insertAnniversary;
-    QSqlQuery m_insertAvatar;
-    QSqlQuery m_insertBirthday;
-    QSqlQuery m_insertEmailAddress;
-    QSqlQuery m_insertGlobalPresence;
-    QSqlQuery m_insertGuid;
-    QSqlQuery m_insertHobby;
-    QSqlQuery m_insertNickname;
-    QSqlQuery m_insertNote;
-    QSqlQuery m_insertOnlineAccount;
-    QSqlQuery m_insertOrganization;
-    QSqlQuery m_insertPhoneNumber;
-    QSqlQuery m_insertPresence;
-    QSqlQuery m_insertRingtone;
-    QSqlQuery m_insertTag;
-    QSqlQuery m_insertUrl;
-    QSqlQuery m_insertOriginMetadata;
-    QSqlQuery m_insertExtendedDetail;
-    QSqlQuery m_insertDetail;
-    QSqlQuery m_insertIdentity;
-    QSqlQuery m_removeAddress;
-    QSqlQuery m_removeAnniversary;
-    QSqlQuery m_removeAvatar;
-    QSqlQuery m_removeBirthday;
-    QSqlQuery m_removeEmailAddress;
-    QSqlQuery m_removeGlobalPresence;
-    QSqlQuery m_removeGuid;
-    QSqlQuery m_removeHobby;
-    QSqlQuery m_removeNickname;
-    QSqlQuery m_removeNote;
-    QSqlQuery m_removeOnlineAccount;
-    QSqlQuery m_removeOrganization;
-    QSqlQuery m_removePhoneNumber;
-    QSqlQuery m_removePresence;
-    QSqlQuery m_removeRingtone;
-    QSqlQuery m_removeTag;
-    QSqlQuery m_removeUrl;
-    QSqlQuery m_removeOriginMetadata;
-    QSqlQuery m_removeExtendedDetail;
-    QSqlQuery m_removeDetail;
-    QSqlQuery m_removeIdentity;
-    QSqlQuery m_findConstituentsForAggregateIds;
-    QSqlQuery m_findAggregateForContactIds;
-    QSqlQuery m_selectAggregateContactIds;
 
     QSet<QContactId> m_addedIds;
     QSet<QContactId> m_removedIds;

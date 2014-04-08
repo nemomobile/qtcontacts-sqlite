@@ -1214,6 +1214,22 @@ bool ContactsDatabase::ProcessMutex::isInitialProcess() const
     return m_initialProcess;
 }
 
+ContactsDatabase::Query::Query(const QSqlQuery &query)
+    : m_query(query)
+{
+}
+
+void ContactsDatabase::Query::reportError(const QString &text) const
+{
+    QString output(text + QString::fromLatin1("\n%1").arg(m_query.lastError().text()));
+    QTCONTACTS_SQLITE_WARNING(output);
+}
+
+void ContactsDatabase::Query::reportError(const char *text) const
+{
+    reportError(QString::fromLatin1(text));
+}
+
 ContactsDatabase::ContactsDatabase()
     : m_mutex(QMutex::Recursive)
     , m_nonprivileged(false)
@@ -1416,17 +1432,29 @@ bool ContactsDatabase::rollbackTransaction()
     return rv;
 }
 
-QSqlQuery ContactsDatabase::prepare(const char *statement)
+ContactsDatabase::Query ContactsDatabase::prepare(const char *statement)
 {
-    QSqlQuery query(m_database);
-    query.setForwardOnly(true);
-    if (!query.prepare(statement)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query: %1\n%2")
-                .arg(query.lastError().text())
-                .arg(statement));
-        return QSqlQuery();
+    return prepare(QString::fromLatin1(statement));
+}
+
+ContactsDatabase::Query ContactsDatabase::prepare(const QString &statement)
+{
+    QMutexLocker locker(accessMutex());
+
+    QHash<QString, QSqlQuery>::const_iterator it = m_preparedQueries.constFind(statement);
+    if (it == m_preparedQueries.constEnd()) {
+        QSqlQuery query(m_database);
+        query.setForwardOnly(true);
+        if (!query.prepare(statement)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query: %1\n%2")
+                    .arg(query.lastError().text())
+                    .arg(statement));
+            return Query(QSqlQuery());
+        }
+        it = m_preparedQueries.insert(statement, query);
     }
-    return query;
+
+    return Query(*it);
 }
 
 QString ContactsDatabase::expandQuery(const QString &queryString, const QVariantList &bindings)

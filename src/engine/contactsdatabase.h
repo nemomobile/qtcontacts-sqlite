@@ -34,9 +34,12 @@
 
 #include "semaphore_p.h"
 
+#include <QHash>
 #include <QMutex>
 #include <QScopedPointer>
 #include <QSqlDatabase>
+#include <QSqlError>
+#include <QSqlQuery>
 #include <QVariantList>
 
 class ContactsDatabase
@@ -62,6 +65,37 @@ public:
         bool isInitialProcess() const;
     };
 
+    // This class is required to finish() each query at destruction
+    class Query
+    {
+        friend class ContactsDatabase;
+
+        QSqlQuery m_query;
+
+        Query(const QSqlQuery &query);
+
+    public:
+        ~Query() { finish(); }
+
+        void bindValue(const QString &id, const QVariant &value) { m_query.bindValue(id, value); }
+        void bindValue(int pos, const QVariant &value) { m_query.bindValue(pos, value); }
+
+        bool exec() { return m_query.exec(); }
+        bool execBatch() { return m_query.execBatch(); }
+        bool next() { return m_query.next(); }
+        void finish() { return m_query.finish(); }
+
+        QVariant lastInsertId() const { return m_query.lastInsertId(); }
+
+        QVariant value(int index) { return m_query.value(index); }
+
+        template<typename T>
+        T value(int index) { return m_query.value(index).value<T>(); }
+
+        void reportError(const QString &text) const;
+        void reportError(const char *text) const;
+    };
+
     ContactsDatabase();
     ~ContactsDatabase();
 
@@ -69,7 +103,6 @@ public:
     ProcessMutex *processMutex() const;
 
     bool open(const QString &databaseName, bool nonprivileged, bool secondaryConnection = false);
-    QSqlQuery prepare(const char *statement);
 
     operator QSqlDatabase &();
     operator QSqlDatabase const &() const;
@@ -96,6 +129,9 @@ public:
 
     void clearTransientContactIdsTable(const QString &table);
 
+    Query prepare(const char *statement);
+    Query prepare(const QString &statement);
+
     static QString expandQuery(const QString &queryString, const QVariantList &bindings);
     static QString expandQuery(const QString &queryString, const QMap<QString, QVariant> &bindings);
     static QString expandQuery(const QSqlQuery &query);
@@ -105,6 +141,7 @@ private:
     QMutex m_mutex;
     mutable QScopedPointer<ProcessMutex> m_processMutex;
     bool m_nonprivileged;
+    QHash<QString, QSqlQuery> m_preparedQueries;
 };
 
 #endif

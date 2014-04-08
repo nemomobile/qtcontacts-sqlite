@@ -98,7 +98,6 @@ protected:
 
 private:
     ContactsDatabase &m_database;
-    QSqlQuery m_identityId;
     QMap<QString, QMap<QString, QSqlQuery> > m_cachedDetailTableQueries;
 };
 
