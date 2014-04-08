@@ -85,11 +85,6 @@ static const QString aggregateSyncTarget(QString::fromLatin1("aggregate"));
 static const QString localSyncTarget(QString::fromLatin1("local"));
 static const QString wasLocalSyncTarget(QString::fromLatin1("was_local"));
 
-static const char *identityId =
-    "\n SELECT contactId"
-    "\n FROM Identities"
-    "\n WHERE identity = :identity";
-
 enum FieldType {
     StringField = 0,
     StringListField,
@@ -1045,7 +1040,7 @@ static QString buildWhere(const QContactDetailRangeFilter &filter, QVariantList 
     return QLatin1String("FALSE");
 }
 
-static QString buildWhere(const QContactIdFilter &filter, QSqlDatabase &db, const QString &table, QVariantList *bindings, bool *failed)
+static QString buildWhere(const QContactIdFilter &filter, ContactsDatabase &db, const QString &table, QVariantList *bindings, bool *failed)
 {
     const QList<QContactId> &filterIds(filter.ids());
     if (filterIds.isEmpty()) {
@@ -1072,7 +1067,7 @@ static QString buildWhere(const QContactIdFilter &filter, QSqlDatabase &db, cons
         }
 
         QString transientTable;
-        if (!ContactsDatabase::createTransientContactIdsTable(db, table, varIds, &transientTable)) {
+        if (!db.createTransientContactIdsTable(table, varIds, &transientTable)) {
             *failed = true;
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere due to transient table failure"));
             return QLatin1String("FALSE");
@@ -1183,9 +1178,9 @@ static QString buildWhere(const QContactChangeLogFilter &filter, QVariantList *b
     return QLatin1String("FALSE");
 }
 
-static QString buildWhere(const QContactFilter &filter, QSqlDatabase &db, const QString &table, QVariantList *bindings, bool *failed);
+static QString buildWhere(const QContactFilter &filter, ContactsDatabase &db, const QString &table, QVariantList *bindings, bool *failed);
 
-static QString buildWhere(const QContactUnionFilter &filter, QSqlDatabase &db, const QString &table, QVariantList *bindings, bool *failed)
+static QString buildWhere(const QContactUnionFilter &filter, ContactsDatabase &db, const QString &table, QVariantList *bindings, bool *failed)
 {
     const QList<QContactFilter> filters  = filter.filters();
     if (filters.isEmpty())
@@ -1202,7 +1197,7 @@ static QString buildWhere(const QContactUnionFilter &filter, QSqlDatabase &db, c
     return QString::fromLatin1("( %1 )").arg(fragments.join(QLatin1String(" OR ")));
 }
 
-static QString buildWhere(const QContactIntersectionFilter &filter, QSqlDatabase &db, const QString &table, QVariantList *bindings, bool *failed)
+static QString buildWhere(const QContactIntersectionFilter &filter, ContactsDatabase &db, const QString &table, QVariantList *bindings, bool *failed)
 {
     const QList<QContactFilter> filters  = filter.filters();
     if (filters.isEmpty())
@@ -1220,7 +1215,7 @@ static QString buildWhere(const QContactIntersectionFilter &filter, QSqlDatabase
     return fragments.join(QLatin1String(" AND "));
 }
 
-static QString buildWhere(const QContactFilter &filter, QSqlDatabase &db, const QString &table, QVariantList *bindings, bool *failed)
+static QString buildWhere(const QContactFilter &filter, ContactsDatabase &db, const QString &table, QVariantList *bindings, bool *failed)
 {
     switch (filter.type()) {
     case QContactFilter::DefaultFilter:
@@ -1349,15 +1344,8 @@ static void debugFilterExpansion(const QString &description, const QString &quer
     }
 }
 
-static QSqlQuery prepare(const char *statement, const QSqlDatabase &database)
-{
-    return ContactsDatabase::prepare(statement, database);
-}
-
-ContactReader::ContactReader(const QSqlDatabase &database, bool aggregating)
+ContactReader::ContactReader(ContactsDatabase &database)
     : m_database(database)
-    , m_aggregating(aggregating)
-    , m_identityId(prepare(identityId, database))
 {
 }
 
@@ -1658,9 +1646,9 @@ QContactManager::Error ContactReader::readContacts(
         const QList<QContactSortOrder> &order,
         const QContactFetchHint &fetchHint)
 {
-    QMutexLocker locker(ContactsDatabase::accessMutex());
+    QMutexLocker locker(m_database.accessMutex());
 
-    ContactsDatabase::clearTemporaryContactIdsTable(m_database, table);
+    m_database.clearTemporaryContactIdsTable(table);
 
     QString join;
     const QString orderBy = buildOrderBy(order, &join);
@@ -1672,10 +1660,10 @@ QContactManager::Error ContactReader::readContacts(
         return QContactManager::UnspecifiedError;
     }
 
-    where = expandWhere(where, filter, m_aggregating);
+    where = expandWhere(where, filter, m_database.aggregating());
 
     QContactManager::Error error = QContactManager::NoError;
-    if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, table, join, where, orderBy, bindings)) {
+    if (!m_database.createTemporaryContactIdsTable(table, join, where, orderBy, bindings)) {
         error = QContactManager::UnspecifiedError;
     } else {
         error = queryContacts(table, contacts, fetchHint);
@@ -1707,7 +1695,7 @@ QContactManager::Error ContactReader::readContacts(
         const QContactFetchHint &fetchHint,
         bool relaxConstraints)
 {
-    QMutexLocker locker(ContactsDatabase::accessMutex());
+    QMutexLocker locker(m_database.accessMutex());
 
     QVariantList boundIds;
     boundIds.reserve(databaseIds.size());
@@ -1717,10 +1705,10 @@ QContactManager::Error ContactReader::readContacts(
 
     contacts->reserve(databaseIds.size());
 
-    ContactsDatabase::clearTemporaryContactIdsTable(m_database, table);
+    m_database.clearTemporaryContactIdsTable(table);
 
     QContactManager::Error error = QContactManager::NoError;
-    if (!ContactsDatabase::createTemporaryContactIdsTable(m_database, table, boundIds)) {
+    if (!m_database.createTemporaryContactIdsTable(table, boundIds)) {
         error = QContactManager::UnspecifiedError;
     } else {
         error = queryContacts(table, contacts, fetchHint, relaxConstraints);
@@ -2099,7 +2087,7 @@ QContactManager::Error ContactReader::readContactIds(
         const QContactFilter &filter,
         const QList<QContactSortOrder> &order)
 {
-    QMutexLocker locker(ContactsDatabase::accessMutex());
+    QMutexLocker locker(m_database.accessMutex());
 
     // Is this a query on deleted contacts?
     if (deletedContactFilter(filter)) {
@@ -2109,7 +2097,7 @@ QContactManager::Error ContactReader::readContactIds(
     // Use a dummy table name to identify any temporary tables we create
     const QString tableName(QString::fromLatin1("readContactIds"));
 
-    ContactsDatabase::clearTransientContactIdsTable(m_database, tableName);
+    m_database.clearTransientContactIdsTable(tableName);
 
     QString join;
     const QString orderBy = buildOrderBy(order, &join);
@@ -2122,7 +2110,7 @@ QContactManager::Error ContactReader::readContactIds(
         return QContactManager::UnspecifiedError;
     }
 
-    where = expandWhere(where, filter, m_aggregating);
+    where = expandWhere(where, filter, m_database.aggregating());
 
     QString queryString = QString(QLatin1String(
                 "\n SELECT DISTINCT Contacts.contactId"
@@ -2166,25 +2154,30 @@ QContactManager::Error ContactReader::readContactIds(
 QContactManager::Error ContactReader::getIdentity(
         ContactsDatabase::Identity identity, QContactId *contactId)
 {
-    QMutexLocker locker(ContactsDatabase::accessMutex());
+    QMutexLocker locker(m_database.accessMutex());
 
     if (identity == ContactsDatabase::SelfContactId) {
         // we don't allow setting the self contact id, it's always static
         *contactId = ContactId::apiId(selfId);
     } else {
-        m_identityId.bindValue(":identity", identity);
-        if (!m_identityId.exec()) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to fetch contact identity:\n%1")
-                    .arg(m_identityId.lastError().text()));
+        const QString identityId(QStringLiteral(
+            " SELECT contactId"
+            " FROM Identities"
+            " WHERE identity = :identity"
+        ));
+
+        ContactsDatabase::Query query(m_database.prepare(identityId));
+        query.bindValue(":identity", identity);
+        if (!query.exec()) {
+            query.reportError("Failed to fetch contact identity");
             return QContactManager::UnspecifiedError;
         }
-        if (!m_identityId.next()) {
+        if (!query.next()) {
             *contactId = QContactId();
             return QContactManager::UnspecifiedError;
         } else {
-            *contactId = ContactId::apiId(m_identityId.value(0).toUInt());
+            *contactId = ContactId::apiId(query.value<quint32>(0));
         }
-        m_identityId.finish();
     }
 
     return QContactManager::NoError;
@@ -2196,7 +2189,7 @@ QContactManager::Error ContactReader::readRelationships(
         const QContactId &first,
         const QContactId &second)
 {
-    QMutexLocker locker(ContactsDatabase::accessMutex());
+    QMutexLocker locker(m_database.accessMutex());
 
     QStringList whereStatements;
     QVariantList bindings;

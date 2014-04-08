@@ -34,8 +34,10 @@
 
 #include "contactmanagerengine.h"
 
+#include <QScopedPointer>
 #include <QSqlDatabase>
 
+#include "contactsdatabase.h"
 #include "contactnotifier.h"
 #include "contactreader.h"
 #include "contactwriter.h"
@@ -180,14 +182,14 @@ private:
     QString m_databaseUuid;
     const QString m_name;
     QMap<QString, QString> m_parameters;
-    QSqlDatabase m_database;
-    mutable ContactReader *m_synchronousReader;
-    ContactWriter *m_synchronousWriter;
-    ContactNotifier *m_notifier;
-    JobThread *m_jobThread;
-    bool m_aggregating;
-};
+    ContactsDatabase m_database;
+    mutable QScopedPointer<ContactReader> m_synchronousReader;
+    QScopedPointer<ContactWriter> m_synchronousWriter;
+    QScopedPointer<ContactNotifier> m_notifier;
+    QScopedPointer<JobThread> m_jobThread;
 
+    Q_DISABLE_COPY(ContactsEngine);
+};
 
 #endif
 

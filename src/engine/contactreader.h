@@ -46,7 +46,7 @@ QTCONTACTS_USE_NAMESPACE
 class ContactReader
 {
 public:
-    ContactReader(const QSqlDatabase &database, bool aggregating);
+    ContactReader(ContactsDatabase &database);
     virtual ~ContactReader();
 
     QContactManager::Error readContacts(
@@ -97,9 +97,7 @@ protected:
     virtual void contactIdsAvailable(const QList<QContactId> &contactIds);
 
 private:
-    QSqlDatabase m_database;
-    bool m_aggregating;
-    QSqlQuery m_identityId;
+    ContactsDatabase &m_database;
     QMap<QString, QMap<QString, QSqlQuery> > m_cachedDetailTableQueries;
 };
 
