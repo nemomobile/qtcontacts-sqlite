@@ -1133,13 +1133,6 @@ static bool detailsSuperset(const QContactDetail &lhs, const QContactDetail &rhs
     return detailValuesSuperset(lhs, rhs);
 }
 
-QVariant detailLinkedUris(const QContactDetail &detail)
-{
-    static const QString separator = QString::fromLatin1(";");
-
-    return QVariant(detail.linkedDetailUris().join(separator));
-}
-
 QContactManager::Error ContactWriter::fetchSyncContacts(const QString &syncTarget, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
                                                         QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
                                                         QDateTime *maxTimestamp)
@@ -1378,7 +1371,7 @@ template <typename T> bool ContactWriter::writeCommonDetails(
     ContactsDatabase::Query query(m_database.prepare(statement));
 
     const QVariant detailUri = detailValue(detail, QContactDetail::FieldDetailUri);
-    const QVariant linkedDetailUris = detailLinkedUris(detail);
+    const QVariant linkedDetailUris = QVariant(detail.linkedDetailUris().join(QStringLiteral(";")));
     const QVariant contexts = detailContexts(detail);
     const int accessConstraints = static_cast<int>(detail.accessConstraints());
     const QVariant provenance = detailValue(detail, QContactDetail__FieldProvenance);
@@ -1501,6 +1494,8 @@ template <typename T> bool ContactWriter::writeDetails(
         }
     }
 
+    const bool aggregateContact(syncTarget == aggregateSyncTarget);
+
     QList<T> contactDetails(contact->details<T>());
     typename QList<T>::iterator it = contactDetails.begin(), end = contactDetails.end();
     for ( ; it != end; ++it) {
@@ -1518,7 +1513,7 @@ template <typename T> bool ContactWriter::writeDetails(
         }
 
         QString provenance;
-        if (syncTarget == aggregateSyncTarget) {
+        if (aggregateContact) {
             // Preserve the existing provenance information
             provenance = detail.value(QContactDetail__FieldProvenance).toString();
         } else {
@@ -1526,6 +1521,42 @@ template <typename T> bool ContactWriter::writeDetails(
             provenance = QString::fromLatin1("%1:%2:%3").arg(contactId).arg(detailId.toUInt()).arg(syncTarget);
         }
         detail.setValue(QContactDetail__FieldProvenance, provenance);
+
+        if (aggregateContact) {
+            // Modify this detail URI to preserve uniqueness - the result must not clash with the
+            // URI in the constituent's copy, nor of any other aggregator of the same detail
+
+            // If a detail URI is modified for aggregation, we need to insert the ID before the colon
+            const QString prefix(aggregateSyncTarget + QStringLiteral("-%1:").arg(contactId));
+
+            QString detailUri = detail.detailUri();
+            if (!detailUri.isEmpty() && !detailUri.startsWith(prefix)) {
+                if (detailUri.startsWith(aggregateSyncTarget)) {
+                    // Remove any invalid aggregate prefix that may have been stored
+                    int index = detailUri.indexOf(QChar::fromLatin1(':'));
+                    detailUri = detailUri.mid(index + 1);
+                }
+                detail.setDetailUri(prefix + detailUri);
+            }
+
+            QStringList linkedDetailUris = detail.linkedDetailUris();
+            if (!linkedDetailUris.isEmpty()) {
+                QStringList::iterator it = linkedDetailUris.begin(), end = linkedDetailUris.end();
+                for ( ; it != end; ++it) {
+                    QString &linkedUri(*it);
+                    if (!linkedUri.isEmpty() && !linkedUri.startsWith(prefix)) {
+                        if (linkedUri.startsWith(aggregateSyncTarget)) {
+                            // Remove any invalid aggregate prefix that may have been stored
+                            int index = linkedUri.indexOf(QChar::fromLatin1(':'));
+                            linkedUri = linkedUri.mid(index + 1);
+                        }
+                        linkedUri.insert(0, prefix);
+                    }
+                }
+                detail.setLinkedDetailUris(linkedDetailUris);
+            }
+        }
+
         contact->saveDetail(&detail);
 
         if (!writeCommonDetails(contactId, detailId, detail, syncable, wasLocal, error)) {
@@ -2121,30 +2152,6 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
     return writeError;
 }
 
-static void adjustDetailUrisForAggregate(QContactDetail &currDet, quint32 aggId)
-{
-    static const QString prefixFormat(aggregateSyncTarget + QString::fromLatin1("-%1:"));
-    const QString prefix(prefixFormat.arg(aggId));
-
-    if (!currDet.detailUri().isEmpty()) {
-        currDet.setDetailUri(prefix + currDet.detailUri());
-    }
-
-    bool needsLinkedDUs = false;
-    QStringList linkedDUs = currDet.linkedDetailUris();
-    for (int i = 0; i < linkedDUs.size(); ++i) {
-        QString currLDU = linkedDUs.at(i);
-        if (!currLDU.isEmpty()) {
-            currLDU = prefix + currLDU;
-            linkedDUs.replace(i, currLDU);
-            needsLinkedDUs = true;
-        }
-    }
-    if (needsLinkedDUs) {
-        currDet.setLinkedDetailUris(linkedDUs);
-    }
-}
-
 static bool promoteDetailType(QContactDetail::DetailType type, const ContactWriter::DetailList &definitionMask, bool forcePromotion)
 {
     static const ContactWriter::DetailList unpromotedDetailTypes(getUnpromotedDetailTypes());
@@ -2172,8 +2179,6 @@ static bool promoteDetailType(QContactDetail::DetailType type, const ContactWrit
 */
 static void promoteDetailsToAggregate(const QContact &contact, QContact *aggregate, const ContactWriter::DetailList &definitionMask, bool forcePromotion)
 {
-    const quint32 aggId = ContactId::databaseId(*aggregate);
-
     foreach (const QContactDetail &original, contact.details()) {
         if (!promoteDetailType(original.type(), definitionMask, forcePromotion)) {
             // skip this detail
@@ -2243,10 +2248,7 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
         } else {
             // All other details involve duplication.
             // Only duplicate from contact to the aggregate if an identical detail doesn't already exist in the aggregate.
-            // We also modify any detail uris by prepending "aggregate:" to the start,
-            // to ensure uniqueness.
             QContactDetail det(original);
-            adjustDetailUrisForAggregate(det, aggId);
 
             bool needsPromote = true;
             foreach (const QContactDetail &ad, aggregate->details()) {
@@ -2931,7 +2933,6 @@ QContactManager::Error ContactWriter::regenerateAggregates(const QList<quint32> 
                 QContactDetail currDet = currDetails.at(j);
                 if (promoteDetailType(currDet.type(), definitionMask, false)) {
                     // promote this detail to the aggregate.
-                    adjustDetailUrisForAggregate(currDet, aggId);
                     aggregateContact.saveDetail(&currDet);
                 }
             }
@@ -3398,7 +3399,6 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
                                     if (promoteDetailType(detail.type(), DetailList(), false)) {
                                         // promote this detail to the aggregate.
                                         QContactDetail copy(detail);
-                                        adjustDetailUrisForAggregate(copy, aggId);
                                         partialAggregate.saveDetail(&copy);
                                     }
                                 }
