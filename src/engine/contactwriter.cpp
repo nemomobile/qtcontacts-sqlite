@@ -1016,23 +1016,27 @@ static bool detailListContains(const ContactWriter::DetailList &list, const QCon
     return list.contains(detailType(detail));
 }
 
-
-template <typename T> bool ContactWriter::removeCommonDetails(
-            quint32 contactId, QContactManager::Error *error)
+bool removeCommonDetails(ContactsDatabase &db, quint32 contactId, const QString &typeName, QContactManager::Error *error)
 {
     const QString statement(QStringLiteral("DELETE FROM Details WHERE contactId = :contactId AND detail = :detail"));
 
-    ContactsDatabase::Query query(m_database.prepare(statement));
+    ContactsDatabase::Query query(db.prepare(statement));
     query.bindValue(0, contactId);
-    query.bindValue(1, detailTypeName<T>());
+    query.bindValue(1, typeName);
 
     if (!query.exec()) {
-        query.reportError(QStringLiteral("Failed to remove common detail for %1").arg(detailTypeName<T>()));
+        query.reportError(QStringLiteral("Failed to remove common detail for %1").arg(typeName));
         *error = QContactManager::UnspecifiedError;
         return false;
     }
 
     return true;
+}
+
+template <typename T> bool ContactWriter::removeCommonDetails(
+            quint32 contactId, QContactManager::Error *error)
+{
+    return ::removeCommonDetails(m_database, contactId, detailTypeName<T>(), error);
 }
 
 template<typename T, typename F>
@@ -1340,8 +1344,8 @@ QVariant detailContexts(const QContactDetail &detail)
     return QVariant(contexts.join(separator));
 }
 
-template <typename T> bool ContactWriter::writeCommonDetails(
-            quint32 contactId, const QVariant &detailId, const T &detail, bool syncable, bool wasLocal, QContactManager::Error *error)
+bool writeCommonDetails(ContactsDatabase &db, quint32 contactId, const QVariant &detailId, const QContactDetail &detail,
+                        bool syncable, bool wasLocal, const QString &typeName, QContactManager::Error *error)
 {
     const QString statement(QStringLiteral(
         " INSERT INTO Details ("
@@ -1368,7 +1372,7 @@ template <typename T> bool ContactWriter::writeCommonDetails(
         "  :nonexportable)"
     ));
 
-    ContactsDatabase::Query query(m_database.prepare(statement));
+    ContactsDatabase::Query query(db.prepare(statement));
 
     const QVariant detailUri = detailValue(detail, QContactDetail::FieldDetailUri);
     const QVariant linkedDetailUris = QVariant(detail.linkedDetailUris().join(QStringLiteral(";")));
@@ -1380,7 +1384,7 @@ template <typename T> bool ContactWriter::writeCommonDetails(
 
     query.bindValue(0, contactId);
     query.bindValue(1, detailId);
-    query.bindValue(2, detailTypeName<T>());
+    query.bindValue(2, typeName);
     query.bindValue(3, detailUri);
     query.bindValue(4, linkedDetailUris);
     query.bindValue(5, contexts);
@@ -1391,7 +1395,7 @@ template <typename T> bool ContactWriter::writeCommonDetails(
 
     if (!query.exec()) {
         query.reportError(QStringLiteral("Failed to write common details for %1\ndetailUri: %2, linkedDetailUris: %3")
-                .arg(detailTypeName<T>())
+                .arg(typeName)
                 .arg(detailUri.value<QString>())
                 .arg(linkedDetailUris.value<QString>()));
         *error = QContactManager::UnspecifiedError;
@@ -1399,6 +1403,12 @@ template <typename T> bool ContactWriter::writeCommonDetails(
     }
 
     return true;
+}
+
+template <typename T> bool ContactWriter::writeCommonDetails(
+            quint32 contactId, const QVariant &detailId, const T &detail, bool syncable, bool wasLocal, QContactManager::Error *error)
+{
+    return ::writeCommonDetails(m_database, contactId, detailId, detail, syncable, wasLocal, detailTypeName<T>(), error);
 }
 
 // Define the type that another type is generated from
@@ -1467,6 +1477,73 @@ const QString RemoveStatement<QContactOriginMetadata>::statement(QStringLiteral(
 template<> struct RemoveStatement<QContactExtendedDetail> { static const QString statement; };
 const QString RemoveStatement<QContactExtendedDetail>::statement(QStringLiteral("DELETE FROM ExtendedDetails WHERE contactId = :contactId"));
 
+bool removeSpecificDetails(ContactsDatabase &db, quint32 contactId, const QString &statement, const QString &typeName, QContactManager::Error *error)
+{
+    ContactsDatabase::Query query(db.prepare(statement));
+    query.bindValue(0, contactId);
+
+    if (!query.exec()) {
+        query.reportError(QStringLiteral("Failed to remove existing details of type %1 for %2").arg(typeName).arg(contactId));
+        *error = QContactManager::UnspecifiedError;
+        return false;
+    }
+
+    return true;
+}
+
+template <typename T> bool removeSpecificDetails(ContactsDatabase &db, quint32 contactId, QContactManager::Error *error)
+{
+    return removeSpecificDetails(db, contactId, RemoveStatement<T>::statement, detailTypeName<T>(), error);
+}
+
+void setDetailProperties(QContactDetail &detail, quint32 contactId, quint32 detailId, const QString &syncTarget, bool aggregateContact)
+{
+    QString provenance;
+    if (aggregateContact) {
+        // Preserve the existing provenance information
+        provenance = detail.value(QContactDetail__FieldProvenance).toString();
+    } else {
+        // This detail is not aggregated from another
+        provenance = QStringLiteral("%1:%2:%3").arg(contactId).arg(detailId).arg(syncTarget);
+    }
+    detail.setValue(QContactDetail__FieldProvenance, provenance);
+
+    if (aggregateContact) {
+        // Modify this detail URI to preserve uniqueness - the result must not clash with the
+        // URI in the constituent's copy, nor of any other aggregator of the same detail
+
+        // If a detail URI is modified for aggregation, we need to insert the ID before the colon
+        const QString prefix(aggregateSyncTarget + QStringLiteral("-%1:").arg(contactId));
+
+        QString detailUri = detail.detailUri();
+        if (!detailUri.isEmpty() && !detailUri.startsWith(prefix)) {
+            if (detailUri.startsWith(aggregateSyncTarget)) {
+                // Remove any invalid aggregate prefix that may have been stored
+                int index = detailUri.indexOf(QChar::fromLatin1(':'));
+                detailUri = detailUri.mid(index + 1);
+            }
+            detail.setDetailUri(prefix + detailUri);
+        }
+
+        QStringList linkedDetailUris = detail.linkedDetailUris();
+        if (!linkedDetailUris.isEmpty()) {
+            QStringList::iterator it = linkedDetailUris.begin(), end = linkedDetailUris.end();
+            for ( ; it != end; ++it) {
+                QString &linkedUri(*it);
+                if (!linkedUri.isEmpty() && !linkedUri.startsWith(prefix)) {
+                    if (linkedUri.startsWith(aggregateSyncTarget)) {
+                        // Remove any invalid aggregate prefix that may have been stored
+                        int index = linkedUri.indexOf(QChar::fromLatin1(':'));
+                        linkedUri = linkedUri.mid(index + 1);
+                    }
+                    linkedUri.insert(0, prefix);
+                }
+            }
+            detail.setLinkedDetailUris(linkedDetailUris);
+        }
+    }
+}
+
 template <typename T> bool ContactWriter::writeDetails(
         quint32 contactId,
         QContact *contact,
@@ -1484,15 +1561,8 @@ template <typename T> bool ContactWriter::writeDetails(
     if (!removeCommonDetails<T>(contactId, error))
         return false;
 
-    {
-        ContactsDatabase::Query query(m_database.prepare(RemoveStatement<T>::statement));
-        query.bindValue(0, contactId);
-        if (!query.exec()) {
-            query.reportError(QStringLiteral("Failed to remove existing details for %1").arg(detailTypeName<T>()));
-            *error = QContactManager::UnspecifiedError;
-            return false;
-        }
-    }
+    if (!removeSpecificDetails<T>(m_database, contactId, error))
+        return false;
 
     const bool aggregateContact(syncTarget == aggregateSyncTarget);
 
@@ -1512,50 +1582,7 @@ template <typename T> bool ContactWriter::writeDetails(
             detailId = query.lastInsertId();
         }
 
-        QString provenance;
-        if (aggregateContact) {
-            // Preserve the existing provenance information
-            provenance = detail.value(QContactDetail__FieldProvenance).toString();
-        } else {
-            // This detail is not aggregated from another
-            provenance = QString::fromLatin1("%1:%2:%3").arg(contactId).arg(detailId.toUInt()).arg(syncTarget);
-        }
-        detail.setValue(QContactDetail__FieldProvenance, provenance);
-
-        if (aggregateContact) {
-            // Modify this detail URI to preserve uniqueness - the result must not clash with the
-            // URI in the constituent's copy, nor of any other aggregator of the same detail
-
-            // If a detail URI is modified for aggregation, we need to insert the ID before the colon
-            const QString prefix(aggregateSyncTarget + QStringLiteral("-%1:").arg(contactId));
-
-            QString detailUri = detail.detailUri();
-            if (!detailUri.isEmpty() && !detailUri.startsWith(prefix)) {
-                if (detailUri.startsWith(aggregateSyncTarget)) {
-                    // Remove any invalid aggregate prefix that may have been stored
-                    int index = detailUri.indexOf(QChar::fromLatin1(':'));
-                    detailUri = detailUri.mid(index + 1);
-                }
-                detail.setDetailUri(prefix + detailUri);
-            }
-
-            QStringList linkedDetailUris = detail.linkedDetailUris();
-            if (!linkedDetailUris.isEmpty()) {
-                QStringList::iterator it = linkedDetailUris.begin(), end = linkedDetailUris.end();
-                for ( ; it != end; ++it) {
-                    QString &linkedUri(*it);
-                    if (!linkedUri.isEmpty() && !linkedUri.startsWith(prefix)) {
-                        if (linkedUri.startsWith(aggregateSyncTarget)) {
-                            // Remove any invalid aggregate prefix that may have been stored
-                            int index = linkedUri.indexOf(QChar::fromLatin1(':'));
-                            linkedUri = linkedUri.mid(index + 1);
-                        }
-                        linkedUri.insert(0, prefix);
-                    }
-                }
-                detail.setLinkedDetailUris(linkedDetailUris);
-            }
-        }
+        setDetailProperties(detail, contactId, detailId.value<quint32>(), syncTarget, aggregateContact);
 
         contact->saveDetail(&detail);
 
