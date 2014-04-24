@@ -62,7 +62,8 @@ QString normalize(const QString &input, int flags, int maxCharacters)
     QString subset;
     subset.reserve(number.length());
 
-    QChar initialDigit;
+    QChar initialChar;
+    bool numericComponent = false;
     int firstDtmfIndex = -1;
 
     QString::const_iterator it = number.constBegin(), end = number.constEnd();
@@ -71,14 +72,15 @@ QString normalize(const QString &input, int flags, int maxCharacters)
             // Convert to ASCII, capturing unicode digit values
             const QChar digit(QChar::fromLatin1('0' + (*it).digitValue()));
             subset.append(digit);
-            if (initialDigit.isNull()) {
-                initialDigit = digit;
+            numericComponent = true;
+            if (initialChar.isNull()) {
+                initialChar = digit;
             }
         } else if (*it == plus) {
-            if (initialDigit.isNull()) {
+            if (initialChar.isNull()) {
                 // This is the start of the diallable number
                 subset.append(*it);
-                initialDigit = *it;
+                initialChar = *it;
             } else if (flags & QtContactsSqliteExtensions::ValidatePhoneNumber) {
                 // Not valid in this location
                 return QString();
@@ -88,22 +90,31 @@ QString normalize(const QString &input, int flags, int maxCharacters)
                 subset.append(*it);
             }
         } else if (dtmfChars.contains(*it)) {
-            if ((flags & QtContactsSqliteExtensions::KeepPhoneNumberDialString) == 0) {
-                // No need to continue accumulating
+            if ((*it).isLetter() && !numericComponent) {
+                // Alphabetic DTMF chars can only occur after some numeric component
                 if (flags & QtContactsSqliteExtensions::ValidatePhoneNumber) {
-                    // Ensure the remaining characters are permissible
-                    while (++it != end) {
-                        if ((!(*it).isDigit()) && !allowedSeparators.contains(*it) && !dtmfChars.contains(*it)) {
-                            // Invalid character
-                            return QString();
+                    return QString();
+                } else {
+                    // Skip this character, not valid in this position
+                }
+            } else {
+                if ((flags & QtContactsSqliteExtensions::KeepPhoneNumberDialString) == 0) {
+                    // No need to continue accumulating
+                    if (flags & QtContactsSqliteExtensions::ValidatePhoneNumber) {
+                        // Ensure the remaining characters are permissible
+                        while (++it != end) {
+                            if ((!(*it).isDigit()) && !allowedSeparators.contains(*it) && !dtmfChars.contains(*it)) {
+                                // Invalid character
+                                return QString();
+                            }
                         }
                     }
+                    break;
+                } else if (firstDtmfIndex == -1) {
+                    firstDtmfIndex = subset.length();
                 }
-                break;
-            } else if (firstDtmfIndex == -1) {
-                firstDtmfIndex = subset.length();
+                subset.append(*it);
             }
-            subset.append(*it);
         } else if (flags & QtContactsSqliteExtensions::ValidatePhoneNumber) {
             // Invalid character
             return QString();
@@ -111,7 +122,7 @@ QString normalize(const QString &input, int flags, int maxCharacters)
     }
 
     if ((flags & QtContactsSqliteExtensions::ValidatePhoneNumber) &&
-        (initialDigit == plus) && (firstDtmfIndex != -1)) {
+        (initialChar == plus) && (firstDtmfIndex != -1)) {
         // If this number starts with '+', it mustn't contain control codes
         if ((subset.indexOf(hashControl, firstDtmfIndex) != -1) ||
             (subset.indexOf(starControl, firstDtmfIndex) != -1)) {
