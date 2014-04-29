@@ -119,7 +119,13 @@ QString normalize(const QString &input, int flags, int maxCharacters)
                 if (firstDtmfIndex == -1) {
                     firstDtmfIndex = subset.length();
                 }
-                subset.append(*it);
+
+                // Accept 'x' and 'X', but convert them to 'p' in the normalized form
+                if ((*it).toLower() == QChar::fromLatin1('x')) {
+                    subset.append(QChar::fromLatin1('p'));
+                } else {
+                    subset.append(*it);
+                }
             }
         } else if (flags & QtContactsSqliteExtensions::ValidatePhoneNumber) {
             // Invalid character
