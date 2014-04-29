@@ -30,6 +30,7 @@
  */
 
 #include "contactsdatabase.h"
+#include "contactsengine.h"
 #include "trace_p.h"
 
 #include <QDesktopServices>
@@ -626,18 +627,86 @@ static const char *upgradeVersion6[] = {
     "PRAGMA user_version=7",
     0 // NULL-terminated
 };
-
-static const char **upgradeVersions[] = {
-    upgradeVersion0,
-    upgradeVersion1,
-    upgradeVersion2,
-    upgradeVersion3,
-    upgradeVersion4,
-    upgradeVersion5,
-    upgradeVersion6,
+static const char *upgradeVersion7[] = {
+    "PRAGMA user_version=8",
+    0 // NULL-terminated
 };
 
-static const int currentSchemaVersion = 7;
+typedef bool (*UpgradeFunction)(QSqlDatabase &database);
+
+struct UpdatePhoneNormalization
+{
+    quint32 detailId;
+    QString normalizedNumber;
+};
+static bool updateNormalizedNumbers(QSqlDatabase &database)
+{
+    QList<UpdatePhoneNormalization> updates;
+
+    QString statement(QStringLiteral("SELECT detailId, phoneNumber, normalizedNumber FROM PhoneNumbers"));
+    QSqlQuery query(database);
+    if (!query.exec(statement)) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Query failed: %1\n%2")
+                .arg(query.lastError().text())
+                .arg(statement));
+        return false;
+    }
+    while (query.next()) {
+        const quint32 detailId(query.value(0).value<quint32>());
+        const QString number(query.value(1).value<QString>());
+        const QString normalized(query.value(2).value<QString>());
+
+        const QString currentNormalization(ContactsEngine::normalizedPhoneNumber(number));
+        if (currentNormalization != normalized) {
+            UpdatePhoneNormalization data = { detailId, currentNormalization };
+            updates.append(data);
+        }
+    }
+    query.finish();
+
+    if (!updates.isEmpty()) {
+        query = QSqlQuery(database);
+        statement = QStringLiteral("UPDATE PhoneNumbers SET normalizedNumber = :normalizedNumber WHERE detailId = :detailId");
+        if (!query.prepare(statement)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare data upgrade query: %1\n%2")
+                    .arg(query.lastError().text())
+                    .arg(statement));
+            return false;
+        }
+
+        foreach (const UpdatePhoneNormalization &update, updates) {
+            query.bindValue(":normalizedNumber", update.normalizedNumber);
+            query.bindValue(":detailId", update.detailId);
+            if (!query.exec()) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to upgrade data: %1\n%2")
+                        .arg(query.lastError().text())
+                        .arg(statement));
+                return false;
+            }
+            query.finish();
+        }
+    }
+
+    return true;
+}
+
+struct UpgradeOperation {
+    UpgradeFunction fn;
+    const char **statements;
+};
+
+static UpgradeOperation upgradeVersions[] = {
+    { 0,                        upgradeVersion0 },
+    { 0,                        upgradeVersion1 },
+    { 0,                        upgradeVersion2 },
+    { 0,                        upgradeVersion3 },
+    { 0,                        upgradeVersion4 },
+    { 0,                        upgradeVersion5 },
+    { 0,                        upgradeVersion6 },
+    { updateNormalizedNumbers,  upgradeVersion7 },
+};
+
+static const int currentSchemaVersion = 8;
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {
@@ -703,9 +772,17 @@ static bool executeUpgradeStatements(QSqlDatabase &database)
     while (schemaVersion < currentSchemaVersion) {
         qWarning() << "Upgrading contacts database from schema version" << schemaVersion;
 
-        for (unsigned i = 0; upgradeVersions[schemaVersion][i]; i++) {
-            if (!execute(database, QLatin1String(upgradeVersions[schemaVersion][i])))
+        if (upgradeVersions[schemaVersion].fn) {
+            if (!(*upgradeVersions[schemaVersion].fn)(database)) {
+                qWarning() << "Unable to update data for schema version" << schemaVersion;
                 return false;
+            }
+        }
+        if (upgradeVersions[schemaVersion].statements) {
+            for (unsigned i = 0; upgradeVersions[schemaVersion].statements[i]; i++) {
+                if (!execute(database, QLatin1String(upgradeVersions[schemaVersion].statements[i])))
+                    return false;
+            }
         }
 
         if (!versionQuery.exec() || !versionQuery.next()) {
@@ -721,6 +798,9 @@ static bool executeUpgradeStatements(QSqlDatabase &database)
             return false;
         } else {
             schemaVersion = version;
+            if (schemaVersion == currentSchemaVersion) {
+                qWarning() << "Contacts database upgraded to version" << schemaVersion;
+            }
         }
     }
 
