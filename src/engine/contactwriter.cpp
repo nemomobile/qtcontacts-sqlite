@@ -605,19 +605,13 @@ QContactManager::Error ContactWriter::remove(const QList<QContactId> &contactIds
     // grab the self-contact id so we can avoid removing it.
     quint32 selfContactId = 0;
     {
-        const QString findSelfContactId(QStringLiteral(
-            " SELECT DISTINCT contactId FROM Identities WHERE identity = :identity"
-        ));
-
-        ContactsDatabase::Query query(m_database.prepare(findSelfContactId));
-        query.bindValue(":identity", ContactsDatabase::SelfContactId);
-        if (!query.exec()) {
-            query.reportError("Failed to fetch self contact id during remove");
-            return QContactManager::UnspecifiedError;
+        QContactId id;
+        QContactManager::Error err;
+        if ((err = m_reader->getIdentity(ContactsDatabase::SelfContactId, &id)) != QContactManager::NoError) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to determine self ID while removing contacts"));
+            return err;
         }
-        if (query.next()) {
-            selfContactId = query.value<quint32>(0);
-        }
+        selfContactId = ContactId::databaseId(id);
     }
 
     // grab the existing contact ids so that we can perform removal detection
