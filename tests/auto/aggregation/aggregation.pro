@@ -4,8 +4,7 @@ include(../../common.pri)
 QT += contacts-private
 
 INCLUDEPATH += \
-    ../../../src/engine/ \
-    ../../../src/extensions/
+    ../../../src/engine/
 
 HEADERS += \
     ../../../src/engine/contactid_p.h \

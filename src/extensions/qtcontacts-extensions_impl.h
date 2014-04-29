@@ -81,6 +81,9 @@ QString normalize(const QString &input, int flags, int maxCharacters)
                 // This is the start of the diallable number
                 subset.append(*it);
                 initialChar = *it;
+            } else if (firstDtmfIndex != -1) {
+                // Allow inside the DMTF section
+                subset.append(*it);
             } else if (flags & QtContactsSqliteExtensions::ValidatePhoneNumber) {
                 // Not valid in this location
                 return QString();
@@ -110,7 +113,10 @@ QString normalize(const QString &input, int flags, int maxCharacters)
                         }
                     }
                     break;
-                } else if (firstDtmfIndex == -1) {
+                }
+
+                // Otherwise, continue with processing
+                if (firstDtmfIndex == -1) {
                     firstDtmfIndex = subset.length();
                 }
                 subset.append(*it);

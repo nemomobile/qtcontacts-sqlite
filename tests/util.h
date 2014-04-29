@@ -49,7 +49,7 @@
 
 #include <QtContacts>
 
-#include "contactid_p.h"
+#include "../../../src/engine/contactid_p.h"
 
 #include "../../../src/extensions/qtcontacts-extensions_impl.h"
 #include "../../../src/extensions/qtcontacts-extensions_manager_impl.h"
