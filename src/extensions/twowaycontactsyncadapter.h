@@ -83,7 +83,7 @@ public:
     // step seven: store sync state data as required.
     virtual bool storeSyncStateData(const QString &accountId);
     // error case: purge sync state data so that the next sync is "clean".
-    virtual bool purgeSyncStateData(const QString &accountId);
+    virtual bool purgeSyncStateData(const QString &accountId, bool purgePartialSyncStateData = false);
 
     bool removeAllContacts();
 
@@ -107,6 +107,9 @@ protected:
                     QList<QContact> *remoteAddedModified,
                     QList<QContactId> *exportedIds,
                     QList<QContact> *mutatedPrevRemote,
+                    QMap<QContactId, QContact> *possiblyUploadedAdditions,
+                    QMap<QContactId, QContact> *reportedUploadedAdditions,
+                    QMap<QString, QContact> *definitelyDownloadedAdditions,
                     QList<QPair<int, int> > *additionIndices,
                     bool needToApplyDelta = true,
                     const QSet<QContactDetail::DetailType> &ignorableDetailTypes = QSet<QContactDetail::DetailType>()) const;
