@@ -283,18 +283,18 @@ void tst_PhoneNumber::normalization_data()
 
     QTest::newRow("DTMF 5")
         << "1234567890x1"
-        << "1234567890x1"
+        << "1234567890p1"       // 'x' is converted to 'p'
         << "1234567890"
-        << "1234567890x1"
-        << "1234567890x1"
+        << "1234567890p1"
+        << "1234567890p1"
         << true;
 
     QTest::newRow("DTMF 6")
         << "1234567890X1"
-        << "1234567890X1"
+        << "1234567890p1"       // 'X' is converted to 'p'
         << "1234567890"
-        << "1234567890X1"
-        << "1234567890X1"
+        << "1234567890p1"
+        << "1234567890p1"
         << true;
 
     QTest::newRow("DTMF 7")
@@ -315,18 +315,18 @@ void tst_PhoneNumber::normalization_data()
 
     QTest::newRow("DTMF 9")
         << "1234567890w1p2x3#4*5"
-        << "1234567890w1p2x3#4*5"
+        << "1234567890w1p2p3#4*5"
         << "1234567890"
-        << "1234567890w1p2x3#4*5"
-        << "1234567890w1p2x3#4*5"
+        << "1234567890w1p2p3#4*5"
+        << "1234567890w1p2p3#4*5"
         << true;
 
     QTest::newRow("DTMF 10")
         << " 1234567890 w1 p2 (x3) #4*5  "
-        << "1234567890 w1 p2 (x3) #4*5"
+        << "1234567890 w1 p2 (p3) #4*5"
         << "1234567890"
-        << "1234567890w1p2x3#4*5"
-        << "1234567890w1p2x3#4*5"
+        << "1234567890w1p2p3#4*5"
+        << "1234567890w1p2p3#4*5"
         << true;
 
     QTest::newRow("invalid DTMF 1")
@@ -339,10 +339,10 @@ void tst_PhoneNumber::normalization_data()
 
     QTest::newRow("invalid DTMF 2")
         << "w1p2x3"
-        << "1p2x3"
+        << "1p2p3"
         << "1"
-        << "1p2x3"
-        << "1p2x3"
+        << "1p2p3"
+        << "1p2p3"
         << false;
 
     QTest::newRow("invalid DTMF 3")
