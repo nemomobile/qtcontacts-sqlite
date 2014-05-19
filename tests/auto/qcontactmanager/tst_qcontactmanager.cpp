@@ -1470,8 +1470,11 @@ void tst_QContactManager::presenceReporting()
     n.setLastName("Presence-Update");
     a.saveDetail(&n);
 
+    QDateTime ts(QDateTime::currentDateTime());
+
     QContactPresence p;
     p.setPresenceState(QContactPresence::PresenceAway);
+    p.setTimestamp(ts);
     QVERIFY(a.saveDetail(&p));
 
     QContactOnlineAccount oa;
@@ -1487,6 +1490,9 @@ void tst_QContactManager::presenceReporting()
 
     QVERIFY(cm->saveContact(&a));
     a = cm->contact(retrievalId(a));
+
+    QCOMPARE(a.detail<QContactPresence>().presenceState(), QContactPresence::PresenceAway);
+    QCOMPARE(a.detail<QContactPresence>().timestamp(), ts);
 
     QTest::qWait(500); // wait for signal coalescing.
     QTRY_VERIFY(addedSpy.count() > 0);
@@ -1515,6 +1521,9 @@ void tst_QContactManager::presenceReporting()
                                                      << detailType<QContactOnlineAccount>()
                                                      << detailType<QContactOriginMetadata>()));
     a = cm->contact(retrievalId(a));
+
+    QCOMPARE(a.detail<QContactPresence>().presenceState(), QContactPresence::PresenceAvailable);
+    QCOMPARE(a.detail<QContactPresence>().timestamp(), ts);
 
     QTest::qWait(500); // wait for signal coalescing.
     if (!mergePresenceChanges) {
