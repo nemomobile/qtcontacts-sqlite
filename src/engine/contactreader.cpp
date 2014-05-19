@@ -134,6 +134,25 @@ static QVariant dateValue(const QVariant &columnValue)
     return QDate::fromString(dtString, Qt::ISODate);
 }
 
+// Input must be UTC
+static QString dateTimeString(const QDateTime &qdt)
+{
+    return qdt.toString(QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz"));
+}
+
+// Input must be UTC
+static QString dateString(const QDateTime &qdt)
+{
+    return qdt.toString(QStringLiteral("yyyy-MM-dd"));
+}
+
+static QDateTime fromDateTimeString(const QString &s)
+{
+    QDateTime rv(QDateTime::fromString(s, QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz")));
+    rv.setTimeSpec(Qt::UTC);
+    return rv;
+}
+
 static const FieldInfo displayLabelFields[] =
 {
     { QContactDisplayLabel::FieldLabel, "displayLabel", StringField }
@@ -406,7 +425,7 @@ static void setValues(QContactPresence *detail, QSqlQuery *query, const int offs
     typedef QContactPresence T;
 
     setValue(detail, T::FieldPresenceState, query->value(offset + 0).toInt());
-    setValue(detail, T::FieldTimestamp    , query->value(offset + 1));
+    setValue(detail, T::FieldTimestamp    , fromDateTimeString(query->value(offset + 1).toString()));
     setValue(detail, T::FieldNickname     , query->value(offset + 2));
     setValue(detail, T::FieldCustomMessage, query->value(offset + 3));
 }
@@ -416,7 +435,7 @@ static void setValues(QContactGlobalPresence *detail, QSqlQuery *query, const in
     typedef QContactPresence T;
 
     setValue(detail, T::FieldPresenceState, query->value(offset + 0).toInt());
-    setValue(detail, T::FieldTimestamp    , query->value(offset + 1));
+    setValue(detail, T::FieldTimestamp    , fromDateTimeString(query->value(offset + 1).toString()));
     setValue(detail, T::FieldNickname     , query->value(offset + 2));
     setValue(detail, T::FieldCustomMessage, query->value(offset + 3));
 }
@@ -694,6 +713,17 @@ static QString caseInsensitiveColumnName(const char *table, const char *column)
     return columnNames.value(fieldName(table, column));
 }
 
+static QString dateString(const DetailInfo &detail, const QDateTime &qdt)
+{
+    if (detail.detail == QContactBirthday::Type
+            || detail.detail == QContactAnniversary::Type) {
+        // just interested in the date, not the whole date time
+        return dateString(qdt.toUTC());
+    }
+
+    return dateTimeString(qdt.toUTC());
+}
+
 template<typename T1, typename T2>
 static bool matchOnType(const T1 &filter, T2 type)
 {
@@ -746,36 +776,6 @@ static QString convertFilterValueToString(const QContactDetailFilter &filter, co
     }
 
     return defaultValue;
-}
-
-// Input must be UTC
-static QString dateTimeString(const QDateTime &qdt)
-{
-    return qdt.toString(QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz"));
-}
-
-// Input must be UTC
-static QString dateString(const QDateTime &qdt)
-{
-    return qdt.toString(QStringLiteral("yyyy-MM-dd"));
-}
-
-static QString dateString(const DetailInfo &detail, const QDateTime &qdt)
-{
-    if (detail.detail == QContactBirthday::Type
-            || detail.detail == QContactAnniversary::Type) {
-        // just interested in the date, not the whole date time
-        return dateString(qdt.toUTC());
-    }
-
-    return dateTimeString(qdt.toUTC());
-}
-
-static QDateTime fromDateTimeString(const QString &s)
-{
-    QDateTime rv(QDateTime::fromString(s, QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz")));
-    rv.setTimeSpec(Qt::UTC);
-    return rv;
 }
 
 static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bindings, bool *failed)
