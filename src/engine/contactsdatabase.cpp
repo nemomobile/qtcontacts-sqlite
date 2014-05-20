@@ -1501,7 +1501,7 @@ bool ContactsDatabase::rollbackTransaction()
 {
     ProcessMutex *mutex(processMutex());
 
-    const bool rv = ::commitTransaction(m_database);
+    const bool rv = ::rollbackTransaction(m_database);
 
     if (mutex->isLocked()) {
         mutex->unlock();
