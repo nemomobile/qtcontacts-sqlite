@@ -6076,11 +6076,19 @@ void tst_Aggregation::testOOB()
         QVERIFY(cme->removeOOB(scope, "data"));
     }
 
+    QStringList keys;
+    QVERIFY(cme->fetchOOBKeys(scope, &keys));
+    QCOMPARE(keys, QStringList());
+
     QVERIFY(cme->storeOOB(scope, "data", QVariant::fromValue<double>(0.123456789)));
 
     data = QVariant();
     QVERIFY(cme->fetchOOB(scope, "data", &data));
     QCOMPARE(data.toDouble(), 0.123456789);
+
+    keys.clear();
+    QVERIFY(cme->fetchOOBKeys(scope, &keys));
+    QCOMPARE(keys, QStringList() << "data");
 
     // Test overwrite
     QVERIFY(cme->storeOOB(scope, "data", QVariant::fromValue<QString>(QLatin1String("Testing"))));
@@ -6089,10 +6097,18 @@ void tst_Aggregation::testOOB()
     QVERIFY(cme->fetchOOB(scope, "data", &data));
     QCOMPARE(data.toString(), QLatin1String("Testing"));
 
+    keys.clear();
+    QVERIFY(cme->fetchOOBKeys(scope, &keys));
+    QCOMPARE(keys, QStringList() << "data");
+
     // Test remove
     QVERIFY(cme->removeOOB(scope, "data"));
     QVERIFY(cme->fetchOOB(scope, "data", &data));
     QCOMPARE(data, QVariant());
+
+    keys.clear();
+    QVERIFY(cme->fetchOOBKeys(scope, &keys));
+    QCOMPARE(keys, QStringList());
 
     // Test multiple items
     QMap<QString, QVariant> values;
@@ -6106,6 +6122,10 @@ void tst_Aggregation::testOOB()
     QCOMPARE(values["data"].toInt(), 100);
     QCOMPARE(values["other"].toInt(), 200);
 
+    keys.clear();
+    QVERIFY(cme->fetchOOBKeys(scope, &keys));
+    QCOMPARE(keys, QStringList() << "data" << "other");
+
     // Test empty lists
     values.clear();
     QVERIFY(cme->fetchOOB(scope, &values));
@@ -6113,11 +6133,19 @@ void tst_Aggregation::testOOB()
     QCOMPARE(values["data"].toInt(), 100);
     QCOMPARE(values["other"].toInt(), 200);
 
+    keys.clear();
+    QVERIFY(cme->fetchOOBKeys(scope, &keys));
+    QCOMPARE(keys, QStringList() << "data" << "other");
+
     QVERIFY(cme->removeOOB(scope));
 
     values.clear();
     QVERIFY(cme->fetchOOB(scope, &values));
     QCOMPARE(values.count(), 0);
+
+    keys.clear();
+    QVERIFY(cme->fetchOOBKeys(scope, &keys));
+    QCOMPARE(keys, QStringList());
 }
 
 bool haveExpectedContent(const QContact &c, const QString &phone, const QString &email)

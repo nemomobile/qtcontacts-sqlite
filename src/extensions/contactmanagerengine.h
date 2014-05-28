@@ -81,6 +81,8 @@ public:
     virtual bool fetchOOB(const QString &scope, const QStringList &keys, QMap<QString, QVariant> *values) = 0;
     virtual bool fetchOOB(const QString &scope, QMap<QString, QVariant> *values) = 0;
 
+    virtual bool fetchOOBKeys(const QString &scope, QStringList *keys) = 0;
+
     virtual bool storeOOB(const QString &scope, const QString &key, const QVariant &value) = 0;
     virtual bool storeOOB(const QString &scope, const QMap<QString, QVariant> &values) = 0;
 

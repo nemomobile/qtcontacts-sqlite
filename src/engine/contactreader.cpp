@@ -2285,8 +2285,35 @@ bool ContactReader::fetchOOB(const QString &scope, const QStringList &keys, QMap
         return false;
     }
     while (query.next()) {
-        const QString type(query.value(0).toString());
-        values->insert(type.mid(scope.length() + 1), query.value(1));
+        const QString name(query.value(0).toString());
+        values->insert(name.mid(scope.length() + 1), query.value(1));
+    }
+    query.finish();
+
+    return true;
+}
+
+bool ContactReader::fetchOOBKeys(const QString &scope, QStringList *keys)
+{
+    QString statement(QString::fromLatin1("SELECT name FROM OOB WHERE name LIKE '%1:%%'").arg(scope));
+
+    QSqlQuery query(m_database);
+    query.setForwardOnly(true);
+    if (!query.prepare(statement)) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare OOB query:\n%1\nQuery:\n%2")
+                .arg(query.lastError().text())
+                .arg(statement));
+        return false;
+    }
+
+    if (!query.exec()) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to query OOB: %1")
+                .arg(query.lastError().text()));
+        return false;
+    }
+    while (query.next()) {
+        const QString name(query.value(0).toString());
+        keys->append(name.mid(scope.length() + 1));
     }
     query.finish();
 

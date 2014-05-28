@@ -85,6 +85,8 @@ public:
 
     bool fetchOOB(const QString &scope, const QStringList &keys, QMap<QString, QVariant> *values);
 
+    bool fetchOOBKeys(const QString &scope, QStringList *keys);
+
 protected:
     QContactManager::Error readDeletedContactIds(
             QList<QContactId> *contactIds,
