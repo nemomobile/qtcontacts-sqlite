@@ -313,7 +313,8 @@ static const char *createDeletedContactsTable =
 static const char *createOOBTable =
         "\n CREATE TABLE OOB ("
         "\n name TEXT PRIMARY KEY,"
-        "\n value BLOB);";
+        "\n value BLOB,"
+        "\n compressed INTEGER DEFAULT 0);";
 
 static const char *createRemoveTrigger =
         "\n CREATE TRIGGER RemoveContactDetails"
@@ -631,6 +632,11 @@ static const char *upgradeVersion7[] = {
     "PRAGMA user_version=8",
     0 // NULL-terminated
 };
+static const char *upgradeVersion8[] = {
+    "ALTER TABLE OOB ADD COLUMN compressed INTEGER DEFAULT 0",
+    "PRAGMA user_version=9",
+    0 // NULL-terminated
+};
 
 typedef bool (*UpgradeFunction)(QSqlDatabase &database);
 
@@ -704,9 +710,10 @@ static UpgradeOperation upgradeVersions[] = {
     { 0,                        upgradeVersion5 },
     { 0,                        upgradeVersion6 },
     { updateNormalizedNumbers,  upgradeVersion7 },
+    { 0,                        upgradeVersion8 },
 };
 
-static const int currentSchemaVersion = 8;
+static const int currentSchemaVersion = 9;
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {

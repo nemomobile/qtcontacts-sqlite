@@ -2252,7 +2252,7 @@ bool ContactReader::fetchOOB(const QString &scope, const QStringList &keys, QMap
 {
     QVariantList keyNames;
 
-    QString statement(QString::fromLatin1("SELECT name, value FROM OOB WHERE name "));
+    QString statement(QString::fromLatin1("SELECT name, value, compressed FROM OOB WHERE name "));
     if (keys.isEmpty()) {
         statement.append(QString::fromLatin1("LIKE '%1:%%'").arg(scope));
     } else {
@@ -2286,7 +2286,25 @@ bool ContactReader::fetchOOB(const QString &scope, const QStringList &keys, QMap
     }
     while (query.next()) {
         const QString name(query.value(0).toString());
-        values->insert(name.mid(scope.length() + 1), query.value(1));
+        const QVariant value(query.value(1));
+        const quint32 compressed(query.value(2).toUInt());
+
+        const QString key(name.mid(scope.length() + 1));
+        if (compressed > 0) {
+            QByteArray compressedData(value.value<QByteArray>());
+            if (compressed == 1) {
+                // QByteArray data
+                values->insert(key, QVariant(qUncompress(compressedData)));
+            } else if (compressed == 2) {
+                // QString data
+                values->insert(key, QVariant(QString::fromUtf8(qUncompress(compressedData))));
+            } else {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Invalid compression type for OOB data:%1, key:%2")
+                        .arg(compressed).arg(key));
+            }
+        } else {
+            values->insert(key, value);
+        }
     }
     query.finish();
 

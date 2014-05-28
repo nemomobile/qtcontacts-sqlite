@@ -6091,11 +6091,77 @@ void tst_Aggregation::testOOB()
     QCOMPARE(keys, QStringList() << "data");
 
     // Test overwrite
-    QVERIFY(cme->storeOOB(scope, "data", QVariant::fromValue<QString>(QLatin1String("Testing"))));
+    QVERIFY(cme->storeOOB(scope, "data", QVariant::fromValue<QString>(QString::fromLatin1("Testing"))));
 
     data = QVariant();
     QVERIFY(cme->fetchOOB(scope, "data", &data));
-    QCOMPARE(data.toString(), QLatin1String("Testing"));
+    QCOMPARE(data.toString(), QString::fromLatin1("Testing"));
+
+    // Test insertion of a long string
+    QString lorem(QString::fromLatin1("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Praesent consectetur elit ut semper porta. Aenean gravida risus ligula, sollicitudin pharetra magna varius quis. Donec mattis vehicula lobortis. In a pulvinar est. Donec consectetur sem eu metus blandit rhoncus. In volutpat lobortis porta. Aliquam ultrices nulla sit amet erat pharetra, in mollis elit condimentum. Sed auctor cursus viverra. Vestibulum at placerat ipsum."
+    "Integer venenatis venenatis justo, vel tincidunt felis mattis sit amet. Aliquam tempus augue quis magna ultricies, id volutpat lorem ornare. Ut volutpat hendrerit tincidunt. Pellentesque habitant morbi tristique senectus et netus et malesuada fames ac turpis egestas. Integer sagittis risus non ipsum adipiscing, in semper urna imperdiet. Vivamus lobortis euismod justo, id vestibulum purus posuere cursus. Sed fermentum non sem ac tempor. Vivamus enim velit, euismod nec rutrum et, pellentesque vitae enim. Praesent dignissim consectetur tellus, vel sagittis justo pulvinar eu. Interdum et malesuada fames ac ante ipsum primis in faucibus. Suspendisse potenti. Curabitur condimentum dolor ac dictum condimentum. Nulla id libero hendrerit, facilisis velit at, porttitor erat."
+    "Proin blandit a nisl quis laoreet. Pellentesque venenatis, sem non pulvinar blandit, leo est sodales tellus, sit amet semper orci neque non enim. Mauris tincidunt, quam sollicitudin fermentum dignissim, neque nunc consequat mauris, quis facilisis est massa ut purus. Sed et lacus lectus. Aenean laoreet lectus in suscipit pretium. Suspendisse at justo adipiscing, aliquam est ut, tristique tortor. Mauris tincidunt sem pharetra, volutpat erat non, cursus eros. In hac habitasse platea dictumst. Interdum et malesuada fames ac ante ipsum primis in faucibus. Fusce porttitor ultrices tortor, vel tincidunt libero feugiat a. Etiam elementum, magna sed imperdiet ullamcorper, nisl dolor vehicula magna, vel facilisis quam mi eget tortor. Donec pellentesque odio a eros iaculis varius. Sed purus nisi, accumsan quis urna eget, tincidunt venenatis sapien. Suspendisse quis diam dui. Donec eu sollicitudin nibh."
+    "Sed pretium urna at odio dictum convallis. Donec vel pulvinar purus. Duis et augue ac turpis porttitor hendrerit quis quis urna. Sed ac lectus odio. Sed volutpat placerat hendrerit. Mauris ac mollis nisl. Praesent ornare egestas elit, vitae ultricies quam imperdiet a. Nam accumsan nulla ut blandit scelerisque. Maecenas condimentum erat sit amet turpis feugiat, ac dictum sapien mattis. In sagittis nulla mi, ut facilisis urna lacinia et. Integer sed erat id massa vestibulum fringilla. Ut nec placerat lorem, quis semper ipsum. Aenean facilisis, odio vitae condimentum interdum, tortor tellus scelerisque purus, at pellentesque leo erat eu orci. Duis in feugiat quam. Mauris lorem dolor, pharetra quis blandit non, cursus et odio."
+    "Nunc eu tristique dui. Donec sit amet velit id ipsum rhoncus facilisis. Integer quis ultrices metus. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia Curae; Donec ac velit lacus. Fusce pharetra lacus metus, nec adipiscing erat consequat consectetur. Proin ipsum massa, placerat eget dignissim in, interdum ut lorem. Aliquam erat volutpat. Duis sagittis nec est in suscipit. Mauris non auctor nibh. Suspendisse ultrices laoreet neque, a lacinia ante lacinia a. Praesent tempus luctus mauris eu ullamcorper. Praesent ultricies ac metus eget imperdiet. Sed massa lectus, tincidunt in dui non, faucibus mattis ante. Curabitur neque quam, congue non dapibus quis, fringilla ut orci."));
+    QVERIFY(cme->storeOOB(scope, "data", QVariant::fromValue<QString>(lorem)));
+    QVERIFY(cme->fetchOOB(scope, "data", &data));
+    QCOMPARE(data.toString(), lorem);
+
+    // Test insertion of a large byte arrays
+    QList<int> uniqueSequence;
+    QList<int> repeatingSequence;
+    QList<int> randomSequence;
+
+    qsrand(0);
+    for (int i = 0; i < 100; ++i) {
+        for (int j = 0; j < 10; ++j) {
+            uniqueSequence.append(i * 100 + j);
+            repeatingSequence.append(j);
+            randomSequence.append(qrand());
+        }
+    }
+
+    QByteArray buffer;
+    QList<int> extracted;
+
+    {
+        QDataStream os(&buffer, QIODevice::WriteOnly);
+        os << uniqueSequence;
+    }
+    QVERIFY(cme->storeOOB(scope, "data", QVariant::fromValue<QByteArray>(buffer)));
+    QVERIFY(cme->fetchOOB(scope, "data", &data));
+    {
+        buffer = data.value<QByteArray>();
+        QDataStream is(buffer);
+        is >> extracted;
+    }
+    QCOMPARE(extracted, uniqueSequence);
+
+    {
+        QDataStream os(&buffer, QIODevice::WriteOnly);
+        os << repeatingSequence;
+    }
+    QVERIFY(cme->storeOOB(scope, "data", QVariant::fromValue<QByteArray>(buffer)));
+    QVERIFY(cme->fetchOOB(scope, "data", &data));
+    {
+        buffer = data.value<QByteArray>();
+        QDataStream is(buffer);
+        is >> extracted;
+    }
+    QCOMPARE(extracted, repeatingSequence);
+
+    {
+        QDataStream os(&buffer, QIODevice::WriteOnly);
+        os << randomSequence;
+    }
+    QVERIFY(cme->storeOOB(scope, "data", QVariant::fromValue<QByteArray>(buffer)));
+    QVERIFY(cme->fetchOOB(scope, "data", &data));
+    {
+        buffer = data.value<QByteArray>();
+        QDataStream is(buffer);
+        is >> extracted;
+    }
+    QCOMPARE(extracted, randomSequence);
 
     keys.clear();
     QVERIFY(cme->fetchOOBKeys(scope, &keys));
