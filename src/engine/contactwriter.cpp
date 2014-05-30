@@ -55,6 +55,7 @@
 #include <QUuid>
 
 #include <algorithm>
+#include <cmath>
 
 #include <QtDebug>
 
@@ -74,6 +75,36 @@ namespace {
                 *prevMaxSyncTimestamp = contactTimestamp;
             }
         }
+    }
+
+    double log2(double n)
+    {
+        const double scale = 1.44269504088896340736;
+        return std::log(n) * scale;
+    }
+
+    double entropy(QByteArray::const_iterator it, QByteArray::const_iterator end, size_t total)
+    {
+        // Shannon's entropy formula, yields [0..1] (low to high information density)
+        double entropy = 0.0;
+
+        int frequency[256] = { 0 };
+        for ( ; it != end; ++it) {
+            frequency[static_cast<int>(*it)] += 1;
+        }
+        for (int i = 0; i < 256; ++i) {
+            if (frequency[i] != 0) {
+                double p = static_cast<double>(frequency[i]) / total;
+                entropy -= p * log2(p);
+            }
+        }
+
+        return entropy / 8;
+    }
+
+    double entropy(const QByteArray &data)
+    {
+        return entropy(data.constBegin(), data.constEnd(), data.size());
     }
 }
 
@@ -1210,18 +1241,43 @@ bool ContactWriter::storeOOB(const QString &scope, const QMap<QString, QVariant>
         return false;
     }
 
-    QStringList valuePairs;
+    QStringList tuples;
     QVariantList dataValues;
     const QChar colon(QChar::fromLatin1(':'));
+    const QString bindString(QString::fromLatin1("(?,?,?)"));
 
     QMap<QString, QVariant>::const_iterator it = values.constBegin(), end = values.constEnd();
     for ( ; it != end; ++it) {
-        valuePairs.append(QString::fromLatin1("(?,?)"));
+        tuples.append(bindString);
         dataValues.append(scope + colon + it.key());
-        dataValues.append(it.value());
+
+        // If the data is large, compress it to reduce the IO cost
+        const QVariant &var(it.value());
+        if (var.type() == static_cast<QVariant::Type>(QMetaType::QByteArray)) {
+            const QByteArray uncompressed(var.value<QByteArray>());
+            if (uncompressed.size() > 512) {
+                // Test the entropy of this data, if it is unlikely to compress significantly, don't try
+                if (entropy(uncompressed.constBegin() + 256, uncompressed.constBegin() + 512, 256) < 0.85) {
+                    dataValues.append(QVariant(qCompress(uncompressed)));
+                    dataValues.append(1);
+                    continue;
+                }
+            }
+        } else if (var.type() == static_cast<QVariant::Type>(QMetaType::QString)) {
+            const QString uncompressed(var.value<QString>());
+            if (uncompressed.size() > 256) {
+                dataValues.append(QVariant(qCompress(uncompressed.toUtf8())));
+                dataValues.append(2);
+                continue;
+            }
+        }
+
+        // No compression:
+        dataValues.append(var);
+        dataValues.append(0);
     }
 
-    QString statement(QString::fromLatin1("INSERT OR REPLACE INTO OOB (name, value) VALUES %1").arg(valuePairs.join(",")));
+    QString statement(QString::fromLatin1("INSERT OR REPLACE INTO OOB (name, value, compressed) VALUES %1").arg(tuples.join(",")));
 
     QSqlQuery query(m_database);
     query.setForwardOnly(true);

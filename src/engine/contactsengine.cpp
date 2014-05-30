@@ -1187,6 +1187,11 @@ bool ContactsEngine::fetchOOB(const QString &scope, QMap<QString, QVariant> *val
     return reader()->fetchOOB(scope, QStringList(), values);
 }
 
+bool ContactsEngine::fetchOOBKeys(const QString &scope, QStringList *keys)
+{
+    return reader()->fetchOOBKeys(scope, keys);
+}
+
 bool ContactsEngine::storeOOB(const QString &scope, const QString &key, const QVariant &value)
 {
     QMap<QString, QVariant> values;

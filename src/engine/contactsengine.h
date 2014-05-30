@@ -150,6 +150,8 @@ public:
     bool fetchOOB(const QString &scope, const QStringList &keys, QMap<QString, QVariant> *values);
     bool fetchOOB(const QString &scope, QMap<QString, QVariant> *values);
 
+    bool fetchOOBKeys(const QString &scope, QStringList *keys);
+
     bool storeOOB(const QString &scope, const QString &key, const QVariant &value);
     bool storeOOB(const QString &scope, const QMap<QString, QVariant> &values);
 
