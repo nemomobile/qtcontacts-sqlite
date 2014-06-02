@@ -65,7 +65,15 @@ namespace QtContactsSqliteExtensions {
         };
 
         struct StateData {
-            StateData() : m_status(Inactive), m_mutated(false), m_partial(false) {}
+            StateData()
+                : m_status(Inactive)
+                , m_mutated(false)
+                , m_partial(false)
+                , m_exportedIdsModified(false)
+                , m_mutatedPrevRemoteModified(false)
+            {
+            }
+
             Status m_status;
             QString m_oobScope;
             QDateTime m_localSince;
@@ -80,6 +88,8 @@ namespace QtContactsSqliteExtensions {
             QMap<QString, QContact> m_definitelyDownloadedAdditions; // this one is stored OOB. Guid key.
             bool m_mutated; // whether the MUTATED_PREV_REMOTE list has been populated or not
             bool m_partial;
+            bool m_exportedIdsModified;
+            bool m_mutatedPrevRemoteModified;
         };
 
         TwoWayContactSyncAdapterPrivate(const QString &syncTarget, const QMap<QString, QString> &params);
@@ -363,7 +373,9 @@ bool TwoWayContactSyncAdapter::storeRemoteChanges(const QList<QContact> &deleted
                                                                             deletedRemote,
                                                                             addModRemote,
                                                                             &d->m_stateData[accountId].m_exportedIds,
+                                                                            &d->m_stateData[accountId].m_exportedIdsModified,
                                                                             &d->m_stateData[accountId].m_mutatedPrevRemote,
+                                                                            &d->m_stateData[accountId].m_mutatedPrevRemoteModified,
                                                                             &d->m_stateData[accountId].m_possiblyUploadedAdditions,
                                                                             &d->m_stateData[accountId].m_reportedUploadedAdditions,
                                                                             &d->m_stateData[accountId].m_definitelyDownloadedAdditions,
@@ -391,24 +403,28 @@ bool TwoWayContactSyncAdapter::storeRemoteChanges(const QList<QContact> &deleted
             return false;
         }
 
-        // Report IDs allocated for added contacts back to the caller, and update the contact
-        // instances in the mutated prev remote array to match.  Record the fact that we added it.
-        int additionIndex = d->m_stateData[accountId].m_mutatedPrevRemote.count() - additionIndices.count();
-        QList<QPair<int, int> >::const_iterator it = additionIndices.constBegin(), end = additionIndices.constEnd();
-        for ( ; it != end; ++it, ++additionIndex) {
-            const int addModIndex((*it).first);
-            const int updateIndex((*it).second);
-            const QContact &addedContact(syncContactUpdates.at(updateIndex).second);
-            const QContactId addedId(addedContact.id());
-            (*addModRemote)[addModIndex].setId(addedId);
-            d->m_stateData[accountId].m_mutatedPrevRemote[additionIndex].setId(addedId);
-            if (!addedContact.detail<QContactGuid>().guid().isEmpty()) {
-                d->m_stateData[accountId].m_definitelyDownloadedAdditions.insert(addedContact.detail<QContactGuid>().guid(), addedContact);
-            } else {
-                // we won't be able to track failure-case duplicates in this case
-                // but sync adapters shouldn't be providing us with guidless contacts
-                // unless they're willing to handle that mapping themselves.
+        if (additionIndices.count()) {
+            // Report IDs allocated for added contacts back to the caller, and update the contact
+            // instances in the mutated prev remote array to match.  Record the fact that we added it.
+            int additionIndex = d->m_stateData[accountId].m_mutatedPrevRemote.count() - additionIndices.count();
+            QList<QPair<int, int> >::const_iterator it = additionIndices.constBegin(), end = additionIndices.constEnd();
+            for ( ; it != end; ++it, ++additionIndex) {
+                const int addModIndex((*it).first);
+                const int updateIndex((*it).second);
+                const QContact &addedContact(syncContactUpdates.at(updateIndex).second);
+                const QContactId addedId(addedContact.id());
+                (*addModRemote)[addModIndex].setId(addedId);
+                d->m_stateData[accountId].m_mutatedPrevRemote[additionIndex].setId(addedId);
+                if (!addedContact.detail<QContactGuid>().guid().isEmpty()) {
+                    d->m_stateData[accountId].m_definitelyDownloadedAdditions.insert(addedContact.detail<QContactGuid>().guid(), addedContact);
+                } else {
+                    // we won't be able to track failure-case duplicates in this case
+                    // but sync adapters shouldn't be providing us with guidless contacts
+                    // unless they're willing to handle that mapping themselves.
+                }
             }
+
+            d->m_stateData[accountId].m_mutatedPrevRemoteModified = true;
         }
 
         // store partial-sync state data to OOB data so that we can avoid
@@ -492,6 +508,9 @@ bool TwoWayContactSyncAdapter::determineLocalChanges(QDateTime *localSince,
         // we may not have yet populated the MUTATED_PREV_REMOTE data from PREV_REMOTE.
         if (!d->m_stateData[accountId].m_mutated) {
             d->m_stateData[accountId].m_mutated = true;
+            if (d->m_stateData[accountId].m_mutatedPrevRemoteModified) {
+                qWarning() << Q_FUNC_INFO << "Overwriting existing changes in m_mutatedPrevRemote!";
+            }
             d->m_stateData[accountId].m_mutatedPrevRemote = d->m_stateData[accountId].m_prevRemote;
         }
 
@@ -568,6 +587,7 @@ bool TwoWayContactSyncAdapter::determineLocalChanges(QDateTime *localSince,
             for (int i = 0; i < locallyAdded->size(); ++i) {
                 QContact localContact = locallyAdded->at(i);
                 d->m_stateData[accountId].m_exportedIds.append(localContact.id());
+                d->m_stateData[accountId].m_exportedIdsModified = true;
 
                 // we remove from the local contact any guid detail.  A guid must be globally
                 // unique in the database, so we couldn't store it after round-trip in the synctarget
@@ -656,6 +676,8 @@ bool TwoWayContactSyncAdapter::determineLocalChanges(QDateTime *localSince,
                 return false;
             }
         }
+
+        d->m_stateData[accountId].m_mutatedPrevRemoteModified = true;
     }
 
     // done.
@@ -693,22 +715,26 @@ bool TwoWayContactSyncAdapter::storeSyncStateData(const QString &accountId)
 
     QMap<QString, QVariant> values;
 
-    // store the MUTATED_PREV_REMOTE list into oob as PREV_REMOTE for next time.
-    QByteArray cdata;
-    QDataStream write(&cdata, QIODevice::WriteOnly);
-    write << d->m_stateData[accountId].m_mutatedPrevRemote;
-    values.insert(QStringLiteral("prevRemote"), QVariant(cdata));
+    if (d->m_stateData[accountId].m_mutatedPrevRemoteModified) {
+        // store the MUTATED_PREV_REMOTE list into oob as PREV_REMOTE for next time.
+        QByteArray cdata;
+        QDataStream write(&cdata, QIODevice::WriteOnly);
+        write << d->m_stateData[accountId].m_mutatedPrevRemote;
+        values.insert(QStringLiteral("prevRemote"), QVariant(cdata));
+    }
+
+    if (d->m_stateData[accountId].m_exportedIdsModified) {
+        // also store the EXPORTED_IDS list into oob to track non-synctarget contacts we upsynced.
+        QByteArray cdata;
+        QDataStream writeExportedIds(&cdata, QIODevice::WriteOnly);
+        writeExportedIds << d->m_stateData[accountId].m_exportedIds;
+        values.insert(QStringLiteral("exportedIds"), QVariant(cdata));
+    }
 
     // clear the values of the partial-sync-state maps as the sync was
     // successful and so we don't need to track partial-sync artifacts.
     values.insert(QStringLiteral("possiblyUploadedAdditions"), QVariant::fromValue<QByteArray>(QByteArray()));
     values.insert(QStringLiteral("definitelyDownloadedAdditions"), QVariant::fromValue<QByteArray>(QByteArray()));
-
-    // also store the EXPORTED_IDS list into oob to track non-synctarget contacts we upsynced.
-    cdata.clear();
-    QDataStream writeExportedIds(&cdata, QIODevice::WriteOnly);
-    writeExportedIds << d->m_stateData[accountId].m_exportedIds;
-    values.insert(QStringLiteral("exportedIds"), QVariant(cdata));
 
     // finally, store the new local and remote since timestamps to the OOB db
     values.insert(QStringLiteral("remoteSince"), QVariant(dateTimeString(d->m_stateData[accountId].m_newRemoteSince)));
@@ -857,7 +883,9 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapter::createUpdateList(con
                                                                              const QList<QContact> &remoteDeleted,
                                                                              QList<QContact> *remoteAddedModified,
                                                                              QList<QContactId> *exportedIds,
+                                                                             bool *exportedIdsModified,
                                                                              QList<QContact> *mutatedPrevRemote,
+                                                                             bool *mutatedPrevRemoteModified,
                                                                              QMap<QContactId, QContact> *possiblyUploadedAdditions,
                                                                              QMap<QContactId, QContact> *reportedUploadedAdditions,
                                                                              QMap<QString, QContact> *definitelyDownloadedAdditions,
@@ -954,6 +982,7 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapter::createUpdateList(con
         const QContactId id = prevContact.id();
         if (!id.isNull()) {
             exportedIds->removeAll(id);
+            *exportedIdsModified = true;
         }
     }
 
@@ -980,6 +1009,25 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapter::createUpdateList(con
         additionIndices->append(qMakePair(index, updateIndex));
     }
 
+    // mutate the mutatedPrevRemote list according to the changes.
+    if (*mutatedPrevRemoteModified) {
+        qWarning() << Q_FUNC_INFO << "Overwriting existing changes in mutatedPrevRemote!";
+    }
+    *mutatedPrevRemote = prevRemote;
+
+    if (!prevRemoteModificationIndexes.isEmpty() || !prevRemoteDeletionIndexes.isEmpty() || !prevRemoteAdditions.isEmpty()) {
+        *mutatedPrevRemoteModified = true;
+
+        // apply changes identified
+        foreach (int idx, prevRemoteModificationIndexes.keys())
+            mutatedPrevRemote->replace(idx, prevRemoteModificationIndexes.value(idx));
+        qSort(prevRemoteDeletionIndexes);
+        for (int i = prevRemoteDeletionIndexes.size() - 1; i >= 0; --i)
+            mutatedPrevRemote->removeAt(prevRemoteDeletionIndexes.at(i));
+        mutatedPrevRemote->append(prevRemoteAdditions);
+    }
+
+    // adjust for artifacts of incomplete sync operations
     for (int i = 0; i < alreadyUploadedArtifacts.size(); ++i) {
         const QPair<QContact, QContact> &update(alreadyUploadedArtifacts[i]);
         retn.append(update);
@@ -987,7 +1035,9 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapter::createUpdateList(con
         if (update.second != QContact()) {
             // addition/modification - we need to track that contact.
             mutatedPrevRemote->append(update.second);
+            *mutatedPrevRemoteModified = true;
             exportedIds->append(update.second.id());
+            *exportedIdsModified = true;
         }
     }
 
@@ -997,18 +1047,11 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapter::createUpdateList(con
         if (update.second != QContact()) {
             // addition/modification - we need to track that contact.
             mutatedPrevRemote->append(update.second);
+            *mutatedPrevRemoteModified = true;
             exportedIds->append(update.second.id());
+            *exportedIdsModified = true;
         }
     }
-
-    // finally, mutate the mutatedPrevRemote list according to the changes.
-    *mutatedPrevRemote = prevRemote;
-    foreach (int idx, prevRemoteModificationIndexes.keys())
-        mutatedPrevRemote->replace(idx, prevRemoteModificationIndexes.value(idx));
-    qSort(prevRemoteDeletionIndexes);
-    for (int i = prevRemoteDeletionIndexes.size() - 1; i >= 0; --i)
-        mutatedPrevRemote->removeAt(prevRemoteDeletionIndexes.at(i));
-    mutatedPrevRemote->append(prevRemoteAdditions);
 
     return retn;
 }
