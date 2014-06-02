@@ -97,7 +97,6 @@ protected:
     virtual void ensureAccountProvenance(QList<QContact> *locallyAdded,
                                          QList<QContact> *locallyModified,
                                          QList<QContact> *locallyDeleted,
-                                         const QList<QContact> &prevRemote,
                                          const QList<QContactId> &exportedIds,
                                          const QString &accountId);
     virtual QList<QContactDetail> determineModifications(
