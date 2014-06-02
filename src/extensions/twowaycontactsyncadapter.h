@@ -49,6 +49,8 @@ class TwoWayContactSyncAdapterPrivate;
 class TwoWayContactSyncAdapter
 {
 public:
+    enum ReadStateMode { ReadAllState, ReadPartialState };
+
     TwoWayContactSyncAdapter(const QString &syncTarget, const QMap<QString, QString> &params = QMap<QString, QString>());
     TwoWayContactSyncAdapter(const QString &syncTarget, QContactManager &mananger);
     virtual ~TwoWayContactSyncAdapter();
@@ -56,7 +58,7 @@ public:
     // step one: init the sync adapter
     virtual bool initSyncAdapter(const QString &accountId, const QString &oobIdentifier = QString());
     // step two: read sync state data, including remoteSince value needed in step three
-    virtual bool readSyncStateData(QDateTime *remoteSince, const QString &accountId);
+    virtual bool readSyncStateData(QDateTime *remoteSince, const QString &accountId, ReadStateMode readMode = ReadAllState);
     // step three: request server-side changes from remote service since remoteSince
     //   this is asynchronous and implementation-specific.
     virtual void determineRemoteChanges(const QDateTime &remoteSince, const QString &accountId);

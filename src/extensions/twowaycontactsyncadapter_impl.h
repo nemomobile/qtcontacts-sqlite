@@ -57,8 +57,15 @@ namespace QtContactsSqliteExtensions {
             DeterminedLocalChanges,
             Finished
         };
+
+        enum ReadMode {
+            ReadAll,
+            ReadPartial,
+            ReadRemaining
+        };
+
         struct StateData {
-            StateData() : m_status(Inactive), m_mutated(false) {}
+            StateData() : m_status(Inactive), m_mutated(false), m_partial(false) {}
             Status m_status;
             QString m_oobScope;
             QDateTime m_localSince;
@@ -72,6 +79,7 @@ namespace QtContactsSqliteExtensions {
             QMap<QContactId, QContact> m_reportedUploadedAdditions;  // this one is ephemeral
             QMap<QString, QContact> m_definitelyDownloadedAdditions; // this one is stored OOB. Guid key.
             bool m_mutated; // whether the MUTATED_PREV_REMOTE list has been populated or not
+            bool m_partial;
         };
 
         TwoWayContactSyncAdapterPrivate(const QString &syncTarget, const QMap<QString, QString> &params);
@@ -81,6 +89,8 @@ namespace QtContactsSqliteExtensions {
         ContactManagerEngine *m_engine;
         QString m_syncTarget;
         bool m_deleteManager;
+
+        bool readStateData(const QString &accountId, ReadMode mode);
 
         void clear(const QString &accountId);        // clears the state data below.
         QMap<QString, StateData> m_stateData; // per account.
@@ -181,6 +191,66 @@ void TwoWayContactSyncAdapterPrivate::clear(const QString &accountId)
     m_stateData.insert(accountId, TwoWayContactSyncAdapterPrivate::StateData());
 }
 
+bool TwoWayContactSyncAdapterPrivate::readStateData(const QString &accountId, ReadMode mode)
+{
+    // Read the timestamps we should specify when requesting changes
+    // from both the remote service and the local database, and also
+    // the PREV_REMOTE and EXPORTED_IDS lists, from the out-of-band database.
+    // The PREV_REMOTE list is the list of contacts which we upsynced to the remote
+    // server during the last sync run.  The EXPORTED_IDS list is the list of ids
+    // of contacts which we upsynced last run which do not have a synctarget constituent
+    // associated with them (and so we need to explicitly tell the qtcontacts-sqlite
+    // backend that we're interested in receiving change information about it).
+    QStringList keys;
+    if (mode == ReadAll || mode == ReadPartial) {
+        keys << QStringLiteral("remoteSince")
+             << QStringLiteral("localSince")
+             << QStringLiteral("exportedIds");
+    }
+    if (mode == ReadAll || mode == ReadRemaining) {
+        keys << QStringLiteral("prevRemote")
+             << QStringLiteral("possiblyUploadedAdditions")
+             << QStringLiteral("definitelyDownloadedAdditions");
+    }
+    QMap<QString, QVariant> values;
+    if (!m_engine->fetchOOB(m_stateData[accountId].m_oobScope, keys, &values)) {
+        // fetchOOB only returns false if a db error occurs; it still returns true
+        // if the fetch "succeeded" but no values for those keys exist.
+        qWarning() << Q_FUNC_INFO << "failed to read sync state data for" << m_syncTarget << "account" << accountId;
+        clear(accountId);
+        return false;
+    }
+
+    if (mode == ReadAll || mode == ReadPartial) {
+        QString sinceStr = values.value(QStringLiteral("remoteSince")).toString();
+        m_stateData[accountId].m_remoteSince = sinceStr.isEmpty() ? QDateTime() : fromDateTimeString(sinceStr);
+
+        sinceStr = values.value(QStringLiteral("localSince")).toString();
+        m_stateData[accountId].m_localSince = sinceStr.isEmpty() ? QDateTime() : fromDateTimeString(sinceStr);
+
+        QByteArray cdata = values.value(QStringLiteral("exportedIds")).toByteArray();
+        QDataStream readExportedIds(cdata);
+        readExportedIds >> m_stateData[accountId].m_exportedIds;
+    }
+
+    if (mode == ReadAll || mode == ReadRemaining) {
+        QByteArray cdata = values.value(QStringLiteral("prevRemote")).toByteArray();
+        QDataStream readPrevRemote(cdata);
+        readPrevRemote >> m_stateData[accountId].m_prevRemote;
+
+        cdata = values.value(QStringLiteral("possiblyUploadedAdditions")).toByteArray();
+        QDataStream readPossiblyUploadedAdditions(cdata);
+        readPossiblyUploadedAdditions >> m_stateData[accountId].m_possiblyUploadedAdditions;
+
+        cdata = values.value(QStringLiteral("definitelyDownloadedAdditions")).toByteArray();
+        QDataStream readDefinitelyDownloadedAdditions(cdata);
+        readDefinitelyDownloadedAdditions >> m_stateData[accountId].m_definitelyDownloadedAdditions;
+    }
+
+    m_stateData[accountId].m_partial = (mode == ReadPartial);
+    return true;
+}
+
 // ----------------------------------------
 
 TwoWayContactSyncAdapter::TwoWayContactSyncAdapter(const QString &syncTarget, const QMap<QString, QString> &params)
@@ -216,61 +286,20 @@ bool TwoWayContactSyncAdapter::initSyncAdapter(const QString &accountId, const Q
     return true;
 }
 
-// step two: read state data from the qtcontacts-sqlite oob database
-bool TwoWayContactSyncAdapter::readSyncStateData(QDateTime *remoteSince, const QString &accountId)
+// If mode is ReadPartialState, only the data necessary to test test for the
+// existence of relevant changes is extracted immediately; otherwise all
+// stored data is extracted from OOB storage immediately
+bool TwoWayContactSyncAdapter::readSyncStateData(QDateTime *remoteSince, const QString &accountId, ReadStateMode mode)
 {
     if (d->m_stateData[accountId].m_status != TwoWayContactSyncAdapterPrivate::Initialized) {
         qWarning() << Q_FUNC_INFO << "invalid state" << d->m_stateData[accountId].m_status;
         return false;
     }
 
-    // Read the timestamps we should specify when requesting changes
-    // from both the remote service and the local database, and also
-    // the PREV_REMOTE and EXPORTED_IDS lists, from the out-of-band database.
-    // The PREV_REMOTE list is the list of contacts which we upsynced to the remote
-    // server during the last sync run.  The EXPORTED_IDS list is the list of ids
-    // of contacts which we upsynced last run which do not have a synctarget constituent
-    // associated with them (and so we need to explicitly tell the qtcontacts-sqlite
-    // backend that we're interested in receiving change information about it).
-    QMap<QString, QVariant> values;
-    QStringList keys;
-    keys << QStringLiteral("remoteSince") << QStringLiteral("localSince");
-    keys << QStringLiteral("prevRemote") << QStringLiteral("exportedIds");
-    keys << QStringLiteral("possiblyUploadedAdditions");
-    keys << QStringLiteral("definitelyDownloadedAdditions");
-    if (!d->m_engine->fetchOOB(d->m_stateData[accountId].m_oobScope, keys, &values)) {
-        // fetchOOB only returns false if a db error occurs; it still returns true
-        // if the fetch "succeeded" but no values for those keys exist.
-        qWarning() << Q_FUNC_INFO << "failed to read sync state data for" << d->m_syncTarget << "account" << accountId;
-        d->clear(accountId);
+    if (!d->readStateData(accountId, (mode == ReadPartialState ? TwoWayContactSyncAdapterPrivate::ReadPartial
+                                                               : TwoWayContactSyncAdapterPrivate::ReadAll))) {
         return false;
     }
-
-    QString sinceStr = values.value(QStringLiteral("remoteSince")).toString();
-    d->m_stateData[accountId].m_remoteSince = sinceStr.isEmpty()
-                                            ? QDateTime()
-                                            : fromDateTimeString(sinceStr);
-
-    sinceStr = values.value(QStringLiteral("localSince")).toString();
-    d->m_stateData[accountId].m_localSince = sinceStr.isEmpty()
-                                           ? QDateTime()
-                                           : fromDateTimeString(sinceStr);
-
-    QByteArray cdata = values.value(QStringLiteral("prevRemote")).toByteArray();
-    QDataStream readPrevRemote(cdata);
-    readPrevRemote >> d->m_stateData[accountId].m_prevRemote;
-
-    cdata = values.value(QStringLiteral("exportedIds")).toByteArray();
-    QDataStream readExportedIds(cdata);
-    readExportedIds >> d->m_stateData[accountId].m_exportedIds;
-
-    cdata = values.value(QStringLiteral("possiblyUploadedAdditions")).toByteArray();
-    QDataStream readPossiblyUploadedAdditions(cdata);
-    readPossiblyUploadedAdditions >> d->m_stateData[accountId].m_possiblyUploadedAdditions;
-
-    cdata = values.value(QStringLiteral("definitelyDownloadedAdditions")).toByteArray();
-    QDataStream readDefinitelyDownloadedAdditions(cdata);
-    readDefinitelyDownloadedAdditions >> d->m_stateData[accountId].m_definitelyDownloadedAdditions;
 
     // the next step is to sync down from the remote database,
     // so we can assume that we will get all changes which
@@ -284,7 +313,6 @@ bool TwoWayContactSyncAdapter::readSyncStateData(QDateTime *remoteSince, const Q
     d->m_stateData[accountId].m_status = TwoWayContactSyncAdapterPrivate::ReadSyncStateData;
     return true;
 }
-
 
 // step three: determine changes lists from the remote service.
 void TwoWayContactSyncAdapter::determineRemoteChanges(const QDateTime &remoteSince, const QString &accountId)
@@ -313,6 +341,14 @@ bool TwoWayContactSyncAdapter::storeRemoteChanges(const QList<QContact> &deleted
     if (d->m_stateData[accountId].m_status != TwoWayContactSyncAdapterPrivate::ReadSyncStateData) {
         qWarning() << Q_FUNC_INFO << "invalid state" << d->m_stateData[accountId].m_status;
         return false;
+    }
+
+    if (d->m_stateData[accountId].m_partial) {
+        // We only have partial data retrieved from OOB storage; retrieve the other elements
+        if (!d->readStateData(accountId, TwoWayContactSyncAdapterPrivate::ReadRemaining)) {
+            qWarning() << Q_FUNC_INFO << "could not read remaining state!";
+            return false;
+        }
     }
 
     // mutate contacts from PREV_REMOTE according to the changes which occurred remotely.
@@ -432,6 +468,14 @@ bool TwoWayContactSyncAdapter::determineLocalChanges(QDateTime *localSince,
         qWarning() << Q_FUNC_INFO << "error - couldn't fetch locally modified sync contacts!";
         d->clear(accountId);
         return false;
+    }
+
+    if (d->m_stateData[accountId].m_partial) {
+        // We only have partial data retrieved from OOB storage; retrieve the other elements
+        if (!d->readStateData(accountId, TwoWayContactSyncAdapterPrivate::ReadRemaining)) {
+            qWarning() << Q_FUNC_INFO << "could not read remaining state!";
+            return false;
+        }
     }
 
     // Depending on the order with which the sync functions are called,
