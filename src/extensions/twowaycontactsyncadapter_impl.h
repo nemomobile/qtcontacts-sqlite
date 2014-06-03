@@ -57,8 +57,23 @@ namespace QtContactsSqliteExtensions {
             DeterminedLocalChanges,
             Finished
         };
+
+        enum ReadMode {
+            ReadAll,
+            ReadPartial,
+            ReadRemaining
+        };
+
         struct StateData {
-            StateData() : m_status(Inactive), m_mutated(false) {}
+            StateData()
+                : m_status(Inactive)
+                , m_mutated(false)
+                , m_partial(false)
+                , m_exportedIdsModified(false)
+                , m_mutatedPrevRemoteModified(false)
+            {
+            }
+
             Status m_status;
             QString m_oobScope;
             QDateTime m_localSince;
@@ -72,6 +87,9 @@ namespace QtContactsSqliteExtensions {
             QMap<QContactId, QContact> m_reportedUploadedAdditions;  // this one is ephemeral
             QMap<QString, QContact> m_definitelyDownloadedAdditions; // this one is stored OOB. Guid key.
             bool m_mutated; // whether the MUTATED_PREV_REMOTE list has been populated or not
+            bool m_partial;
+            bool m_exportedIdsModified;
+            bool m_mutatedPrevRemoteModified;
         };
 
         TwoWayContactSyncAdapterPrivate(const QString &syncTarget, const QMap<QString, QString> &params);
@@ -81,6 +99,8 @@ namespace QtContactsSqliteExtensions {
         ContactManagerEngine *m_engine;
         QString m_syncTarget;
         bool m_deleteManager;
+
+        bool readStateData(const QString &accountId, ReadMode mode);
 
         void clear(const QString &accountId);        // clears the state data below.
         QMap<QString, StateData> m_stateData; // per account.
@@ -181,6 +201,68 @@ void TwoWayContactSyncAdapterPrivate::clear(const QString &accountId)
     m_stateData.insert(accountId, TwoWayContactSyncAdapterPrivate::StateData());
 }
 
+bool TwoWayContactSyncAdapterPrivate::readStateData(const QString &accountId, ReadMode mode)
+{
+    StateData &syncState(m_stateData[accountId]);
+
+    // Read the timestamps we should specify when requesting changes
+    // from both the remote service and the local database, and also
+    // the PREV_REMOTE and EXPORTED_IDS lists, from the out-of-band database.
+    // The PREV_REMOTE list is the list of contacts which we upsynced to the remote
+    // server during the last sync run.  The EXPORTED_IDS list is the list of ids
+    // of contacts which we upsynced last run which do not have a synctarget constituent
+    // associated with them (and so we need to explicitly tell the qtcontacts-sqlite
+    // backend that we're interested in receiving change information about it).
+    QStringList keys;
+    if (mode == ReadAll || mode == ReadPartial) {
+        keys << QStringLiteral("remoteSince")
+             << QStringLiteral("localSince")
+             << QStringLiteral("exportedIds");
+    }
+    if (mode == ReadAll || mode == ReadRemaining) {
+        keys << QStringLiteral("prevRemote")
+             << QStringLiteral("possiblyUploadedAdditions")
+             << QStringLiteral("definitelyDownloadedAdditions");
+    }
+    QMap<QString, QVariant> values;
+    if (!m_engine->fetchOOB(syncState.m_oobScope, keys, &values)) {
+        // fetchOOB only returns false if a db error occurs; it still returns true
+        // if the fetch "succeeded" but no values for those keys exist.
+        qWarning() << Q_FUNC_INFO << "failed to read sync state data for" << m_syncTarget << "account" << accountId;
+        clear(accountId);
+        return false;
+    }
+
+    if (mode == ReadAll || mode == ReadPartial) {
+        QString sinceStr = values.value(QStringLiteral("remoteSince")).toString();
+        syncState.m_remoteSince = sinceStr.isEmpty() ? QDateTime() : fromDateTimeString(sinceStr);
+
+        sinceStr = values.value(QStringLiteral("localSince")).toString();
+        syncState.m_localSince = sinceStr.isEmpty() ? QDateTime() : fromDateTimeString(sinceStr);
+
+        QByteArray cdata = values.value(QStringLiteral("exportedIds")).toByteArray();
+        QDataStream readExportedIds(cdata);
+        readExportedIds >> syncState.m_exportedIds;
+    }
+
+    if (mode == ReadAll || mode == ReadRemaining) {
+        QByteArray cdata = values.value(QStringLiteral("prevRemote")).toByteArray();
+        QDataStream readPrevRemote(cdata);
+        readPrevRemote >> syncState.m_prevRemote;
+
+        cdata = values.value(QStringLiteral("possiblyUploadedAdditions")).toByteArray();
+        QDataStream readPossiblyUploadedAdditions(cdata);
+        readPossiblyUploadedAdditions >> syncState.m_possiblyUploadedAdditions;
+
+        cdata = values.value(QStringLiteral("definitelyDownloadedAdditions")).toByteArray();
+        QDataStream readDefinitelyDownloadedAdditions(cdata);
+        readDefinitelyDownloadedAdditions >> syncState.m_definitelyDownloadedAdditions;
+    }
+
+    syncState.m_partial = (mode == ReadPartial);
+    return true;
+}
+
 // ----------------------------------------
 
 TwoWayContactSyncAdapter::TwoWayContactSyncAdapter(const QString &syncTarget, const QMap<QString, QString> &params)
@@ -201,7 +283,9 @@ TwoWayContactSyncAdapter::~TwoWayContactSyncAdapter()
 // step one: init the sync adapter
 bool TwoWayContactSyncAdapter::initSyncAdapter(const QString &accountId, const QString &oobIdentifier)
 {
-    if (d->m_stateData[accountId].m_status != TwoWayContactSyncAdapterPrivate::Inactive) {
+    TwoWayContactSyncAdapterPrivate::StateData &syncState(d->m_stateData[accountId]);
+
+    if (syncState.m_status != TwoWayContactSyncAdapterPrivate::Inactive) {
         qWarning() << Q_FUNC_INFO << "already busy with another sync";
         return false;
     }
@@ -211,80 +295,40 @@ bool TwoWayContactSyncAdapter::initSyncAdapter(const QString &accountId, const Q
         return false;
     }
 
-    d->m_stateData[accountId].m_oobScope = oobIdentifier.isEmpty() ? QStringLiteral("%1-%2").arg(d->m_syncTarget).arg(accountId) : oobIdentifier;
-    d->m_stateData[accountId].m_status = TwoWayContactSyncAdapterPrivate::Initialized;
+    syncState.m_oobScope = oobIdentifier.isEmpty() ? QStringLiteral("%1-%2").arg(d->m_syncTarget).arg(accountId) : oobIdentifier;
+    syncState.m_status = TwoWayContactSyncAdapterPrivate::Initialized;
     return true;
 }
 
-// step two: read state data from the qtcontacts-sqlite oob database
-bool TwoWayContactSyncAdapter::readSyncStateData(QDateTime *remoteSince, const QString &accountId)
+// If mode is ReadPartialState, only the data necessary to test test for the
+// existence of relevant changes is extracted immediately; otherwise all
+// stored data is extracted from OOB storage immediately
+bool TwoWayContactSyncAdapter::readSyncStateData(QDateTime *remoteSince, const QString &accountId, ReadStateMode mode)
 {
-    if (d->m_stateData[accountId].m_status != TwoWayContactSyncAdapterPrivate::Initialized) {
-        qWarning() << Q_FUNC_INFO << "invalid state" << d->m_stateData[accountId].m_status;
+    TwoWayContactSyncAdapterPrivate::StateData &syncState(d->m_stateData[accountId]);
+
+    if (syncState.m_status != TwoWayContactSyncAdapterPrivate::Initialized) {
+        qWarning() << Q_FUNC_INFO << "invalid state" << syncState.m_status;
         return false;
     }
 
-    // Read the timestamps we should specify when requesting changes
-    // from both the remote service and the local database, and also
-    // the PREV_REMOTE and EXPORTED_IDS lists, from the out-of-band database.
-    // The PREV_REMOTE list is the list of contacts which we upsynced to the remote
-    // server during the last sync run.  The EXPORTED_IDS list is the list of ids
-    // of contacts which we upsynced last run which do not have a synctarget constituent
-    // associated with them (and so we need to explicitly tell the qtcontacts-sqlite
-    // backend that we're interested in receiving change information about it).
-    QMap<QString, QVariant> values;
-    QStringList keys;
-    keys << QStringLiteral("remoteSince") << QStringLiteral("localSince");
-    keys << QStringLiteral("prevRemote") << QStringLiteral("exportedIds");
-    keys << QStringLiteral("possiblyUploadedAdditions");
-    keys << QStringLiteral("definitelyDownloadedAdditions");
-    if (!d->m_engine->fetchOOB(d->m_stateData[accountId].m_oobScope, keys, &values)) {
-        // fetchOOB only returns false if a db error occurs; it still returns true
-        // if the fetch "succeeded" but no values for those keys exist.
-        qWarning() << Q_FUNC_INFO << "failed to read sync state data for" << d->m_syncTarget << "account" << accountId;
-        d->clear(accountId);
+    if (!d->readStateData(accountId, (mode == ReadPartialState ? TwoWayContactSyncAdapterPrivate::ReadPartial
+                                                               : TwoWayContactSyncAdapterPrivate::ReadAll))) {
         return false;
     }
-
-    QString sinceStr = values.value(QStringLiteral("remoteSince")).toString();
-    d->m_stateData[accountId].m_remoteSince = sinceStr.isEmpty()
-                                            ? QDateTime()
-                                            : fromDateTimeString(sinceStr);
-
-    sinceStr = values.value(QStringLiteral("localSince")).toString();
-    d->m_stateData[accountId].m_localSince = sinceStr.isEmpty()
-                                           ? QDateTime()
-                                           : fromDateTimeString(sinceStr);
-
-    QByteArray cdata = values.value(QStringLiteral("prevRemote")).toByteArray();
-    QDataStream readPrevRemote(cdata);
-    readPrevRemote >> d->m_stateData[accountId].m_prevRemote;
-
-    cdata = values.value(QStringLiteral("exportedIds")).toByteArray();
-    QDataStream readExportedIds(cdata);
-    readExportedIds >> d->m_stateData[accountId].m_exportedIds;
-
-    cdata = values.value(QStringLiteral("possiblyUploadedAdditions")).toByteArray();
-    QDataStream readPossiblyUploadedAdditions(cdata);
-    readPossiblyUploadedAdditions >> d->m_stateData[accountId].m_possiblyUploadedAdditions;
-
-    cdata = values.value(QStringLiteral("definitelyDownloadedAdditions")).toByteArray();
-    QDataStream readDefinitelyDownloadedAdditions(cdata);
-    readDefinitelyDownloadedAdditions >> d->m_stateData[accountId].m_definitelyDownloadedAdditions;
 
     // the next step is to sync down from the remote database,
     // so we can assume that we will get all changes which
     // occurred up until the current datetime.
     // thus, the next time we sync, we should use the current
     // datetime as the "since" value when retrieving changes.
-    d->m_stateData[accountId].m_newRemoteSince = QDateTime::currentDateTimeUtc();
+    syncState.m_newRemoteSince = QDateTime::currentDateTimeUtc();
 
     // return the current remoteSince value for this sync.
-    *remoteSince = d->m_stateData[accountId].m_remoteSince;
-    d->m_stateData[accountId].m_status = TwoWayContactSyncAdapterPrivate::ReadSyncStateData;
+    *remoteSince = syncState.m_remoteSince;
+    syncState.m_status = TwoWayContactSyncAdapterPrivate::ReadSyncStateData;
     return true;
 }
-
 
 // step three: determine changes lists from the remote service.
 void TwoWayContactSyncAdapter::determineRemoteChanges(const QDateTime &remoteSince, const QString &accountId)
@@ -310,9 +354,19 @@ bool TwoWayContactSyncAdapter::storeRemoteChanges(const QList<QContact> &deleted
                                                   bool needToApplyDelta,
                                                   const QSet<QContactDetail::DetailType> &ignorableDetailTypes)
 {
-    if (d->m_stateData[accountId].m_status != TwoWayContactSyncAdapterPrivate::ReadSyncStateData) {
-        qWarning() << Q_FUNC_INFO << "invalid state" << d->m_stateData[accountId].m_status;
+    TwoWayContactSyncAdapterPrivate::StateData &syncState(d->m_stateData[accountId]);
+
+    if (syncState.m_status != TwoWayContactSyncAdapterPrivate::ReadSyncStateData) {
+        qWarning() << Q_FUNC_INFO << "invalid state" << syncState.m_status;
         return false;
+    }
+
+    if (syncState.m_partial) {
+        // We only have partial data retrieved from OOB storage; retrieve the other elements
+        if (!d->readStateData(accountId, TwoWayContactSyncAdapterPrivate::ReadRemaining)) {
+            qWarning() << Q_FUNC_INFO << "could not read remaining state!";
+            return false;
+        }
     }
 
     // mutate contacts from PREV_REMOTE according to the changes which occurred remotely.
@@ -323,18 +377,20 @@ bool TwoWayContactSyncAdapter::storeRemoteChanges(const QList<QContact> &deleted
     // the first value in each pair will be a copy of a value in the prevRemote list.
     // the second value in each pair will be a copy of a (newly constructed) value in the mutatedPrevRemote list.
     QList<QPair<int, int> > additionIndices;
-    QList<QPair<QContact, QContact> > syncContactUpdates = createUpdateList(d->m_stateData[accountId].m_prevRemote,
+    QList<QPair<QContact, QContact> > syncContactUpdates = createUpdateList(syncState.m_prevRemote,
                                                                             deletedRemote,
                                                                             addModRemote,
-                                                                            &d->m_stateData[accountId].m_exportedIds,
-                                                                            &d->m_stateData[accountId].m_mutatedPrevRemote,
-                                                                            &d->m_stateData[accountId].m_possiblyUploadedAdditions,
-                                                                            &d->m_stateData[accountId].m_reportedUploadedAdditions,
-                                                                            &d->m_stateData[accountId].m_definitelyDownloadedAdditions,
+                                                                            &syncState.m_exportedIds,
+                                                                            &syncState.m_exportedIdsModified,
+                                                                            &syncState.m_mutatedPrevRemote,
+                                                                            &syncState.m_mutatedPrevRemoteModified,
+                                                                            &syncState.m_possiblyUploadedAdditions,
+                                                                            &syncState.m_reportedUploadedAdditions,
+                                                                            &syncState.m_definitelyDownloadedAdditions,
                                                                             &additionIndices,
                                                                             needToApplyDelta,
                                                                             ignorableDetailTypes);
-    d->m_stateData[accountId].m_mutated = true; // createUpdateList will populate MUTATED_PREV_REMOTE from PREV_REMOTE
+    syncState.m_mutated = true; // createUpdateList will populate MUTATED_PREV_REMOTE from PREV_REMOTE
 
     // store them to qtcontacts-sqlite.
     // Note that because of some magic in the mutation code in createUpdateList(), the
@@ -355,24 +411,28 @@ bool TwoWayContactSyncAdapter::storeRemoteChanges(const QList<QContact> &deleted
             return false;
         }
 
-        // Report IDs allocated for added contacts back to the caller, and update the contact
-        // instances in the mutated prev remote array to match.  Record the fact that we added it.
-        int additionIndex = d->m_stateData[accountId].m_mutatedPrevRemote.count() - additionIndices.count();
-        QList<QPair<int, int> >::const_iterator it = additionIndices.constBegin(), end = additionIndices.constEnd();
-        for ( ; it != end; ++it, ++additionIndex) {
-            const int addModIndex((*it).first);
-            const int updateIndex((*it).second);
-            const QContact &addedContact(syncContactUpdates.at(updateIndex).second);
-            const QContactId addedId(addedContact.id());
-            (*addModRemote)[addModIndex].setId(addedId);
-            d->m_stateData[accountId].m_mutatedPrevRemote[additionIndex].setId(addedId);
-            if (!addedContact.detail<QContactGuid>().guid().isEmpty()) {
-                d->m_stateData[accountId].m_definitelyDownloadedAdditions.insert(addedContact.detail<QContactGuid>().guid(), addedContact);
-            } else {
-                // we won't be able to track failure-case duplicates in this case
-                // but sync adapters shouldn't be providing us with guidless contacts
-                // unless they're willing to handle that mapping themselves.
+        if (additionIndices.count()) {
+            // Report IDs allocated for added contacts back to the caller, and update the contact
+            // instances in the mutated prev remote array to match.  Record the fact that we added it.
+            int additionIndex = syncState.m_mutatedPrevRemote.count() - additionIndices.count();
+            QList<QPair<int, int> >::const_iterator it = additionIndices.constBegin(), end = additionIndices.constEnd();
+            for ( ; it != end; ++it, ++additionIndex) {
+                const int addModIndex((*it).first);
+                const int updateIndex((*it).second);
+                const QContact &addedContact(syncContactUpdates.at(updateIndex).second);
+                const QContactId addedId(addedContact.id());
+                (*addModRemote)[addModIndex].setId(addedId);
+                syncState.m_mutatedPrevRemote[additionIndex].setId(addedId);
+                if (!addedContact.detail<QContactGuid>().guid().isEmpty()) {
+                    syncState.m_definitelyDownloadedAdditions.insert(addedContact.detail<QContactGuid>().guid(), addedContact);
+                } else {
+                    // we won't be able to track failure-case duplicates in this case
+                    // but sync adapters shouldn't be providing us with guidless contacts
+                    // unless they're willing to handle that mapping themselves.
+                }
             }
+
+            syncState.m_mutatedPrevRemoteModified = true;
         }
 
         // store partial-sync state data to OOB data so that we can avoid
@@ -380,16 +440,16 @@ bool TwoWayContactSyncAdapter::storeRemoteChanges(const QList<QContact> &deleted
         QMap<QString, QVariant> oobValues;
         QByteArray cdata;
         QDataStream write(&cdata, QIODevice::WriteOnly);
-        write << d->m_stateData[accountId].m_definitelyDownloadedAdditions;
+        write << syncState.m_definitelyDownloadedAdditions;
         oobValues.insert(QStringLiteral("definitelyDownloadedAdditions"), QVariant(cdata));
-        if (!d->m_engine->storeOOB(d->m_stateData[accountId].m_oobScope, oobValues)) {
+        if (!d->m_engine->storeOOB(syncState.m_oobScope, oobValues)) {
             qWarning() << Q_FUNC_INFO << "error - couldn't store definitelyDownloadedAdditions to OOB database";
             d->clear(accountId);
             return false;
         }
     }
 
-    d->m_stateData[accountId].m_status = TwoWayContactSyncAdapterPrivate::StoredRemoteChanges;
+    syncState.m_status = TwoWayContactSyncAdapterPrivate::StoredRemoteChanges;
     return true;
 }
 
@@ -401,8 +461,10 @@ bool TwoWayContactSyncAdapter::determineLocalChanges(QDateTime *localSince,
                                                      const QString &accountId,
                                                      const QSet<QContactDetail::DetailType> &ignorableDetailTypes)
 {
-    if (d->m_stateData[accountId].m_status != TwoWayContactSyncAdapterPrivate::StoredRemoteChanges) {
-        qWarning() << Q_FUNC_INFO << "invalid state" << d->m_stateData[accountId].m_status;
+    TwoWayContactSyncAdapterPrivate::StateData &syncState(d->m_stateData[accountId]);
+
+    if (syncState.m_status != TwoWayContactSyncAdapterPrivate::StoredRemoteChanges) {
+        qWarning() << Q_FUNC_INFO << "invalid state" << syncState.m_status;
         return false;
     }
 
@@ -419,194 +481,218 @@ bool TwoWayContactSyncAdapter::determineLocalChanges(QDateTime *localSince,
     // The backend will populate the newLocalSince timestamp appropriately.
     QContactManager::Error error;
     QList<QContactId> locallyDeletedIds;
-    bool cleanSync = d->m_stateData[accountId].m_localSince.isValid() ? false : true;
+    bool cleanSync = syncState.m_localSince.isValid() ? false : true;
 
     if (!d->m_engine->fetchSyncContacts(d->m_syncTarget,
-                                        d->m_stateData[accountId].m_localSince,
-                                        d->m_stateData[accountId].m_exportedIds,
+                                        syncState.m_localSince,
+                                        syncState.m_exportedIds,
                                         locallyModified,
                                         locallyAdded,
                                         &locallyDeletedIds,
-                                        &d->m_stateData[accountId].m_newLocalSince,
+                                        &syncState.m_newLocalSince,
                                         &error)) {
         qWarning() << Q_FUNC_INFO << "error - couldn't fetch locally modified sync contacts!";
         d->clear(accountId);
         return false;
     }
 
-    // Depending on the order with which the sync functions are called,
-    // we may not have yet populated the MUTATED_PREV_REMOTE data from PREV_REMOTE.
-    if (!d->m_stateData[accountId].m_mutated) {
-        d->m_stateData[accountId].m_mutated = true;
-        d->m_stateData[accountId].m_mutatedPrevRemote = d->m_stateData[accountId].m_prevRemote;
-    }
+    // ensure that the added/modified/deleted lists contain the appropriate content for the current account.
+    ensureAccountProvenance(locallyAdded, locallyModified, locallyDeleted,
+                            syncState.m_exportedIds,
+                            accountId);
 
-    // we treat deletions/modifications differently in clean sync case.
-    if (cleanSync) {
-        // a) ignore these deletions.  We're clean syncing and CANNOT clobber the remote data.
-        locallyDeletedIds.clear();
+    // Do we have any changes to process?
+    if (!locallyDeletedIds.isEmpty() ||
+        (locallyAdded && !locallyAdded->isEmpty()) ||
+        (locallyModified && !locallyModified->isEmpty())) {
+        // We have local changes to apply
+        if (syncState.m_partial) {
+            // We only have partial data retrieved from OOB storage; retrieve the other elements
+            if (!d->readStateData(accountId, TwoWayContactSyncAdapterPrivate::ReadRemaining)) {
+                qWarning() << Q_FUNC_INFO << "could not read remaining state!";
+                return false;
+            }
+        }
 
-        // b) update our m_mutatedPrevRemote with the values in the
-        //    locallyModified list and then clear locallyModified.
-        if (locallyModified) {
-            for (int i = 0; i < locallyModified->size(); ++i) {
-                const QContact &lmc(locallyModified->at(i));
-                const QContactId id(lmc.id());
-                if (!id.isNull()) {
-                    for (int j = 0; j < d->m_stateData[accountId].m_mutatedPrevRemote.size(); ++j) {
-                        if (d->m_stateData[accountId].m_mutatedPrevRemote[j].id() == id) {
-                            // found matching prevRemote - replace it with the updated version.
-                            d->m_stateData[accountId].m_mutatedPrevRemote.replace(j, lmc);
+        // Depending on the order with which the sync functions are called,
+        // we may not have yet populated the MUTATED_PREV_REMOTE data from PREV_REMOTE.
+        if (!syncState.m_mutated) {
+            syncState.m_mutated = true;
+            if (syncState.m_mutatedPrevRemoteModified) {
+                qWarning() << Q_FUNC_INFO << "Overwriting existing changes in m_mutatedPrevRemote!";
+            }
+            syncState.m_mutatedPrevRemote = syncState.m_prevRemote;
+        }
+
+        bool uploadedAdditionsChanged = false;
+
+        // we treat deletions/modifications differently in clean sync case.
+        if (cleanSync) {
+            // a) ignore these deletions.  We're clean syncing and CANNOT clobber the remote data.
+            locallyDeletedIds.clear();
+
+            // b) update our m_mutatedPrevRemote with the values in the
+            //    locallyModified list and then clear locallyModified.
+            if (locallyModified) {
+                for (int i = 0; i < locallyModified->size(); ++i) {
+                    const QContact &lmc(locallyModified->at(i));
+                    const QContactId id(lmc.id());
+                    if (!id.isNull()) {
+                        for (int j = 0; j < syncState.m_mutatedPrevRemote.size(); ++j) {
+                            if (syncState.m_mutatedPrevRemote[j].id() == id) {
+                                // found matching prevRemote - replace it with the updated version.
+                                syncState.m_mutatedPrevRemote.replace(j, lmc);
+                                break;
+                            }
+                        }
+                    }
+                }
+                locallyModified->clear();
+            }
+        } else {
+            // a) find contacts which were deleted locally
+            if (locallyDeleted) {
+                foreach (const QContactId &id, locallyDeletedIds) {
+                    // May not exist, if already deleted remotely
+                    for (int i = 0; i < syncState.m_mutatedPrevRemote.size(); ++i) {
+                        const QContact &prev(syncState.m_mutatedPrevRemote[i]);
+                        if (prev.id() == id) {
+                            locallyDeleted->append(prev);
+                            syncState.m_mutatedPrevRemote.removeAt(i); // we are deleting this contact from the remote server.
                             break;
                         }
                     }
                 }
             }
-            locallyModified->clear();
+
+            // b) remove from the lists of changes to upsync any contact which isn't actually
+            //    different to the corresponding contact in the MUTATED_PREV_REMOTE list.
+            //    In that case, however, we do need to update the corresponding contact's id.
+            for (int i = 0; i < syncState.m_mutatedPrevRemote.size(); ++i) {
+                // check this contact to see whether it already represents one from the changes lists.
+                QContact remoteContact = syncState.m_mutatedPrevRemote.at(i);
+                if (locallyAdded) {
+                    int matchIndex = exactContactMatchExistsInList(remoteContact, *locallyAdded, ignorableDetailTypes);
+                    if (matchIndex != -1) {
+                        remoteContact = locallyAdded->takeAt(matchIndex);
+                        syncState.m_mutatedPrevRemote.replace(i, remoteContact);
+                    }
+                }
+                if (locallyModified) {
+                    int matchIndex = exactContactMatchExistsInList(remoteContact, *locallyModified, ignorableDetailTypes);
+                    if (matchIndex != -1) {
+                        remoteContact = locallyModified->takeAt(matchIndex);
+                        syncState.m_mutatedPrevRemote.replace(i, remoteContact);
+                    }
+                }
+            }
         }
-    } else {
-        // a) find contacts which were deleted locally
-        if (locallyDeleted) {
-            foreach (const QContactId &id, locallyDeletedIds) {
-                // May not exist, if already deleted remotely
-                for (int i = 0; i < d->m_stateData[accountId].m_mutatedPrevRemote.size(); ++i) {
-                    const QContact &prev(d->m_stateData[accountId].m_mutatedPrevRemote[i]);
-                    if (prev.id() == id) {
-                        locallyDeleted->append(prev);
-                        d->m_stateData[accountId].m_mutatedPrevRemote.removeAt(i); // we are deleting this contact from the remote server.
+
+        // c) any locally added contact which we intend to upsync should be added
+        //    to our list of exportedIds.
+        //    Note that locallyModified/locallyDeleted will only contain
+        //    local-constituent-only contacts if they were identified in the
+        //    exportedIds list which we passed into the fetchSyncContacts() function.
+        if (locallyAdded) {
+            for (int i = 0; i < locallyAdded->size(); ++i) {
+                QContact localContact = locallyAdded->at(i);
+                syncState.m_exportedIds.append(localContact.id());
+                syncState.m_exportedIdsModified = true;
+
+                // we remove from the local contact any guid detail.  A guid must be globally
+                // unique in the database, so we couldn't store it after round-trip in the synctarget
+                // constituent or we'd violate the global-uniqueness constraint.
+                QContactGuid localContactGuid = localContact.detail<QContactGuid>();
+                if (!localContactGuid.isEmpty()) {
+                    qWarning() << Q_FUNC_INFO << "Clobbering local QContactGuid - cannot sync this detail.";
+                    localContact.removeDetail(&localContactGuid);
+                }
+
+                // Now we detect whether this contact was actually already upsynced
+                // during a previous (but failed) sync run.  If we don't detect this,
+                // we could erroneously upsync a duplicate.
+                if (syncState.m_reportedUploadedAdditions.contains(localContact.id())) {
+                    // This contact has been previously upsynced.
+                    locallyAdded->removeAt(i);
+                    i--;
+
+                    // If the contact was already deleted remotely, don't treat it as an addition or modification.
+                    if (syncState.m_reportedUploadedAdditions.value(localContact.id()) != QContact()) {
+                        // Determine whether the version which was upsynced differs from the
+                        // version which is being reported now.  If it does not differ, then
+                        // we can ignore it (already uploaded).  If it does differ, then we
+                        // must treat it as a modification.
+                        if (localContact == syncState.m_possiblyUploadedAdditions.value(localContact.id())) {
+                            // already uploaded this one as-is.  we can ignore this addition.
+                        } else {
+                            // already uploaded, but it was modified locally since we uploaded it.
+                            if (locallyModified) {
+                                locallyModified->append(localContact);
+                            }
+                        }
+                    } else {
+                        // This codepath shouldn't ever be hit in reality, as the contact should have been deleted locally
+                        // due to applying the remote (deletion) update in a previous step.
+                        qWarning() << Q_FUNC_INFO << "reported addition of local contact which was deleted server-side!";
+                    }
+                } else {
+                    // This is a newly added contact which has not yet been upsynced.
+                    locallyAdded->replace(i, localContact);
+                    syncState.m_possiblyUploadedAdditions.insert(localContact.id(), localContact);
+                    uploadedAdditionsChanged = true;
+                }
+            }
+        }
+
+        // d) now further mutate MUTATED_PREV_REMOTE to include the local changes which we
+        //    are just about to upsync to the remote server.
+        if (locallyAdded) {
+            for (int i = 0; i < locallyAdded->size(); ++i) {
+                syncState.m_mutatedPrevRemote.append(locallyAdded->at(i));
+            }
+        }
+        if (locallyModified) {
+            bool foundToReplace = false;
+            for (int i = 0; i < locallyModified->size(); ++i) {
+                const QContactId &lid(locallyModified->at(i).id());
+                foundToReplace = false;
+                for (int j = 0; j < syncState.m_mutatedPrevRemote.size(); ++j) {
+                    const QContactId &pid(syncState.m_mutatedPrevRemote[j].id());
+                    if (pid == lid) {
+                        foundToReplace = true;
+                        syncState.m_mutatedPrevRemote.replace(j, locallyModified->at(i));
                         break;
                     }
                 }
-            }
-        }
 
-        // b) remove from the lists of changes to upsync any contact which isn't actually
-        //    different to the corresponding contact in the MUTATED_PREV_REMOTE list.
-        //    In that case, however, we do need to update the corresponding contact's id.
-        for (int i = 0; i < d->m_stateData[accountId].m_mutatedPrevRemote.size(); ++i) {
-            // check this contact to see whether it already represents one from the changes lists.
-            QContact remoteContact = d->m_stateData[accountId].m_mutatedPrevRemote.at(i);
-            if (locallyAdded) {
-                int matchIndex = exactContactMatchExistsInList(remoteContact, *locallyAdded, ignorableDetailTypes);
-                if (matchIndex != -1) {
-                    remoteContact = locallyAdded->takeAt(matchIndex);
-                    d->m_stateData[accountId].m_mutatedPrevRemote.replace(i, remoteContact);
-                }
-            }
-            if (locallyModified) {
-                int matchIndex = exactContactMatchExistsInList(remoteContact, *locallyModified, ignorableDetailTypes);
-                if (matchIndex != -1) {
-                    remoteContact = locallyModified->takeAt(matchIndex);
-                    d->m_stateData[accountId].m_mutatedPrevRemote.replace(i, remoteContact);
+                if (!foundToReplace) {
+                    // we shouldn't treat this as a local addition, this is always a bug.
+                    qWarning() << Q_FUNC_INFO << "FIXME: local modification reported for non-upsynced local contact:" << lid;
                 }
             }
         }
-    }
 
-    // c) any locally added contact which we intend to upsync should be added
-    //    to our list of exportedIds.
-    //    Note that locallyModified/locallyDeleted will only contain
-    //    local-constituent-only contacts if they were identified in the
-    //    exportedIds list which we passed into the fetchSyncContacts() function.
-    if (locallyAdded) {
-        for (int i = 0; i < locallyAdded->size(); ++i) {
-            QContact localContact = locallyAdded->at(i);
-            d->m_stateData[accountId].m_exportedIds.append(localContact.id());
-
-            // we remove from the local contact any guid detail.  A guid must be globally
-            // unique in the database, so we couldn't store it after round-trip in the synctarget
-            // constituent or we'd violate the global-uniqueness constraint.
-            QContactGuid localContactGuid = localContact.detail<QContactGuid>();
-            if (!localContactGuid.isEmpty()) {
-                qWarning() << Q_FUNC_INFO << "Clobbering local QContactGuid - cannot sync this detail.";
-                localContact.removeDetail(&localContactGuid);
-            }
-
-            // Now we detect whether this contact was actually already upsynced
-            // during a previous (but failed) sync run.  If we don't detect this,
-            // we could erroneously upsync a duplicate.
-            if (d->m_stateData[accountId].m_reportedUploadedAdditions.contains(localContact.id())) {
-                // This contact has been previously upsynced.
-                locallyAdded->removeAt(i);
-                i--;
-
-                // If the contact was already deleted remotely, don't treat it as an addition or modification.
-                if (d->m_stateData[accountId].m_reportedUploadedAdditions.value(localContact.id()) != QContact()) {
-                    // Determine whether the version which was upsynced differs from the
-                    // version which is being reported now.  If it does not differ, then
-                    // we can ignore it (already uploaded).  If it does differ, then we
-                    // must treat it as a modification.
-                    if (localContact == d->m_stateData[accountId].m_possiblyUploadedAdditions.value(localContact.id())) {
-                        // already uploaded this one as-is.  we can ignore this addition.
-                    } else {
-                        // already uploaded, but it was modified locally since we uploaded it.
-                        if (locallyModified) {
-                            locallyModified->append(localContact);
-                        }
-                    }
-                } else {
-                    // This codepath shouldn't ever be hit in reality, as the contact should have been deleted locally
-                    // due to applying the remote (deletion) update in a previous step.
-                    qWarning() << Q_FUNC_INFO << "reported addition of local contact which was deleted server-side!";
-                }
-            } else {
-                // This is a newly added contact which has not yet been upsynced.
-                locallyAdded->replace(i, localContact);
-                d->m_stateData[accountId].m_possiblyUploadedAdditions.insert(localContact.id(), localContact);
+        if (uploadedAdditionsChanged) {
+            // store partial-sync state data to OOB data so that we can avoid
+            // uploading/downloading duplicates later on, if the sync partially succeeds.
+            QMap<QString, QVariant> oobValues;
+            QByteArray cdata;
+            QDataStream write(&cdata, QIODevice::WriteOnly);
+            write << syncState.m_possiblyUploadedAdditions;
+            oobValues.insert(QStringLiteral("possiblyUploadedAdditions"), QVariant(cdata));
+            if (!d->m_engine->storeOOB(syncState.m_oobScope, oobValues)) {
+                qWarning() << Q_FUNC_INFO << "error - couldn't store possiblyUploadedAdditions to OOB database";
+                d->clear(accountId);
+                return false;
             }
         }
-    }
 
-    // d) ensure that the added/modified lists contain the appropriate content for the current account.
-    ensureAccountProvenance(locallyAdded, locallyModified, locallyDeleted,
-                            d->m_stateData[accountId].m_mutatedPrevRemote,
-                            d->m_stateData[accountId].m_exportedIds,
-                            accountId);
-
-    // e) now further mutate MUTATED_PREV_REMOTE to include the local changes which we
-    //    are just about to upsync to the remote server.
-    if (locallyAdded) {
-        for (int i = 0; i < locallyAdded->size(); ++i) {
-            d->m_stateData[accountId].m_mutatedPrevRemote.append(locallyAdded->at(i));
-        }
-    }
-    if (locallyModified) {
-        bool foundToReplace = false;
-        for (int i = 0; i < locallyModified->size(); ++i) {
-            const QContactId &lid(locallyModified->at(i).id());
-            foundToReplace = false;
-            for (int j = 0; j < d->m_stateData[accountId].m_mutatedPrevRemote.size(); ++j) {
-                const QContactId &pid(d->m_stateData[accountId].m_mutatedPrevRemote[j].id());
-                if (pid == lid) {
-                    foundToReplace = true;
-                    d->m_stateData[accountId].m_mutatedPrevRemote.replace(j, locallyModified->at(i));
-                    break;
-                }
-            }
-
-            if (!foundToReplace) {
-                // we shouldn't treat this as a local addition, this is always a bug.
-                qWarning() << Q_FUNC_INFO << "FIXME: local modification reported for non-upsynced local contact:" << lid;
-            }
-        }
-    }
-
-    // store partial-sync state data to OOB data so that we can avoid
-    // uploading/downloading duplicates later on, if the sync partially succeeds.
-    QMap<QString, QVariant> oobValues;
-    QByteArray cdata;
-    QDataStream write(&cdata, QIODevice::WriteOnly);
-    write << d->m_stateData[accountId].m_possiblyUploadedAdditions;
-    oobValues.insert(QStringLiteral("possiblyUploadedAdditions"), QVariant(cdata));
-    if (!d->m_engine->storeOOB(d->m_stateData[accountId].m_oobScope, oobValues)) {
-        qWarning() << Q_FUNC_INFO << "error - couldn't store possiblyUploadedAdditions to OOB database";
-        d->clear(accountId);
-        return false;
+        syncState.m_mutatedPrevRemoteModified = true;
     }
 
     // done.
-    d->m_stateData[accountId].m_status = TwoWayContactSyncAdapterPrivate::DeterminedLocalChanges;
-    *localSince = d->m_stateData[accountId].m_localSince;
+    syncState.m_status = TwoWayContactSyncAdapterPrivate::DeterminedLocalChanges;
+    *localSince = syncState.m_localSince;
     return true;
 }
 
@@ -632,43 +718,49 @@ void TwoWayContactSyncAdapter::upsyncLocalChanges(const QDateTime &localSince,
 // step seven: store state data to qtcontacts-sqlite oob database.
 bool TwoWayContactSyncAdapter::storeSyncStateData(const QString &accountId)
 {
-    if (d->m_stateData[accountId].m_status != TwoWayContactSyncAdapterPrivate::DeterminedLocalChanges) {
-        qWarning() << Q_FUNC_INFO << "invalid state" << d->m_stateData[accountId].m_status;
+    TwoWayContactSyncAdapterPrivate::StateData &syncState(d->m_stateData[accountId]);
+
+    if (syncState.m_status != TwoWayContactSyncAdapterPrivate::DeterminedLocalChanges) {
+        qWarning() << Q_FUNC_INFO << "invalid state" << syncState.m_status;
         return false;
     }
 
     QMap<QString, QVariant> values;
 
-    // store the MUTATED_PREV_REMOTE list into oob as PREV_REMOTE for next time.
-    QByteArray cdata;
-    QDataStream write(&cdata, QIODevice::WriteOnly);
-    write << d->m_stateData[accountId].m_mutatedPrevRemote;
-    values.insert(QStringLiteral("prevRemote"), QVariant(cdata));
+    if (syncState.m_mutatedPrevRemoteModified) {
+        // store the MUTATED_PREV_REMOTE list into oob as PREV_REMOTE for next time.
+        QByteArray cdata;
+        QDataStream write(&cdata, QIODevice::WriteOnly);
+        write << syncState.m_mutatedPrevRemote;
+        values.insert(QStringLiteral("prevRemote"), QVariant(cdata));
+    }
+
+    if (syncState.m_exportedIdsModified) {
+        // also store the EXPORTED_IDS list into oob to track non-synctarget contacts we upsynced.
+        QByteArray cdata;
+        QDataStream writeExportedIds(&cdata, QIODevice::WriteOnly);
+        writeExportedIds << syncState.m_exportedIds;
+        values.insert(QStringLiteral("exportedIds"), QVariant(cdata));
+    }
 
     // clear the values of the partial-sync-state maps as the sync was
     // successful and so we don't need to track partial-sync artifacts.
     values.insert(QStringLiteral("possiblyUploadedAdditions"), QVariant::fromValue<QByteArray>(QByteArray()));
     values.insert(QStringLiteral("definitelyDownloadedAdditions"), QVariant::fromValue<QByteArray>(QByteArray()));
 
-    // also store the EXPORTED_IDS list into oob to track non-synctarget contacts we upsynced.
-    cdata.clear();
-    QDataStream writeExportedIds(&cdata, QIODevice::WriteOnly);
-    writeExportedIds << d->m_stateData[accountId].m_exportedIds;
-    values.insert(QStringLiteral("exportedIds"), QVariant(cdata));
-
     // finally, store the new local and remote since timestamps to the OOB db
-    values.insert(QStringLiteral("remoteSince"), QVariant(dateTimeString(d->m_stateData[accountId].m_newRemoteSince)));
-    values.insert(QStringLiteral("localSince"), QVariant(dateTimeString(d->m_stateData[accountId].m_newLocalSince)));
+    values.insert(QStringLiteral("remoteSince"), QVariant(dateTimeString(syncState.m_newRemoteSince)));
+    values.insert(QStringLiteral("localSince"), QVariant(dateTimeString(syncState.m_newLocalSince)));
 
     // perform the store operation to the oob db.
-    if (!d->m_engine->storeOOB(d->m_stateData[accountId].m_oobScope, values)) {
+    if (!d->m_engine->storeOOB(syncState.m_oobScope, values)) {
         qWarning() << Q_FUNC_INFO << "error - couldn't store sync state data to oob!";
         d->clear(accountId);
         return false;
     }
 
     // finished the sync process successfully.
-    d->m_stateData[accountId].m_status = TwoWayContactSyncAdapterPrivate::Finished;
+    syncState.m_status = TwoWayContactSyncAdapterPrivate::Finished;
     d->clear(accountId); // this actually sets state back to Inactive as required.
     return true;
 }
@@ -676,6 +768,8 @@ bool TwoWayContactSyncAdapter::storeSyncStateData(const QString &accountId)
 // error case: purge state data from qtcontacts-sqlite oob database.
 bool TwoWayContactSyncAdapter::purgeSyncStateData(const QString &accountId, bool purgePartialSyncStateData)
 {
+    TwoWayContactSyncAdapterPrivate::StateData &syncState(d->m_stateData[accountId]);
+
     bool purgeSucceeded = true;
     QStringList purgeKeys;
     purgeKeys << QStringLiteral("prevRemote") << QStringLiteral("exportedIds");
@@ -689,7 +783,7 @@ bool TwoWayContactSyncAdapter::purgeSyncStateData(const QString &accountId, bool
         purgeKeys << QStringLiteral("definitelyDownloadedAdditions");
     }
 
-    if (!d->m_engine->removeOOB(d->m_stateData[accountId].m_oobScope, purgeKeys)) {
+    if (!d->m_engine->removeOOB(syncState.m_oobScope, purgeKeys)) {
         qWarning() << Q_FUNC_INFO << "error - couldn't purge state data from oob!";
         purgeSucceeded = false;
     }
@@ -766,13 +860,10 @@ bool TwoWayContactSyncAdapter::testAccountProvenance(const QContact &contact, co
 void TwoWayContactSyncAdapter::ensureAccountProvenance(QList<QContact> *locallyAdded,
                                                        QList<QContact> *locallyModified,
                                                        QList<QContact> *locallyDeleted,
-                                                       const QList<QContact> &prevRemote,
                                                        const QList<QContactId> &exportedIds,
                                                        const QString &accountId)
 {
-    // The default implementation doesn't need to look at the prevRemote version.
-    // Other implementations may need to check if a field value changes (eg OriginMetadata groupId)
-    Q_UNUSED(prevRemote)
+    // By default, added contacts are considered relevant to all accounts
     Q_UNUSED(locallyAdded)
 
     // For deletions and modifications, we check to see if each contact belongs to the account.
@@ -780,13 +871,13 @@ void TwoWayContactSyncAdapter::ensureAccountProvenance(QList<QContact> *locallyA
     // in exportedIds are explicitly claimed by the adapter for this account.
     for (int i = locallyDeleted->size() - 1; i >= 0; --i) {
         const QContact &contact(locallyDeleted->at(i));
-        if (!exportedIds.contains(contact.id()) && !testAccountProvenance(contact, accountId)) {                                         \
+        if (!exportedIds.contains(contact.id()) && !testAccountProvenance(contact, accountId)) {
             locallyDeleted->removeAt(i);
         }
     }
     for (int i = locallyModified->size() - 1; i >= 0; --i) {
         const QContact &contact(locallyModified->at(i));
-        if (!exportedIds.contains(contact.id()) && !testAccountProvenance(contact, accountId)) {                                         \
+        if (!exportedIds.contains(contact.id()) && !testAccountProvenance(contact, accountId)) {
             locallyModified->removeAt(i);
         }
     }
@@ -806,7 +897,9 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapter::createUpdateList(con
                                                                              const QList<QContact> &remoteDeleted,
                                                                              QList<QContact> *remoteAddedModified,
                                                                              QList<QContactId> *exportedIds,
+                                                                             bool *exportedIdsModified,
                                                                              QList<QContact> *mutatedPrevRemote,
+                                                                             bool *mutatedPrevRemoteModified,
                                                                              QMap<QContactId, QContact> *possiblyUploadedAdditions,
                                                                              QMap<QContactId, QContact> *reportedUploadedAdditions,
                                                                              QMap<QString, QContact> *definitelyDownloadedAdditions,
@@ -903,6 +996,7 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapter::createUpdateList(con
         const QContactId id = prevContact.id();
         if (!id.isNull()) {
             exportedIds->removeAll(id);
+            *exportedIdsModified = true;
         }
     }
 
@@ -929,6 +1023,25 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapter::createUpdateList(con
         additionIndices->append(qMakePair(index, updateIndex));
     }
 
+    // mutate the mutatedPrevRemote list according to the changes.
+    if (*mutatedPrevRemoteModified) {
+        qWarning() << Q_FUNC_INFO << "Overwriting existing changes in mutatedPrevRemote!";
+    }
+    *mutatedPrevRemote = prevRemote;
+
+    if (!prevRemoteModificationIndexes.isEmpty() || !prevRemoteDeletionIndexes.isEmpty() || !prevRemoteAdditions.isEmpty()) {
+        *mutatedPrevRemoteModified = true;
+
+        // apply changes identified
+        foreach (int idx, prevRemoteModificationIndexes.keys())
+            mutatedPrevRemote->replace(idx, prevRemoteModificationIndexes.value(idx));
+        qSort(prevRemoteDeletionIndexes);
+        for (int i = prevRemoteDeletionIndexes.size() - 1; i >= 0; --i)
+            mutatedPrevRemote->removeAt(prevRemoteDeletionIndexes.at(i));
+        mutatedPrevRemote->append(prevRemoteAdditions);
+    }
+
+    // adjust for artifacts of incomplete sync operations
     for (int i = 0; i < alreadyUploadedArtifacts.size(); ++i) {
         const QPair<QContact, QContact> &update(alreadyUploadedArtifacts[i]);
         retn.append(update);
@@ -936,7 +1049,9 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapter::createUpdateList(con
         if (update.second != QContact()) {
             // addition/modification - we need to track that contact.
             mutatedPrevRemote->append(update.second);
+            *mutatedPrevRemoteModified = true;
             exportedIds->append(update.second.id());
+            *exportedIdsModified = true;
         }
     }
 
@@ -946,18 +1061,11 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapter::createUpdateList(con
         if (update.second != QContact()) {
             // addition/modification - we need to track that contact.
             mutatedPrevRemote->append(update.second);
+            *mutatedPrevRemoteModified = true;
             exportedIds->append(update.second.id());
+            *exportedIdsModified = true;
         }
     }
-
-    // finally, mutate the mutatedPrevRemote list according to the changes.
-    *mutatedPrevRemote = prevRemote;
-    foreach (int idx, prevRemoteModificationIndexes.keys())
-        mutatedPrevRemote->replace(idx, prevRemoteModificationIndexes.value(idx));
-    qSort(prevRemoteDeletionIndexes);
-    for (int i = prevRemoteDeletionIndexes.size() - 1; i >= 0; --i)
-        mutatedPrevRemote->removeAt(prevRemoteDeletionIndexes.at(i));
-    mutatedPrevRemote->append(prevRemoteAdditions);
 
     return retn;
 }

@@ -148,7 +148,7 @@ void TestSyncAdapter::performTwoWaySync(const QString &accountId)
         return;
     }
 
-    if (!readSyncStateData(&m_remoteSince[accountId], accountId)) {
+    if (!readSyncStateData(&m_remoteSince[accountId], accountId, TwoWayContactSyncAdapter::ReadPartialState)) {
         qWarning() << Q_FUNC_INFO << "couldn't read sync state data";
         emit failed();
         return;
