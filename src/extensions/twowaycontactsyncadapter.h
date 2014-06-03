@@ -93,6 +93,7 @@ public:
     QContactManager &contactManager();
 
 protected:
+    friend class TwoWayContactSyncAdapterPrivate;
     virtual bool testAccountProvenance(const QContact &contact, const QString &accountId);
     virtual void ensureAccountProvenance(QList<QContact> *locallyAdded,
                                          QList<QContact> *locallyModified,
@@ -102,35 +103,7 @@ protected:
     virtual QList<QContactDetail> determineModifications(
                     QList<QContactDetail> *removalsOfThisType,
                     QList<QContactDetail> *additionsOfThisType) const;
-    QList<QPair<QContact, QContact> > createUpdateList(
-                    const QList<QContact> &prevRemote,
-                    const QList<QContact> &remoteRemoved,
-                    QList<QContact> *remoteAddedModified,
-                    QList<QContactId> *exportedIds,
-                    bool *exportedIdsModified,
-                    QList<QContact> *mutatedPrevRemote,
-                    bool *mutatedPrevRemoteModified,
-                    QMap<QContactId, QContact> *possiblyUploadedAdditions,
-                    QMap<QContactId, QContact> *reportedUploadedAdditions,
-                    QMap<QString, QContact> *definitelyDownloadedAdditions,
-                    QList<QPair<int, int> > *additionIndices,
-                    bool needToApplyDelta = true,
-                    const QSet<QContactDetail::DetailType> &ignorableDetailTypes = QSet<QContactDetail::DetailType>()) const;
-    QContact applyRemoteDeltaToPrev(const QContact &prev, const QContact &curr) const;
 
-private:
-    QDateTime maxModificationTimestamp(const QList<QContact> &contacts) const;
-    QPair<QList<QContactDetail>, QList<QContactDetail> > fallbackDelta(const QContact &prev, const QContact &curr) const;
-    QList<QContactDetail> improveDelta(QList<QContactDetail> *removals, QList<QContactDetail> *additions) const;
-    int scoreForDetailPair(const QContactDetail &removal, const QContactDetail &addition) const;
-    int scoreForValuePair(const QVariant &removal, const QVariant &addition) const;
-    bool detailPairExactlyMatches(const QContactDetail &a, const QContactDetail &b) const;
-    int exactDetailMatchExistsInList(const QContactDetail &det, const QList<QContactDetail> &list) const;
-    void removeIgnorableDetailsFromList(QList<QContactDetail> *dets, const QSet<QContactDetail::DetailType> &ignorableDetailTypes) const;
-    int exactContactMatchExistsInList(const QContact &c, const QList<QContact> &list, const QSet<QContactDetail::DetailType> &ignorableDetailTypes) const;
-
-protected:
-    void dumpContact(const QContact &c) const; // debugging.
     TwoWayContactSyncAdapterPrivate *d;
 };
 }
