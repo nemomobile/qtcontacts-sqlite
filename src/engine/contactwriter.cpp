@@ -185,6 +185,13 @@ bool ContactWriter::commitTransaction()
         m_changedSyncTargets.clear();
     }
     if (!m_removedIds.isEmpty()) {
+        // Remove any transient data for these obsolete contacts
+        QList<quint32> removedDbIds;
+        foreach (const QContactId &id, m_removedIds) {
+            removedDbIds.append(ContactId::databaseId(id));
+        }
+        m_database.removeTransientDetails(removedDbIds);
+
         m_notifier->contactsRemoved(m_removedIds.toList());
         m_removedIds.clear();
     }
@@ -1467,6 +1474,14 @@ struct GeneratorType { typedef T type; };
 template<>
 struct GeneratorType<QContactGlobalPresence> { typedef QContactPresence type; };
 
+QContactDetail::DetailType generatorType(QContactDetail::DetailType type)
+{
+    if (type == QContactGlobalPresence::Type)
+        return QContactPresence::Type;
+
+    return type;
+}
+
 template<typename T>
 struct RemoveStatement {};
 
@@ -1546,6 +1561,42 @@ template <typename T> bool removeSpecificDetails(ContactsDatabase &db, quint32 c
     return removeSpecificDetails(db, contactId, RemoveStatement<T>::statement, detailTypeName<T>(), error);
 }
 
+void adjustAggregateDetailProperties(QContactDetail &detail, quint32 contactId)
+{
+    // Modify this detail URI to preserve uniqueness - the result must not clash with the
+    // URI in the constituent's copy, nor of any other aggregator of the same detail
+
+    // If a detail URI is modified for aggregation, we need to insert the ID before the colon
+    const QString prefix(aggregateSyncTarget + QStringLiteral("-%1:").arg(contactId));
+
+    QString detailUri = detail.detailUri();
+    if (!detailUri.isEmpty() && !detailUri.startsWith(prefix)) {
+        if (detailUri.startsWith(aggregateSyncTarget)) {
+            // Remove any invalid aggregate prefix that may have been stored
+            int index = detailUri.indexOf(QChar::fromLatin1(':'));
+            detailUri = detailUri.mid(index + 1);
+        }
+        detail.setDetailUri(prefix + detailUri);
+    }
+
+    QStringList linkedDetailUris = detail.linkedDetailUris();
+    if (!linkedDetailUris.isEmpty()) {
+        QStringList::iterator it = linkedDetailUris.begin(), end = linkedDetailUris.end();
+        for ( ; it != end; ++it) {
+            QString &linkedUri(*it);
+            if (!linkedUri.isEmpty() && !linkedUri.startsWith(prefix)) {
+                if (linkedUri.startsWith(aggregateSyncTarget)) {
+                    // Remove any invalid aggregate prefix that may have been stored
+                    int index = linkedUri.indexOf(QChar::fromLatin1(':'));
+                    linkedUri = linkedUri.mid(index + 1);
+                }
+                linkedUri.insert(0, prefix);
+            }
+        }
+        detail.setLinkedDetailUris(linkedDetailUris);
+    }
+}
+
 void setDetailProperties(QContactDetail &detail, quint32 contactId, quint32 detailId, const QString &syncTarget, bool aggregateContact)
 {
     QString provenance;
@@ -1559,38 +1610,7 @@ void setDetailProperties(QContactDetail &detail, quint32 contactId, quint32 deta
     detail.setValue(QContactDetail__FieldProvenance, provenance);
 
     if (aggregateContact) {
-        // Modify this detail URI to preserve uniqueness - the result must not clash with the
-        // URI in the constituent's copy, nor of any other aggregator of the same detail
-
-        // If a detail URI is modified for aggregation, we need to insert the ID before the colon
-        const QString prefix(aggregateSyncTarget + QStringLiteral("-%1:").arg(contactId));
-
-        QString detailUri = detail.detailUri();
-        if (!detailUri.isEmpty() && !detailUri.startsWith(prefix)) {
-            if (detailUri.startsWith(aggregateSyncTarget)) {
-                // Remove any invalid aggregate prefix that may have been stored
-                int index = detailUri.indexOf(QChar::fromLatin1(':'));
-                detailUri = detailUri.mid(index + 1);
-            }
-            detail.setDetailUri(prefix + detailUri);
-        }
-
-        QStringList linkedDetailUris = detail.linkedDetailUris();
-        if (!linkedDetailUris.isEmpty()) {
-            QStringList::iterator it = linkedDetailUris.begin(), end = linkedDetailUris.end();
-            for ( ; it != end; ++it) {
-                QString &linkedUri(*it);
-                if (!linkedUri.isEmpty() && !linkedUri.startsWith(prefix)) {
-                    if (linkedUri.startsWith(aggregateSyncTarget)) {
-                        // Remove any invalid aggregate prefix that may have been stored
-                        int index = linkedUri.indexOf(QChar::fromLatin1(':'));
-                        linkedUri = linkedUri.mid(index + 1);
-                    }
-                    linkedUri.insert(0, prefix);
-                }
-            }
-            detail.setLinkedDetailUris(linkedDetailUris);
-        }
+        adjustAggregateDetailProperties(detail, contactId);
     }
 }
 
@@ -1778,7 +1798,7 @@ QContactManager::Error ContactWriter::save(
                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error creating contact: %1 syncTarget: %2").arg(err).arg(contact.detail<QContactSyncTarget>().syncTarget()));
             }
         } else {
-            err = update(&contact, definitionMask, &aggregateUpdated, true, withinAggregateUpdate);
+            err = update(&contact, definitionMask, &aggregateUpdated, true, withinAggregateUpdate, presenceOnlyUpdate);
             if (err == QContactManager::NoError) {
                 if (presenceOnlyUpdate) {
                     m_presenceChangedIds.insert(contactId);
@@ -4367,6 +4387,7 @@ static bool updateGlobalPresence(QContact *contact)
     }
 
     globalPresence.setPresenceState(bestPresence.presenceState());
+    globalPresence.setPresenceStateText(bestPresence.presenceStateText());
     globalPresence.setTimestamp(bestPresence.timestamp());
     globalPresence.setNickname(bestPresence.nickname());
     globalPresence.setCustomMessage(bestPresence.customMessage());
@@ -4473,7 +4494,7 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
     return writeErr;
 }
 
-QContactManager::Error ContactWriter::update(QContact *contact, const DetailList &definitionMask, bool *aggregateUpdated, bool withinTransaction, bool withinAggregateUpdate)
+QContactManager::Error ContactWriter::update(QContact *contact, const DetailList &definitionMask, bool *aggregateUpdated, bool withinTransaction, bool withinAggregateUpdate, bool transientUpdate)
 {
     *aggregateUpdated = false;
 
@@ -4541,15 +4562,47 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
     // update the display label for this contact
     m_engine.regenerateDisplayLabel(*contact);
 
-    {
-        ContactsDatabase::Query query(bindContactDetails(*contact, definitionMask, contactId));
-        if (!query.exec()) {
-            query.reportError("Failed to update contact");
-            return QContactManager::UnspecifiedError;
+    // Can this update be transient, or does it need to be durable?
+    if (transientUpdate) {
+        // Instead of updating the database, store these minor changes only to the transient store
+        QList<QContactDetail> transientDetails;
+        foreach (const QContactDetail &detail, contact->details()) {
+            if (definitionMask.contains(detail.type()) ||
+                definitionMask.contains(generatorType(detail.type()))) {
+                // Only store the details indicated by the detail type mask
+                transientDetails.append(detail);
+            }
+        }
+
+        if (oldSyncTarget == aggregateSyncTarget) {
+            // We need to modify the detail URIs in these details
+            QList<QContactDetail>::iterator it = transientDetails.begin(), end = transientDetails.end();
+            for ( ; it != end; ++it) {
+                adjustAggregateDetailProperties(*it, contactId);
+            }
+        }
+
+        if (!m_database.setTransientDetails(contactId, transientDetails)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Could not perform transient update; fallback to durable update"));
+            transientUpdate = false;
         }
     }
 
-    writeError = write(contactId, contact, definitionMask);
+    if (!transientUpdate) {
+        // This update invalidates any details that may be present in the transient store
+        m_database.removeTransientDetails(contactId);
+
+        // Store updated details to the database
+        {
+            ContactsDatabase::Query query(bindContactDetails(*contact, definitionMask, contactId));
+            if (!query.exec()) {
+                query.reportError("Failed to update contact");
+                return QContactManager::UnspecifiedError;
+            }
+        }
+
+        writeError = write(contactId, contact, definitionMask);
+    }
 
     if (m_database.aggregating() && writeError == QContactManager::NoError) {
         if (oldSyncTarget != aggregateSyncTarget) {

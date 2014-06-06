@@ -127,6 +127,10 @@ private slots:
     void presenceReporting();
     void presenceReporting_data();
 
+    /* Transient presence accumulation */
+    void presenceAccumulation();
+    void presenceAccumulation_data() {addManagers();}
+
     /* Nonprivileged DB variant */
     void nonprivileged();
 
@@ -1583,6 +1587,109 @@ void tst_QContactManager::presenceReporting_data()
 
     params.insert(QString::fromLatin1("mergePresenceChanges"), QString::fromLatin1("false"));
     QTest::newRow("mergePresenceChanges=false") << false << QContactManager::buildUri(managerName, params);
+}
+
+void tst_QContactManager::presenceAccumulation()
+{
+    QFETCH(QString, uri);
+    QScopedPointer<QContactManager> cm(QContactManager::fromUri(uri));
+
+    QContact a;
+
+    QContactName n;
+    n.setFirstName("A");
+    n.setMiddleName("Test");
+    n.setLastName("Presence-Accumulation");
+    a.saveDetail(&n);
+
+    QDateTime ts(QDateTime::currentDateTime());
+
+    QContactPresence p;
+    p.setPresenceState(QContactPresence::PresenceAway);
+    p.setTimestamp(ts);
+    QVERIFY(a.saveDetail(&p));
+
+    QContactOnlineAccount oa;
+    oa.setAccountUri("FakeImAccount");
+    oa.setValue(QContactOnlineAccount__FieldEnabled, false);
+    QVERIFY(a.saveDetail(&oa));
+
+    QContactOriginMetadata om;
+    om.setId("TestContact");
+    om.setGroupId("TestGroup");
+    om.setEnabled(false);
+    QVERIFY(a.saveDetail(&om));
+
+    QVERIFY(cm->saveContact(&a));
+    a = cm->contact(retrievalId(a));
+
+    QCOMPARE(a.detail<QContactPresence>().presenceState(), QContactPresence::PresenceAway);
+    QCOMPARE(a.detail<QContactPresence>().timestamp(), ts);
+
+    QCOMPARE(a.detail<QContactGlobalPresence>().presenceState(), QContactPresence::PresenceAway);
+    QCOMPARE(a.detail<QContactGlobalPresence>().timestamp(), ts);
+
+    for (int i = 0; i < 50; ++i) {
+        // Test a presence-only update (increase the size each time)
+        p = a.detail<QContactPresence>();
+        p.setPresenceState(QContactPresence::PresenceAvailable);
+        const QString newCustomMessage(p.customMessage() + QString::fromLatin1(QByteArray(10, 'a')));
+        p.setCustomMessage(newCustomMessage);
+        QVERIFY(a.saveDetail(&p));
+
+        oa = a.detail<QContactOnlineAccount>();
+        oa.setValue(QContactOnlineAccount__FieldEnabled, !oa.value(QContactOnlineAccount__FieldEnabled).toBool());
+        QVERIFY(a.saveDetail(&oa));
+
+        om = a.detail<QContactOriginMetadata>();
+        om.setEnabled(true);
+        QVERIFY(a.saveDetail(&om));
+
+        // We need to use a detail definition mask to enable the presence-only update
+        QList<QContact> contacts;
+        contacts.append(a);
+        QVERIFY(cm->saveContacts(&contacts, DetailList() << detailType<QContactPresence>()
+                                                         << detailType<QContactOnlineAccount>()
+                                                         << detailType<QContactOriginMetadata>()));
+        a = cm->contact(retrievalId(a));
+
+        QCOMPARE(a.detail<QContactPresence>().presenceState(), QContactPresence::PresenceAvailable);
+        QCOMPARE(a.detail<QContactPresence>().customMessage(), newCustomMessage);
+        QCOMPARE(a.detail<QContactPresence>().timestamp(), ts);
+
+        QCOMPARE(a.detail<QContactGlobalPresence>().presenceState(), QContactPresence::PresenceAvailable);
+        QCOMPARE(a.detail<QContactGlobalPresence>().customMessage(), newCustomMessage);
+        QCOMPARE(a.detail<QContactGlobalPresence>().timestamp(), ts);
+
+        QCOMPARE(a.detail<QContactOnlineAccount>().value(QContactOnlineAccount__FieldEnabled), oa.value(QContactOnlineAccount__FieldEnabled));
+
+        QCOMPARE(a.detail<QContactOriginMetadata>().enabled(), om.enabled());
+    }
+
+    // Test an update including non-presence changes
+    p = a.detail<QContactPresence>();
+    p.setPresenceState(QContactPresence::PresenceBusy);
+    QVERIFY(a.saveDetail(&p));
+
+    n = a.detail<QContactName>();
+    n.setMiddleName("Dummy");
+    QVERIFY(a.saveDetail(&n));
+
+    QList<QContact> contacts;
+    contacts.append(a);
+    QVERIFY(cm->saveContacts(&contacts, DetailList() << detailType<QContactPresence>()
+                                                     << detailType<QContactName>()));
+    a = cm->contact(retrievalId(a));
+
+    QCOMPARE(a.detail<QContactPresence>().presenceState(), QContactPresence::PresenceBusy);
+    QCOMPARE(a.detail<QContactPresence>().customMessage(), p.customMessage());
+    QCOMPARE(a.detail<QContactPresence>().timestamp(), p.timestamp());
+
+    QCOMPARE(a.detail<QContactGlobalPresence>().presenceState(), QContactPresence::PresenceBusy);
+    QCOMPARE(a.detail<QContactGlobalPresence>().customMessage(), p.customMessage());
+    QCOMPARE(a.detail<QContactGlobalPresence>().timestamp(), p.timestamp());
+
+    QVERIFY(cm->removeContact(retrievalId(a)));
 }
 
 void tst_QContactManager::nonprivileged()

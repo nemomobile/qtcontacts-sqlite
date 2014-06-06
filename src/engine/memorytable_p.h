@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2013 Jolla Ltd. <matthew.vogt@jollamobile.com>
+ * Copyright (C) 2014 Jolla Ltd.
+ * Contact: Matt Vogt <matthew.vogt@jollamobile.com>
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -29,28 +30,45 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
  */
 
-#ifndef QTCONTACTSSQLITE_SEMAPHORE_P
-#define QTCONTACTSSQLITE_SEMAPHORE_P
+#ifndef __MEMORYTABLE_H__
+#define __MEMORYTABLE_H__
 
-#include <QString>
+#include <QByteArray>
 
-class Semaphore
+class MemoryTablePrivate;
+class MemoryTable
 {
 public:
-    Semaphore(const char *identifier, int initial);
-    Semaphore(const char *identifier, size_t count, const int *initialValues);
-    ~Semaphore();
+    MemoryTable(void *base, size_t size, bool initialize);
+    ~MemoryTable();
 
-    bool decrement(size_t index = 0, bool wait = true, size_t timeoutMs = 0);
-    bool increment(size_t index = 0, bool wait = true, size_t timeoutMs = 0);
+    typedef quint32 key_type;
+    typedef QByteArray value_type;
 
-    int value(size_t index = 0) const;
+    enum Error {
+        NoError = 0,
+        NotAttached,
+        InsufficientSpace
+    };
+
+    bool isValid() const;
+
+    size_t count() const;
+    bool contains(const key_type &key) const;
+    value_type value(const key_type &key) const;
+    Error insert(const key_type &key, const value_type &value);
+    bool remove(const key_type &key);
+
+    Error migrateTo(MemoryTable &other) const;
 
 private:
-    void error(const char *msg, int error);
+    MemoryTable(const MemoryTable &);
+    MemoryTable &operator=(const MemoryTable &);
 
-    QString m_identifier;
-    int m_id;
+    friend class MemoryTablePrivate;
+
+    void *mBase;
+    size_t mSize;
 };
 
 #endif
