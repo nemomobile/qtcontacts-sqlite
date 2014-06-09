@@ -611,23 +611,6 @@ static QContactRelationship makeRelationship(const QString &type, quint32 firstI
     return relationship;
 }
 
-static void readRelationshipTable(quint32 contactId, QContact *contact, QSqlQuery *query, bool syncable, quint32 &currentId)
-{
-    Q_UNUSED(syncable)
-
-    QList<QContactRelationship> currContactRelationships;
-
-    do {
-        QString type = query->value(1).toString();
-        quint32 firstId = query->value(2).toUInt();
-        quint32 secondId = query->value(3).toUInt();
-
-        currContactRelationships.append(makeRelationship(type, firstId, secondId));
-    } while (query->next() && (currentId = query->value(0).toUInt()) == contactId);
-
-    QContactManagerEngine::setContactRelationships(contact, currContactRelationships);
-}
-
 typedef void (*ReadDetail)(quint32 contactId,
                            quint32 &currentId,
                            QContact *contact,
