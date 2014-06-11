@@ -41,6 +41,8 @@ public:
     Semaphore(const char *identifier, size_t count, const int *initialValues);
     ~Semaphore();
 
+    bool isValid() const;
+
     bool decrement(size_t index = 0, bool wait = true, size_t timeoutMs = 0);
     bool increment(size_t index = 0, bool wait = true, size_t timeoutMs = 0);
 

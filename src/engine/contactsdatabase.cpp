@@ -1264,21 +1264,35 @@ static bool createTransientContactIdsTable(QSqlDatabase &db, const QString &tabl
     return true;
 }
 
-static const int initialSemaphoreValues[] = { 1, 1 };
+static const int initialSemaphoreValues[] = { 1, 0, 1 };
 
 static size_t databaseOwnershipIndex = 0;
-static size_t writeAccessIndex = 1;
+static size_t databaseConnectionsIndex = 1;
+static size_t writeAccessIndex = 2;
 
 // Adapted from the inter-process mutex in QMF
 // The first user creates the semaphore that all subsequent instances
 // attach to.  We rely on undo semantics to release locked semaphores
 // on process failure.
 ContactsDatabase::ProcessMutex::ProcessMutex(const QString &path)
-    : m_semaphore(path.toLatin1(), 2, initialSemaphoreValues)
+    : m_semaphore(path.toLatin1(), 3, initialSemaphoreValues)
     , m_initialProcess(false)
 {
-    // Only the first process to open the database is able to decrement the first semaphore
-    m_initialProcess = m_semaphore.decrement(databaseOwnershipIndex, false);
+    if (!m_semaphore.isValid()) {
+        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Unable to create semaphore array!"));
+    } else {
+        if (!m_semaphore.decrement(databaseOwnershipIndex)) {
+            QTCONTACTS_SQLITE_WARNING(QStringLiteral("Unable to determine database ownership!"));
+        } else {
+            // Only the first process to connect to the semaphore is the owner
+            m_initialProcess = (m_semaphore.value(databaseConnectionsIndex) == 0);
+            if (!m_semaphore.increment(databaseConnectionsIndex)) {
+                QTCONTACTS_SQLITE_WARNING(QStringLiteral("Unable to increment database connections!"));
+            }
+
+            m_semaphore.increment(databaseOwnershipIndex);
+        }
+    }
 }
 
 bool ContactsDatabase::ProcessMutex::lock()

@@ -146,6 +146,11 @@ Semaphore::~Semaphore()
 {
 }
 
+bool Semaphore::isValid() const
+{
+    return (m_id != -1);
+}
+
 bool Semaphore::decrement(size_t index, bool wait, size_t timeoutMs)
 {
     if (!semaphoreIncrement(m_id, index, wait, timeoutMs, -1)) {
