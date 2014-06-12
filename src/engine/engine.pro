@@ -22,23 +22,27 @@ INCLUDEPATH += \
         ../extensions
 
 HEADERS += \
+        memorytable_p.h \
         semaphore_p.h \
         trace_p.h \
         conversion_p.h \
         contactid_p.h \
         contactsdatabase.h \
         contactsengine.h \
+        contactstransientstore.h \
         contactnotifier.h \
         contactreader.h \
         contactwriter.h \
         ../extensions/contactmanagerengine.h
 
 SOURCES += \
+        memorytable.cpp \
         semaphore_p.cpp \
         conversion.cpp \
         contactid.cpp \
         contactsdatabase.cpp \
         contactsengine.cpp \
+        contactstransientstore.cpp \
         contactsplugin.cpp \
         contactnotifier.cpp \
         contactreader.cpp \

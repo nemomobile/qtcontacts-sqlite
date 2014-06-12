@@ -788,7 +788,8 @@ ContactsEngine::ContactsEngine(const QString &name, const QMap<QString, QString>
     : m_name(name)
     , m_parameters(parameters)
 {
-    static bool registered = qRegisterMetaType<QList<int> >("QList<int>");
+    static bool registered = qRegisterMetaType<QList<int> >("QList<int>") &&
+                             qRegisterMetaTypeStreamOperators<QList<int> >();
     Q_UNUSED(registered)
 
     QString nonprivileged = m_parameters.value(QString::fromLatin1("nonprivileged"));

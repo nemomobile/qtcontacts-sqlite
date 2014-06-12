@@ -1264,21 +1264,35 @@ static bool createTransientContactIdsTable(QSqlDatabase &db, const QString &tabl
     return true;
 }
 
-static const int initialSemaphoreValues[] = { 1, 1 };
+static const int initialSemaphoreValues[] = { 1, 0, 1 };
 
 static size_t databaseOwnershipIndex = 0;
-static size_t writeAccessIndex = 1;
+static size_t databaseConnectionsIndex = 1;
+static size_t writeAccessIndex = 2;
 
 // Adapted from the inter-process mutex in QMF
 // The first user creates the semaphore that all subsequent instances
 // attach to.  We rely on undo semantics to release locked semaphores
 // on process failure.
 ContactsDatabase::ProcessMutex::ProcessMutex(const QString &path)
-    : m_semaphore(path.toLatin1(), 2, initialSemaphoreValues)
+    : m_semaphore(path.toLatin1(), 3, initialSemaphoreValues)
     , m_initialProcess(false)
 {
-    // Only the first process to open the database is able to decrement the first semaphore
-    m_initialProcess = m_semaphore.decrement(databaseOwnershipIndex, false);
+    if (!m_semaphore.isValid()) {
+        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Unable to create semaphore array!"));
+    } else {
+        if (!m_semaphore.decrement(databaseOwnershipIndex)) {
+            QTCONTACTS_SQLITE_WARNING(QStringLiteral("Unable to determine database ownership!"));
+        } else {
+            // Only the first process to connect to the semaphore is the owner
+            m_initialProcess = (m_semaphore.value(databaseConnectionsIndex) == 0);
+            if (!m_semaphore.increment(databaseConnectionsIndex)) {
+                QTCONTACTS_SQLITE_WARNING(QStringLiteral("Unable to increment database connections!"));
+            }
+
+            m_semaphore.increment(databaseOwnershipIndex);
+        }
+    }
 }
 
 bool ContactsDatabase::ProcessMutex::lock()
@@ -1383,7 +1397,11 @@ bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, b
     }
 
     const QString databaseFile = databaseDir.absoluteFilePath(QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_NAME));
-    const bool exists = QFile::exists(databaseFile);
+    const bool databasePreexisting = QFile::exists(databaseFile);
+    if (!databasePreexisting && secondaryConnection) {
+        // The database must already be created/checked/opened by a primary connection
+        return false;
+    }
 
     m_database = QSqlDatabase::addDatabase(QString::fromLatin1("QSQLITE"), connectionName);
     m_database.setDatabaseName(databaseFile);
@@ -1392,48 +1410,64 @@ bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, b
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to open contacts database: %1")
                 .arg(m_database.lastError().text()));
         return false;
-    } else if (secondaryConnection) {
-        // The database must already be created/checked/opened by a primary connection
-        if (!configureDatabase(m_database)) {
-            m_database.close();
-            return false;
-        }
-        return true;
     }
 
-    if (!exists && !prepareDatabase(m_database, aggregating())) {
+    if (!databasePreexisting && !prepareDatabase(m_database, aggregating())) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare contacts database - removing: %1")
                 .arg(m_database.lastError().text()));
 
         m_database.close();
         QFile::remove(databaseFile);
         return false;
-    } else {
-        // Get the process mutex for this database
-        ProcessMutex *mutex(processMutex());
+    }
 
-        if (mutex->lock()) {
+    // Get the process mutex for this database
+    ProcessMutex *mutex(processMutex());
+
+    if (mutex->lock()) {
+        struct Cleanup {
+            ProcessMutex *mutex;
+            QSqlDatabase *database;
+
+            Cleanup(ProcessMutex *m, QSqlDatabase *db) : mutex(m), database(db) {}
+            ~Cleanup() {
+                if (mutex->isLocked()) {
+                    // Initialization code did not complete; do the clean up
+                    database->close();
+                    mutex->unlock();
+                }
+            }
+        } cleanup(mutex, &m_database);
+
+        if (databasePreexisting && !secondaryConnection) {
             // Only the first process to concurrently open the DB should try to upgrade it
             if (mutex->isInitialProcess()) {
                 // Perform an integrity check
                 if (!checkDatabase(m_database)) {
                     QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to check integrity of contacts database: %1")
                             .arg(m_database.lastError().text()));
-                    m_database.close();
                     return false;
                 }
 
                 if (!upgradeDatabase(m_database)) {
                     QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to upgrade contacts database: %1")
                             .arg(m_database.lastError().text()));
-                    m_database.close();
                     return false;
                 }
-            }
 
-            mutex->unlock();
+            }
         }
 
+        // Attach to the transient store
+        if (!m_transientStore.open(nonprivileged, mutex->isInitialProcess(), !databasePreexisting)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to open contacts transient store"));
+            return false;
+        }
+
+        mutex->unlock();
+    }
+
+    if (databasePreexisting) {
         if (!configureDatabase(m_database)) {
             m_database.close();
             return false;
@@ -1542,6 +1576,31 @@ ContactsDatabase::Query ContactsDatabase::prepare(const QString &statement)
     }
 
     return Query(*it);
+}
+
+bool ContactsDatabase::hasTransientDetails(quint32 contactId)
+{
+    return m_transientStore.contains(contactId);
+}
+
+QList<QContactDetail> ContactsDatabase::transientDetails(quint32 contactId) const
+{
+    return m_transientStore.contactDetails(contactId);
+}
+
+bool ContactsDatabase::setTransientDetails(quint32 contactId, const QList<QContactDetail> &details)
+{
+    return m_transientStore.setContactDetails(contactId, details);
+}
+
+bool ContactsDatabase::removeTransientDetails(quint32 contactId)
+{
+    return m_transientStore.remove(contactId);
+}
+
+bool ContactsDatabase::removeTransientDetails(const QList<quint32> &contactIds)
+{
+    return m_transientStore.remove(contactIds);
 }
 
 QString ContactsDatabase::expandQuery(const QString &queryString, const QVariantList &bindings)

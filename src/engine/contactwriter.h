@@ -99,6 +99,10 @@ public:
             QMap<int, QContactManager::Error> *errorMap,
             bool withinTransaction);
 
+    QList<QContactDetail> transientDetails(quint32 contactId) const;
+    bool storeTransientDetails(quint32 contactId, const QList<QContactDetail> &details);
+    void removeTransientDetails(quint32 contactId);
+
     QContactManager::Error fetchSyncContacts(const QString &syncTarget, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
                                              QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
                                              QDateTime *maxTimestamp);
@@ -116,7 +120,7 @@ private:
     void rollbackTransaction();
 
     QContactManager::Error create(QContact *contact, const DetailList &definitionMask, bool withinTransaction, bool withinAggregateUpdate);
-    QContactManager::Error update(QContact *contact, const DetailList &definitionMask, bool *aggregateUpdated, bool withinTransaction, bool withinAggregateUpdate);
+    QContactManager::Error update(QContact *contact, const DetailList &definitionMask, bool *aggregateUpdated, bool withinTransaction, bool withinAggregateUpdate, bool transientUpdate);
     QContactManager::Error write(quint32 contactId, QContact *contact, const DetailList &definitionMask);
 
     QContactManager::Error saveRelationships(const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap, bool withinAggregateUpdate);

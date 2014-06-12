@@ -33,6 +33,7 @@
 #define QTCONTACTSSQLITE_CONTACTSDATABASE
 
 #include "semaphore_p.h"
+#include "contactstransientstore.h"
 
 #include <QHash>
 #include <QMutex>
@@ -132,12 +133,21 @@ public:
     Query prepare(const char *statement);
     Query prepare(const QString &statement);
 
+    bool hasTransientDetails(quint32 contactId);
+
+    QList<QContactDetail> transientDetails(quint32 contactId) const;
+    bool setTransientDetails(quint32 contactId, const QList<QContactDetail> &details);
+
+    bool removeTransientDetails(quint32 contactId);
+    bool removeTransientDetails(const QList<quint32> &contactIds);
+
     static QString expandQuery(const QString &queryString, const QVariantList &bindings);
     static QString expandQuery(const QString &queryString, const QMap<QString, QVariant> &bindings);
     static QString expandQuery(const QSqlQuery &query);
 
 private:
     QSqlDatabase m_database;
+    ContactsTransientStore m_transientStore;
     QMutex m_mutex;
     mutable QScopedPointer<ProcessMutex> m_processMutex;
     bool m_nonprivileged;

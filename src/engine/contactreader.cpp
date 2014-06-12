@@ -528,10 +528,14 @@ static int contextType(const QString &type)
     return -1;
 }
 
-template <typename T> static void readDetail(
-        quint32 contactId, QContact *contact, QSqlQuery *query, bool syncable, bool relaxConstraints, quint32 &currentId)
+template <typename T> static void readDetail(quint32 contactId, quint32 &currentId, QContact *contact, QSqlQuery *query, bool syncable, bool relaxConstraints, bool append)
 {
     do {
+        if (!append) {
+            // We still need to read the table rows, to get to the following details
+            continue;
+        }
+
         T detail;
 
         const QString detailUriValue = query->value(0).toString();
@@ -607,28 +611,17 @@ static QContactRelationship makeRelationship(const QString &type, quint32 firstI
     return relationship;
 }
 
-static void readRelationshipTable(quint32 contactId, QContact *contact, QSqlQuery *query, bool syncable, quint32 &currentId)
-{
-    Q_UNUSED(syncable)
-
-    QList<QContactRelationship> currContactRelationships;
-
-    do {
-        QString type = query->value(1).toString();
-        quint32 firstId = query->value(2).toUInt();
-        quint32 secondId = query->value(3).toUInt();
-
-        currContactRelationships.append(makeRelationship(type, firstId, secondId));
-    } while (query->next() && (currentId = query->value(0).toUInt()) == contactId);
-
-    QContactManagerEngine::setContactRelationships(contact, currContactRelationships);
-}
-
-typedef void (*ReadDetail)(quint32 contactId, QContact *contact, QSqlQuery *query, bool syncable, bool relaxConstraints, quint32 &currentId);
+typedef void (*ReadDetail)(quint32 contactId,
+                           quint32 &currentId,
+                           QContact *contact,
+                           QSqlQuery *query,
+                           bool syncable,
+                           bool relaxConstraints,
+                           bool append);
 
 struct DetailInfo
 {
-    QContactDetail::DetailType detail;
+    QContactDetail::DetailType detailType;
     const char *detailName;
     const char *table;
     const FieldInfo *fields;
@@ -715,8 +708,8 @@ static QString caseInsensitiveColumnName(const char *table, const char *column)
 
 static QString dateString(const DetailInfo &detail, const QDateTime &qdt)
 {
-    if (detail.detail == QContactBirthday::Type
-            || detail.detail == QContactAnniversary::Type) {
+    if (detail.detailType == QContactBirthday::Type
+            || detail.detailType == QContactAnniversary::Type) {
         // just interested in the date, not the whole date time
         return dateString(qdt.toUTC());
     }
@@ -788,7 +781,7 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
 
     for (int i = 0; i < lengthOf(detailInfo); ++i) {
         const DetailInfo &detail = detailInfo[i];
-        if (!matchOnType(filter, detail.detail))
+        if (!matchOnType(filter, detail.detailType))
             continue;
 
         for (int j = 0; j < detail.fieldCount; ++j) {
@@ -961,7 +954,7 @@ static QString buildWhere(const QContactDetailRangeFilter &filter, QVariantList 
 {
     for (int i = 0; i < lengthOf(detailInfo); ++i) {
         const DetailInfo &detail = detailInfo[i];
-        if (!matchOnType(filter, detail.detail))
+        if (!matchOnType(filter, detail.detailType))
             continue;
 
         for (int j = 0; j < detail.fieldCount; ++j) {
@@ -1247,7 +1240,7 @@ static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins)
 {
     for (int i = 0; i < lengthOf(detailInfo); ++i) {
         const DetailInfo &detail = detailInfo[i];
-        if (!matchOnType(order, detail.detail))
+        if (!matchOnType(order, detail.detailType))
             continue;
 
         for (int j = 0; j < detail.fieldCount; ++j) {
@@ -1260,7 +1253,7 @@ static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins)
                     : QLatin1String("DESC");
 
 #ifdef SORT_PRESENCE_BY_AVAILABILITY
-            if (detail.detail == detailIdentifier<QContactGlobalPresence>() &&
+            if (detail.detailType == detailIdentifier<QContactGlobalPresence>() &&
                 field.field == QContactGlobalPresence::FieldPresenceState) {
                 // Special case handling for presence ordering
                 QString join = QString::fromLatin1("LEFT JOIN GlobalPresences ON Contacts.contactId = GlobalPresences.contactId");
@@ -1356,6 +1349,7 @@ ContactReader::~ContactReader()
 struct Table
 {
     QSqlQuery query;
+    QContactDetail::DetailType detailType;
     ReadDetail read;
     quint32 currentId;
 };
@@ -1771,12 +1765,13 @@ QContactManager::Error ContactReader::queryContacts(
         if (!detail.read)
             continue;
 
-        if (details.isEmpty() || details.contains(detail.detail)) {
+        if (details.isEmpty() || details.contains(detail.detailType)) {
             // we need to query this particular detail table
             // use cached prepared queries if available, else prepare and cache query.
             bool haveCachedQuery = m_cachedDetailTableQueries[tableName].contains(detail.table);
             Table table = {
                 haveCachedQuery ? m_cachedDetailTableQueries[tableName].value(detail.table) : QSqlQuery(m_database),
+                detail.detailType,
                 detail.read,
                 0
             };
@@ -1820,6 +1815,7 @@ QContactManager::Error ContactReader::queryContacts(
         QList<bool> syncableContact;
         QStringList iidList;
         QMap<quint32, int> contactIdIndex;
+        QMap<QContactDetail::DetailType, QList<quint32> > transientDetailContacts;
 
         for (int i = 0; i < batchSize && query.next(); ++i) {
             quint32 dbId = query.value(0).toUInt();
@@ -1902,17 +1898,59 @@ QContactManager::Error ContactReader::queryContacts(
             typeDetail.setType(static_cast<QContactType::TypeValues>(contactType));
             contact.saveDetail(&typeDetail);
 
-            contacts->append(contact);
-
             bool syncable = !syncTarget.isEmpty() &&
                             (syncTarget != aggregateSyncTarget) &&
                             (syncTarget != localSyncTarget) &&
                             (syncTarget != wasLocalSyncTarget);
             syncableContact.append(syncable);
+
+            // Find any transient details for this contact
+            if (m_database.hasTransientDetails(dbId)) {
+                const QList<QContactDetail> transientDetails(m_database.transientDetails(dbId));
+
+                QSet<QContactDetail::DetailType> transientTypes;
+                QList<QContactDetail>::const_iterator it = transientDetails.constBegin(), end = transientDetails.constEnd();
+                for ( ; it != end; ++it) {
+                    // Copy the transient detail into the contact
+                    const QContactDetail &transient(*it);
+
+                    QContactDetail detail(transient.type());
+                    if (!relaxConstraints) {
+                        QContactManagerEngine::setDetailAccessConstraints(&detail, transient.accessConstraints());
+                    }
+
+                    const QMap<int, QVariant> values(transient.values());
+                    QMap<int, QVariant>::const_iterator vit = values.constBegin(), vend = values.constEnd();
+                    for ( ; vit != vend; ++vit) {
+                        bool append(true);
+
+                        if (vit.key() == QContactDetail__FieldModifiable) {
+                            append = syncable;
+                        }
+
+                        if (append) {
+                            detail.setValue(vit.key(), vit.value());
+                        }
+                    }
+
+                    contact.saveDetail(&detail);
+
+                    transientTypes.insert(detail.type());
+                }
+
+                // Mark this contact as not requiring table data for these detailtypes
+                foreach (QContactDetail::DetailType type, transientTypes) {
+                    QList<quint32> &idList(transientDetailContacts[type]);
+                    idList.append(dbId);
+                }
+            }
+
+            contacts->append(contact);
         }
 
         for (int j = 0; j < tables.count(); ++j) {
             Table &table = tables[j];
+            const QList<quint32> &transientContactIds(transientDetailContacts[table.detailType]);
 
             QList<bool>::iterator sit = syncableContact.begin();
             QList<QContact>::iterator it = contacts->begin() + contactCount;
@@ -1921,7 +1959,11 @@ QContactManager::Error ContactReader::queryContacts(
                 quint32 contactId = ContactId::databaseId(contact.id());
 
                 if (table.query.isValid() && (table.currentId == contactId)) {
-                    table.read(contactId, &contact, &table.query, *sit, relaxConstraints, table.currentId);
+                    // If the transient store contains details of this type for this contact, they take precedence over the
+                    // details stored in the tables
+                    const bool contactHasTransient(transientContactIds.contains(contactId));
+
+                    table.read(contactId, table.currentId, &contact, &table.query, *sit, relaxConstraints, !contactHasTransient);
                 }
             }
         }

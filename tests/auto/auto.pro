@@ -1,3 +1,3 @@
 TEMPLATE = subdirs
 
-SUBDIRS = qcontactmanager aggregation qcontactmanagerfiltering phonenumber
+SUBDIRS = qcontactmanager aggregation qcontactmanagerfiltering phonenumber memorytable

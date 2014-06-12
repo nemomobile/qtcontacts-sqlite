@@ -98,7 +98,7 @@ int semaphoreInit(const char *id, size_t count, const int *initialValues)
     return rv;
 }
 
-bool semaphoreIncrement(int id, size_t index, bool wait, int value)
+bool semaphoreIncrement(int id, size_t index, bool wait, size_t ms, int value)
 {
     if (id == -1) {
         errno = 0;
@@ -113,7 +113,17 @@ bool semaphoreIncrement(int id, size_t index, bool wait, int value)
         op.sem_flg |= IPC_NOWAIT;
     }
 
-    return (::semop(id, &op, 1) == 0);
+    struct timespec timeout;
+    timeout.tv_sec = 0;
+    timeout.tv_nsec = ms * 1000;
+
+    do {
+        int rv = ::semtimedop(id, &op, 1, (wait && ms > 0 ? &timeout : 0));
+        if (rv == 0)
+            return true;
+    } while (errno == EINTR);
+
+    return false;
 }
 
 }
@@ -136,10 +146,15 @@ Semaphore::~Semaphore()
 {
 }
 
-bool Semaphore::decrement(size_t index, bool wait)
+bool Semaphore::isValid() const
 {
-    if (!semaphoreIncrement(m_id, index, wait, -1)) {
-        if (errno != EAGAIN) {
+    return (m_id != -1);
+}
+
+bool Semaphore::decrement(size_t index, bool wait, size_t timeoutMs)
+{
+    if (!semaphoreIncrement(m_id, index, wait, timeoutMs, -1)) {
+        if (errno != EAGAIN || wait) {
             error("Unable to decrement semaphore", errno);
         }
         return false;
@@ -147,10 +162,10 @@ bool Semaphore::decrement(size_t index, bool wait)
     return true;
 }
 
-bool Semaphore::increment(size_t index, bool wait)
+bool Semaphore::increment(size_t index, bool wait, size_t timeoutMs)
 {
-    if (!semaphoreIncrement(m_id, index, wait, 1)) {
-        if (errno != EAGAIN) {
+    if (!semaphoreIncrement(m_id, index, wait, timeoutMs, 1)) {
+        if (errno != EAGAIN || wait) {
             error("Unable to increment semaphore", errno);
         }
         return false;

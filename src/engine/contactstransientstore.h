@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2013 Jolla Ltd. <matthew.vogt@jollamobile.com>
+ * Copyright (C) 2014 Jolla Ltd.
+ * Contact: Matt Vogt <matthew.vogt@jollamobile.com>
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -29,30 +30,32 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
  */
 
-#ifndef QTCONTACTSSQLITE_SEMAPHORE_P
-#define QTCONTACTSSQLITE_SEMAPHORE_P
 
-#include <QString>
+#ifndef __CONTACTSTRANSIENTSTORE_H__
+#define __CONTACTSTRANSIENTSTORE_H__
 
-class Semaphore
+#include <QContactDetail>
+
+QTCONTACTS_USE_NAMESPACE
+
+class ContactsTransientStore
 {
 public:
-    Semaphore(const char *identifier, int initial);
-    Semaphore(const char *identifier, size_t count, const int *initialValues);
-    ~Semaphore();
+    ContactsTransientStore();
+    ~ContactsTransientStore();
 
-    bool isValid() const;
+    bool open(bool nonprivileged, bool initialProcess, bool reinitialize);
 
-    bool decrement(size_t index = 0, bool wait = true, size_t timeoutMs = 0);
-    bool increment(size_t index = 0, bool wait = true, size_t timeoutMs = 0);
+    bool contains(quint32 contactId) const;
 
-    int value(size_t index = 0) const;
+    QList<QContactDetail> contactDetails(quint32 contactId) const;
+    bool setContactDetails(quint32 contactId, const QList<QContactDetail> &details);
+
+    bool remove(quint32 contactId);
+    bool remove(const QList<quint32> &contactId);
 
 private:
-    void error(const char *msg, int error);
-
     QString m_identifier;
-    int m_id;
 };
 
 #endif
