@@ -158,10 +158,11 @@ private:
     };
 
     static const quint32 keyDataFormatVersion = 1;
+    static const quint32 initialGeneration = 1;
     static const int keyIndex = 0;
     static const int dataIndex = 1;
 
-    QString getNativeIdentifier(const QString &identifier) const;
+    QString getNativeIdentifier(const QString &identifier, bool createIfNecessary) const;
 
     quint32 getRegionGeneration(QSharedPointer<QSharedMemory> keyRegion) const;
     void setRegionGeneration(QSharedPointer<QSharedMemory> keyRegion, quint32 regionGeneration);
@@ -189,7 +190,12 @@ bool SharedMemoryManager::open(const QString &identifier, bool initialProcess, b
     if (m_tables.contains(identifier))
         return true;
 
-    const QString semaphoreToken(getNativeIdentifier(identifier + QStringLiteral("-semaphore")));
+    const QString semaphoreToken(getNativeIdentifier(identifier + QStringLiteral("-semaphore"), true));
+    if (semaphoreToken.isEmpty()) {
+        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to create semaphore token for %1")
+                .arg(identifier));
+        return false;
+    }
 
     // Create semaphores to be able to lock the key and data region
     const int initialSemaphoreValues[] = { 1, 1 };
@@ -209,7 +215,12 @@ bool SharedMemoryManager::open(const QString &identifier, bool initialProcess, b
         return false;
     }
 
-    const QString nativeKey(getNativeIdentifier(identifier));
+    const QString nativeKey(getNativeIdentifier(identifier, true));
+    if (nativeKey.isEmpty()) {
+        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to create key token for %1")
+                .arg(identifier));
+        return false;
+    }
 
     // Attach to the memory region where the key to the data region is stored
     QSharedPointer<QSharedMemory> keyRegion(new QSharedMemory());
@@ -231,7 +242,6 @@ bool SharedMemoryManager::open(const QString &identifier, bool initialProcess, b
         }
 
         // Write the key details to the key region
-        const quint32 initialGeneration = 1;
         setRegionGeneration(keyRegion, initialGeneration);
     }
 
@@ -387,21 +397,26 @@ SharedMemoryManager::TableHandle SharedMemoryManager::reallocateTable(const QStr
     return TableHandle(tableData.m_dataTable);
 }
 
-QString SharedMemoryManager::getNativeIdentifier(const QString &identifier) const
+QString SharedMemoryManager::getNativeIdentifier(const QString &identifier, bool createIfNecessary) const
 {
     // Despite the documentation, QSharedMemory on unix needs the identifier to be the path
     // of an existing file, in order to use ftok.  Create a file to use, if necessary
     QString path(QStandardPaths::writableLocation(QStandardPaths::TempLocation) + QDir::separator() + identifier);
     if (!QFile::exists(path)) {
-        // Try to create this file
-        QFile pathFile;
-        pathFile.setFileName(path);
-        pathFile.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ReadGroup | QFileDevice::WriteGroup);
-        if (!pathFile.open(QIODevice::WriteOnly)) {
-            QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to create native lock file %1: %2")
-                    .arg(identifier).arg(path));
+        if (createIfNecessary) {
+            // Try to create this file
+            QFile pathFile;
+            pathFile.setFileName(path);
+            pathFile.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ReadGroup | QFileDevice::WriteGroup);
+            if (!pathFile.open(QIODevice::WriteOnly)) {
+                QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to create native lock file %1: %2")
+                        .arg(identifier).arg(path));
+                path = QString();
+            } else {
+                pathFile.close();
+            }
         } else {
-            pathFile.close();
+            path = QString();
         }
     }
 
@@ -440,11 +455,31 @@ QSharedPointer<QSharedMemory> SharedMemoryManager::getDataRegion(const QString &
     // We must hold the data lock before calling this function
     const QString dataIdentifier(QStringLiteral("%1-data-%2").arg(identifier).arg(generation));
 
-    const QString nativeKey(getNativeIdentifier(dataIdentifier));
+    const QString nativeKey(getNativeIdentifier(dataIdentifier, true));
+    if (nativeKey.isEmpty()) {
+        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to open token file: %1").arg(dataIdentifier));
+        return QSharedPointer<QSharedMemory>();
+    }
 
     QSharedPointer<QSharedMemory> memoryRegion(new QSharedMemory());
     memoryRegion->setNativeKey(nativeKey);
-    if (!memoryRegion->attach()) {
+
+    bool attached = memoryRegion->attach();
+    if (!attached &&
+        (memoryRegion->error() == QSharedMemory::NotFound) &&
+        (generation > initialGeneration)) {
+        // It's possible that the current generation has been destroyed, but the previous generation
+        // is still active; try to connect to that.  We could fall back all the way to the initial
+        // generation, but the possible benefit rapidly decreases...
+        const QString previousIdentifier(QStringLiteral("%1-data-%2").arg(identifier).arg(generation - 1));
+        const QString previousKey(getNativeIdentifier(previousIdentifier, false));
+        if (!previousKey.isEmpty()) {
+            memoryRegion->setNativeKey(previousKey);
+            attached = memoryRegion->attach();
+        }
+    }
+
+    if (!attached) {
         // Only the initial process can create the key region
         if (memoryRegion->error() != QSharedMemory::NotFound || !createIfNecessary) {
             QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to attach data memory region for %1: %2")
@@ -452,6 +487,7 @@ QSharedPointer<QSharedMemory> SharedMemoryManager::getDataRegion(const QString &
             return memoryRegion;
         }
 
+        memoryRegion->setNativeKey(nativeKey);
         if (!memoryRegion->create(dataSize)) {
             QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to create data memory region for %1 (%2): %3")
                     .arg(dataIdentifier).arg(dataSize).arg(memoryRegion->errorString()));
