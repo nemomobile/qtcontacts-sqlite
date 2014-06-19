@@ -1917,8 +1917,6 @@ QContactManager::Error ContactReader::queryContacts(
             flags.setFlag(QContactStatusFlags::IsOnline, query.value(18).toBool());
             flags.setFlag(QContactStatusFlags::IsDeactivated, query.value(19).toBool());
             flags.setFlag(QContactStatusFlags::IsIncidental, query.value(20).toBool());
-            QContactManagerEngine::setDetailAccessConstraints(&flags, QContactDetail::ReadOnly | QContactDetail::Irremovable);
-            contact.saveDetail(&flags);
 
             if (flags.testFlag(QContactStatusFlags::IsDeactivated)) {
                 QContactDeactivated deactivated;
@@ -1951,6 +1949,14 @@ QContactManager::Error ContactReader::queryContacts(
                     const QContactDetail &transient(*it);
 
                     const QContactDetail::DetailType transientType(transient.type());
+
+                    if (transientType == QContactGlobalPresence::Type) {
+                        // If global presence is in the transient details, the IsOnline status flag is out of date
+                        const int presenceState = transient.value<int>(QContactGlobalPresence::FieldPresenceState);
+                        const bool isOnline(presenceState >= QContactPresence::PresenceAvailable &&
+                                            presenceState <= QContactPresence::PresenceExtendedAway);
+                        flags.setFlag(QContactStatusFlags::IsOnline, isOnline);
+                    }
 
                     // Ignore details that aren't in the requested types
                     if (!definitionMask.isEmpty() && !definitionMask.contains(transientType)) {
@@ -1987,6 +1993,10 @@ QContactManager::Error ContactReader::queryContacts(
                     idList.append(dbId);
                 }
             }
+
+            // Add the updated status flags
+            QContactManagerEngine::setDetailAccessConstraints(&flags, QContactDetail::ReadOnly | QContactDetail::Irremovable);
+            contact.saveDetail(&flags);
 
             contacts->append(contact);
         }
