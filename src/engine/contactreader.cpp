@@ -1793,7 +1793,7 @@ QContactManager::Error ContactReader::queryContacts(
     // This is the zero-based offset of the contact ID value in the table query above:
     const int idValueOffset = 8;
 
-    const ContactWriter::DetailList &details = fetchHint.detailTypesHint();
+    const ContactWriter::DetailList &definitionMask = fetchHint.detailTypesHint();
 
     QList<Table> tables;
     for (int i = 0; i < lengthOf(detailInfo); ++i) {
@@ -1801,7 +1801,7 @@ QContactManager::Error ContactReader::queryContacts(
         if (!detail.read)
             continue;
 
-        if (details.isEmpty() || details.contains(detail.detailType)) {
+        if (definitionMask.isEmpty() || definitionMask.contains(detail.detailType)) {
             // we need to query this particular detail table
             // use cached prepared queries if available, else prepare and cache query.
             bool haveCachedQuery = m_cachedDetailTableQueries[tableName].contains(detail.table);
@@ -1950,6 +1950,13 @@ QContactManager::Error ContactReader::queryContacts(
                     // Copy the transient detail into the contact
                     const QContactDetail &transient(*it);
 
+                    const QContactDetail::DetailType transientType(transient.type());
+
+                    // Ignore details that aren't in the requested types
+                    if (!definitionMask.isEmpty() && !definitionMask.contains(transientType)) {
+                        continue;
+                    }
+
                     QContactDetail detail(transient.type());
                     if (!relaxConstraints) {
                         QContactManagerEngine::setDetailAccessConstraints(&detail, transient.accessConstraints());
@@ -1971,7 +1978,7 @@ QContactManager::Error ContactReader::queryContacts(
 
                     contact.saveDetail(&detail);
 
-                    transientTypes.insert(detail.type());
+                    transientTypes.insert(transientType);
                 }
 
                 // Mark this contact as not requiring table data for these detailtypes
