@@ -140,6 +140,9 @@ public:
 
     static const value_type valueAt(quint32 offset, const TableMetadata *table);
 
+    static key_type keyAtIndex(size_t index, const TableMetadata *table);
+    static const value_type valueAtIndex(size_t index, const TableMetadata *table);
+
     static size_t freeSpace(const TableMetadata *table);
     static size_t requiredSpace(quint32 size);
 
@@ -294,6 +297,22 @@ const MemoryTablePrivate::value_type MemoryTablePrivate::valueAt(quint32 offset,
 {
     const Allocation *allocation = allocationAt(offset, table);
     return extractData<value_type>(allocation->data, allocation->dataSize);
+}
+
+MemoryTablePrivate::key_type MemoryTablePrivate::keyAtIndex(size_t index, const TableMetadata *table)
+{
+    if (index >= table->count)
+        return key_type();
+
+    return table->index[index].key;
+}
+
+const MemoryTablePrivate::value_type MemoryTablePrivate::valueAtIndex(size_t index, const TableMetadata *table)
+{
+    if (index >= table->count)
+        return key_type();
+
+    return valueAt(table->index[index].offset, table);
 }
 
 size_t MemoryTablePrivate::freeSpace(const TableMetadata *table)
@@ -475,11 +494,87 @@ bool MemoryTable::remove(const key_type &key)
     return MemoryTablePrivate::remove(key, MemoryTablePrivate::metadata(this));
 }
 
+MemoryTable::key_type MemoryTable::keyAt(size_t index) const
+{
+    if (!mBase)
+        return key_type();
+
+    return MemoryTablePrivate::keyAtIndex(index, MemoryTablePrivate::metadata(this));
+}
+
+MemoryTable::value_type MemoryTable::valueAt(size_t index) const
+{
+    if (!mBase)
+        return value_type();
+
+    return MemoryTablePrivate::valueAtIndex(index, MemoryTablePrivate::metadata(this));
+}
+
+MemoryTable::const_iterator MemoryTable::constBegin() const
+{
+    return const_iterator(this, 0);
+}
+
+MemoryTable::const_iterator MemoryTable::constEnd() const
+{
+    return const_iterator(this, count());
+}
+
 MemoryTable::Error MemoryTable::migrateTo(MemoryTable &other) const
 {
     if (!mBase || !other.mBase)
         return NotAttached;
 
     return MemoryTablePrivate::migrateTo(MemoryTablePrivate::metadata(&other), MemoryTablePrivate::metadata(this));
+}
+
+MemoryTable::const_iterator::const_iterator(const MemoryTable *table, size_t position)
+    : table(table)
+    , position(position)
+{
+}
+
+MemoryTable::const_iterator::const_iterator()
+    : table(0)
+    , position(0)
+{
+}
+
+MemoryTable::const_iterator::const_iterator(const const_iterator &other)
+{
+    *this = other;
+}
+
+MemoryTable::const_iterator &MemoryTable::const_iterator::operator=(const const_iterator &other)
+{
+    table = other.table;
+    position = other.position;
+    return *this;
+}
+
+bool MemoryTable::const_iterator::operator==(const const_iterator &other)
+{
+    return (table == other.table && position == other.position);
+}
+
+bool MemoryTable::const_iterator::operator!=(const const_iterator &other)
+{
+    return !(*this == other);
+}
+
+MemoryTable::key_type MemoryTable::const_iterator::key()
+{
+    return table->keyAt(position);
+}
+
+MemoryTable::value_type MemoryTable::const_iterator::value()
+{
+    return table->valueAt(position);
+}
+
+const MemoryTable::const_iterator &MemoryTable::const_iterator::operator++()
+{
+    ++position;
+    return *this;
 }
 

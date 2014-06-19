@@ -62,6 +62,7 @@ private slots:
     void orderedReinsertion();
     void replacement();
     void migration();
+    void iteration();
 
 private:
     char *testBuffer(size_t length);
@@ -313,18 +314,18 @@ void tst_MemoryTable::basicOperation()
     QCOMPARE(mt.count(), 0u);
 
     // An impossible allocation should not disrupt the table
-    QCOMPARE(mt.insert(1, QByteArray(1, 'x')), MemoryTable::NoError);
+    QCOMPARE(mt.insert(3, QByteArray(1, 'x')), MemoryTable::NoError);
     QCOMPARE(mt.insert(2, QByteArray(128, 'y')), MemoryTable::InsufficientSpace);
-    QCOMPARE(mt.insert(3, QByteArray(1, 'z')), MemoryTable::NoError);
+    QCOMPARE(mt.insert(1, QByteArray(1, 'z')), MemoryTable::NoError);
     QCOMPARE(mt.count(), 2u);
     QCOMPARE(mt.contains(0), false);
     QCOMPARE(mt.contains(1), true);
     QCOMPARE(mt.contains(2), false);
     QCOMPARE(mt.contains(3), true);
     QCOMPARE(mt.value(0), QByteArray());
-    QCOMPARE(mt.value(1), QByteArray(1, 'x'));
+    QCOMPARE(mt.value(1), QByteArray(1, 'z'));
     QCOMPARE(mt.value(2), QByteArray());
-    QCOMPARE(mt.value(3), QByteArray(1, 'z'));
+    QCOMPARE(mt.value(3), QByteArray(1, 'x'));
 }
 
 void tst_MemoryTable::reinsertion()
@@ -591,6 +592,97 @@ void tst_MemoryTable::migration()
             QCOMPARE(mt2.value(key), mt.value(key));
         } while (key != 0u);
     }
+}
+
+void tst_MemoryTable::iteration()
+{
+    QScopedArrayPointer<char> buf(testBuffer(128));
+
+    MemoryTable mt(buf.data(), 128, true);
+    QCOMPARE(mt.isValid(), true);
+
+    QCOMPARE(mt.count(), 0u);
+
+    MemoryTable::const_iterator it, end;
+
+    it = mt.constBegin();
+    end = mt.constEnd();
+    QVERIFY(it == end);
+    QCOMPARE(std::distance(it, end), static_cast<std::ptrdiff_t>(0));
+
+    QCOMPARE(mt.insert(1, QByteArray()), MemoryTable::NoError);
+    QCOMPARE(mt.count(), 1u);
+
+    it = mt.constBegin();
+    end = mt.constEnd();
+    QVERIFY(it != end);
+    QCOMPARE(std::distance(it, end), static_cast<std::ptrdiff_t>(1));
+    QCOMPARE(static_cast<int>(it.key()), 1);
+    QCOMPARE(it.value(), QByteArray());
+    ++it;
+    QVERIFY(it == end);
+    QCOMPARE(std::distance(it, end), static_cast<std::ptrdiff_t>(0));
+
+    QByteArray ba("test byte array");
+    QCOMPARE(mt.insert(2, ba), MemoryTable::NoError);
+    QCOMPARE(mt.count(), 2u);
+
+    it = mt.constBegin();
+    end = mt.constEnd();
+    QVERIFY(it != end);
+    QCOMPARE(std::distance(it, end), static_cast<std::ptrdiff_t>(2));
+    QCOMPARE(static_cast<int>(it.key()), 1);
+    QCOMPARE(it.value(), QByteArray());
+    ++it;
+    QVERIFY(it != end);
+    QCOMPARE(std::distance(it, end), static_cast<std::ptrdiff_t>(1));
+    QCOMPARE(static_cast<int>(it.key()), 2);
+    QCOMPARE(it.value(), ba);
+    ++it;
+    QVERIFY(it == end);
+    QCOMPARE(std::distance(it, end), static_cast<std::ptrdiff_t>(0));
+
+    QCOMPARE(mt.remove(1), true);
+    QCOMPARE(mt.count(), 1u);
+
+    it = mt.constBegin();
+    end = mt.constEnd();
+    QVERIFY(it != end);
+    QCOMPARE(std::distance(it, end), static_cast<std::ptrdiff_t>(1));
+    QCOMPARE(static_cast<int>(it.key()), 2);
+    QCOMPARE(it.value(), ba);
+    ++it;
+    QVERIFY(it == end);
+    QCOMPARE(std::distance(it, end), static_cast<std::ptrdiff_t>(0));
+
+    QCOMPARE(mt.remove(2), true);
+    QCOMPARE(mt.count(), 0u);
+
+    it = mt.constBegin();
+    end = mt.constEnd();
+    QVERIFY(it == end);
+    QCOMPARE(std::distance(it, end), static_cast<std::ptrdiff_t>(0));
+
+    // An impossible allocation should not disrupt the iteration
+    QCOMPARE(mt.insert(3, QByteArray(1, 'x')), MemoryTable::NoError);
+    QCOMPARE(mt.insert(2, QByteArray(128, 'y')), MemoryTable::InsufficientSpace);
+    QCOMPARE(mt.insert(1, QByteArray(1, 'z')), MemoryTable::NoError);
+    QCOMPARE(mt.count(), 2u);
+
+    it = mt.constBegin();
+    end = mt.constEnd();
+    QVERIFY(it != end);
+    QCOMPARE(static_cast<int>(it.key()), 1);
+    QCOMPARE(it.value(), QByteArray(1, 'z'));
+    QCOMPARE(std::distance(it, end), static_cast<std::ptrdiff_t>(2));
+    ++it;
+    QVERIFY(it != end);
+    QCOMPARE(std::distance(it, end), static_cast<std::ptrdiff_t>(1));
+    QCOMPARE(static_cast<int>(it.key()), 3);
+    QCOMPARE(it.value(), QByteArray(1, 'x'));
+    ++it;
+    QVERIFY(it == end);
+    QCOMPARE(std::distance(it, end), static_cast<std::ptrdiff_t>(0));
 }
 
 QTEST_MAIN(tst_MemoryTable)

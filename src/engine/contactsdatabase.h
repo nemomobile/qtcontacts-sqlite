@@ -127,8 +127,12 @@ public:
     void clearTemporaryValuesTable(const QString &table);
 
     bool createTransientContactIdsTable(const QString &table, const QVariantList &ids, QString *transientTableName);
-
     void clearTransientContactIdsTable(const QString &table);
+
+    bool createTemporaryContactPresenceTable(const QString &table, const QList<QPair<quint32, qint64> > &values);
+    void clearTemporaryContactPresenceTable(const QString &table);
+
+    bool populateTemporaryGlobalPresenceStates();
 
     Query prepare(const char *statement);
     Query prepare(const QString &statement);
