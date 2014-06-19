@@ -105,6 +105,8 @@ public:
         MemoryTable *operator->() { return &(m_table->m_table); }
         const MemoryTable *operator->() const { return &(m_table->m_table); }
 
+        operator const MemoryTable *() const { return &(m_table->m_table); }
+
     private:
         QSharedPointer<SharedMemoryTable> m_table;
         Function m_release;
@@ -548,6 +550,40 @@ void SharedMemoryManager::release(int index) const
     }
 }
 
+ContactsTransientStore::const_iterator::const_iterator(const MemoryTable *table, size_t position)
+    : MemoryTable::const_iterator(table, position)
+{
+}
+
+ContactsTransientStore::const_iterator::const_iterator(const const_iterator &other)
+    : MemoryTable::const_iterator(other)
+{
+}
+
+ContactsTransientStore::const_iterator &ContactsTransientStore::const_iterator::operator=(const const_iterator &other)
+{
+    MemoryTable::const_iterator::operator=(other);
+    return *this;
+}
+
+quint32 ContactsTransientStore::const_iterator::key()
+{
+    return MemoryTable::const_iterator::key();
+}
+
+QList<QContactDetail> ContactsTransientStore::const_iterator::value()
+{
+    const QByteArray data(MemoryTable::const_iterator::value());
+    if (!data.isEmpty()) {
+        QDataStream is(data);
+        QList<QContactDetail> details;
+        is >> details;
+        return details;
+    }
+
+    return QList<QContactDetail>();
+}
+
 ContactsTransientStore::ContactsTransientStore()
 {
 }
@@ -653,5 +689,21 @@ bool ContactsTransientStore::remove(const QList<quint32> &contactIds)
     }
 
     return false;
+}
+
+ContactsTransientStore::const_iterator ContactsTransientStore::constBegin() const
+{
+    // Note: iterators do not keep the table active
+    SharedMemoryManager::TableHandle table(sharedMemory()->table(m_identifier));
+    const MemoryTable *tablePtr(table);
+    return const_iterator(tablePtr, 0);
+}
+
+ContactsTransientStore::const_iterator ContactsTransientStore::constEnd() const
+{
+    // Note: iterators do not keep the table active
+    SharedMemoryManager::TableHandle table(sharedMemory()->table(m_identifier));
+    const MemoryTable *tablePtr(table);
+    return const_iterator(tablePtr, table->count());
 }
 

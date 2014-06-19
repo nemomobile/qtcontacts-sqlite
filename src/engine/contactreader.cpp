@@ -771,7 +771,7 @@ static QString convertFilterValueToString(const QContactDetailFilter &filter, co
     return defaultValue;
 }
 
-static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bindings, bool *failed)
+static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bindings, bool *failed, bool *globalPresenceRequired)
 {
     if (filter.matchFlags() & QContactFilter::MatchKeypadCollation) {
         *failed = true;
@@ -817,13 +817,26 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
 
                     QStringList clauses;
                     if (filter.matchFlags() == QContactFilter::MatchExactly) {
+                        *globalPresenceRequired = true;
                         for (int i  = 0; i < lengthOf(flags); ++i) {
-                            clauses.append(QString::fromLatin1("%1 = %2").arg(flagColumns[i]).arg((flagsValue & flags[i]) ? 1 : 0));
+                            QString comparison;
+                            if (flags[i] == QContactStatusFlags::IsOnline) {
+                                // Use special case test to include transient presence state
+                                comparison = QStringLiteral("COALESCE(temp.GlobalPresenceStates.isOnline, Contacts.isOnline) = %1");
+                            } else {
+                                comparison = QStringLiteral("%1 = %2").arg(flagColumns[i]);
+                            }
+                            clauses.append(comparison.arg((flagsValue & flags[i]) ? 1 : 0));
                         }
                     } else if (filter.matchFlags() == QContactFilter::MatchContains) {
                         for (int i  = 0; i < lengthOf(flags); ++i) {
                             if (flagsValue & flags[i]) {
-                                clauses.append(QString::fromLatin1("%1 = 1").arg(flagColumns[i]));
+                                if (flags[i] == QContactStatusFlags::IsOnline) {
+                                    *globalPresenceRequired = true;
+                                    clauses.append(QStringLiteral("COALESCE(temp.GlobalPresenceStates.isOnline, Contacts.isOnline) = 1"));
+                                } else {
+                                    clauses.append(QString::fromLatin1("%1 = 1").arg(flagColumns[i]));
+                                }
                             }
                         }
                     } else {
@@ -1171,9 +1184,9 @@ static QString buildWhere(const QContactChangeLogFilter &filter, QVariantList *b
     return QLatin1String("FALSE");
 }
 
-static QString buildWhere(const QContactFilter &filter, ContactsDatabase &db, const QString &table, QVariantList *bindings, bool *failed);
+static QString buildWhere(const QContactFilter &filter, ContactsDatabase &db, const QString &table, QVariantList *bindings, bool *failed, bool *globalPresenceRequired);
 
-static QString buildWhere(const QContactUnionFilter &filter, ContactsDatabase &db, const QString &table, QVariantList *bindings, bool *failed)
+static QString buildWhere(const QContactUnionFilter &filter, ContactsDatabase &db, const QString &table, QVariantList *bindings, bool *failed, bool *globalPresenceRequired)
 {
     const QList<QContactFilter> filters  = filter.filters();
     if (filters.isEmpty())
@@ -1181,7 +1194,7 @@ static QString buildWhere(const QContactUnionFilter &filter, ContactsDatabase &d
 
     QStringList fragments;
     foreach (const QContactFilter &filter, filters) {
-        const QString fragment = buildWhere(filter, db, table, bindings, failed);
+        const QString fragment = buildWhere(filter, db, table, bindings, failed, globalPresenceRequired);
         if (!*failed && !fragment.isEmpty()) {
             fragments.append(fragment);
         }
@@ -1190,7 +1203,7 @@ static QString buildWhere(const QContactUnionFilter &filter, ContactsDatabase &d
     return QString::fromLatin1("( %1 )").arg(fragments.join(QLatin1String(" OR ")));
 }
 
-static QString buildWhere(const QContactIntersectionFilter &filter, ContactsDatabase &db, const QString &table, QVariantList *bindings, bool *failed)
+static QString buildWhere(const QContactIntersectionFilter &filter, ContactsDatabase &db, const QString &table, QVariantList *bindings, bool *failed, bool *globalPresenceRequired)
 {
     const QList<QContactFilter> filters  = filter.filters();
     if (filters.isEmpty())
@@ -1198,7 +1211,7 @@ static QString buildWhere(const QContactIntersectionFilter &filter, ContactsData
 
     QStringList fragments;
     foreach (const QContactFilter &filter, filters) {
-        const QString fragment = buildWhere(filter, db, table, bindings, failed);
+        const QString fragment = buildWhere(filter, db, table, bindings, failed, globalPresenceRequired);
         if (filter.type() != QContactFilter::DefaultFilter && !*failed) {
             // default filter gets special (permissive) treatment by the intersection filter.
             fragments.append(fragment.isEmpty() ? QLatin1String("NULL") : fragment);
@@ -1208,13 +1221,16 @@ static QString buildWhere(const QContactIntersectionFilter &filter, ContactsData
     return fragments.join(QLatin1String(" AND "));
 }
 
-static QString buildWhere(const QContactFilter &filter, ContactsDatabase &db, const QString &table, QVariantList *bindings, bool *failed)
+static QString buildWhere(const QContactFilter &filter, ContactsDatabase &db, const QString &table, QVariantList *bindings, bool *failed, bool *globalPresenceRequired)
 {
+    Q_ASSERT(failed);
+    Q_ASSERT(globalPresenceRequired);
+
     switch (filter.type()) {
     case QContactFilter::DefaultFilter:
         return QString();
     case QContactFilter::ContactDetailFilter:
-        return buildWhere(static_cast<const QContactDetailFilter &>(filter), bindings, failed);
+        return buildWhere(static_cast<const QContactDetailFilter &>(filter), bindings, failed, globalPresenceRequired);
     case QContactFilter::ContactDetailRangeFilter:
         return buildWhere(static_cast<const QContactDetailRangeFilter &>(filter), bindings, failed);
     case QContactFilter::ChangeLogFilter:
@@ -1222,9 +1238,9 @@ static QString buildWhere(const QContactFilter &filter, ContactsDatabase &db, co
     case QContactFilter::RelationshipFilter:
         return buildWhere(static_cast<const QContactRelationshipFilter &>(filter), bindings, failed);
     case QContactFilter::IntersectionFilter:
-        return buildWhere(static_cast<const QContactIntersectionFilter &>(filter), db, table, bindings, failed);
+        return buildWhere(static_cast<const QContactIntersectionFilter &>(filter), db, table, bindings, failed, globalPresenceRequired);
     case QContactFilter::UnionFilter:
-        return buildWhere(static_cast<const QContactUnionFilter &>(filter), db, table, bindings, failed);
+        return buildWhere(static_cast<const QContactUnionFilter &>(filter), db, table, bindings, failed, globalPresenceRequired);
     case QContactFilter::IdFilter:
         return buildWhere(static_cast<const QContactIdFilter &>(filter), db, table, bindings, failed);
     default:
@@ -1236,8 +1252,11 @@ static QString buildWhere(const QContactFilter &filter, ContactsDatabase &db, co
 
 static int sortField(const QContactSortOrder &sort) { return sort.detailField(); }
 
-static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins)
+static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins, bool *globalPresenceRequired)
 {
+    Q_ASSERT(joins);
+    Q_ASSERT(globalPresenceRequired);
+
     for (int i = 0; i < lengthOf(detailInfo); ++i) {
         const DetailInfo &detail = detailInfo[i];
         if (!matchOnType(order, detail.detailType))
@@ -1260,8 +1279,11 @@ static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins)
                 if (!joins->contains(join))
                     joins->append(join);
 
+                *globalPresenceRequired = true;
+
+                // Look at the temporary state value if present, otherwise use the normal value
                 // The order we want is Available(1),Away(4),ExtendedAway(5),Busy(3),Hidden(2),Offline(6),Unknown(0)
-                return QString::fromLatin1("CASE GlobalPresences.presenceState "
+                return QString::fromLatin1("CASE COALESCE(temp.GlobalPresenceStates.presenceState, GlobalPresences.presenceState) "
                                            "WHEN 1 THEN 0 "
                                            "WHEN 4 THEN 1 "
                                            "WHEN 5 THEN 2 "
@@ -1308,17 +1330,20 @@ static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins)
     return QString();
 }
 
-static QString buildOrderBy(const QList<QContactSortOrder> &order, QString *join)
+static QString buildOrderBy(const QList<QContactSortOrder> &order, QString *join, bool *globalPresenceRequired)
 {
+    Q_ASSERT(join);
+    Q_ASSERT(globalPresenceRequired);
+
     if (order.isEmpty())
         return QString();
 
     QStringList joins;
     QStringList fragments;
     foreach (const QContactSortOrder &sort, order) {
-        QString fragment = buildOrderBy(sort, &joins);
+        QString fragment = buildOrderBy(sort, &joins, globalPresenceRequired);
         if (!fragment.isEmpty()) {
-            fragments.append(buildOrderBy(sort, &joins));
+            fragments.append(buildOrderBy(sort, &joins, globalPresenceRequired));
         }
     }
 
@@ -1645,16 +1670,27 @@ QContactManager::Error ContactReader::readContacts(
     m_database.clearTemporaryContactIdsTable(table);
 
     QString join;
-    const QString orderBy = buildOrderBy(order, &join);
+    bool globalPresenceRequired = false;
+    const QString orderBy = buildOrderBy(order, &join, &globalPresenceRequired);
+
     bool whereFailed = false;
     QVariantList bindings;
-    QString where = buildWhere(filter, m_database, table, &bindings, &whereFailed);
+    QString where = buildWhere(filter, m_database, table, &bindings, &whereFailed, &globalPresenceRequired);
     if (whereFailed) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create WHERE expression: invalid filter specification"));
         return QContactManager::UnspecifiedError;
     }
 
     where = expandWhere(where, filter, m_database.aggregating());
+
+    if (globalPresenceRequired) {
+        // Provide the temporary global presence state information to sort on
+        if (!m_database.populateTemporaryGlobalPresenceStates()) {
+            return QContactManager::UnspecifiedError;
+        }
+
+        join.append(QStringLiteral(" LEFT JOIN temp.GlobalPresenceStates ON Contacts.contactId = temp.GlobalPresenceStates.contactId"));
+    }
 
     QContactManager::Error error = QContactManager::NoError;
     if (!m_database.createTemporaryContactIdsTable(table, join, where, orderBy, bindings)) {
@@ -1757,7 +1793,7 @@ QContactManager::Error ContactReader::queryContacts(
     // This is the zero-based offset of the contact ID value in the table query above:
     const int idValueOffset = 8;
 
-    const ContactWriter::DetailList &details = fetchHint.detailTypesHint();
+    const ContactWriter::DetailList &definitionMask = fetchHint.detailTypesHint();
 
     QList<Table> tables;
     for (int i = 0; i < lengthOf(detailInfo); ++i) {
@@ -1765,7 +1801,7 @@ QContactManager::Error ContactReader::queryContacts(
         if (!detail.read)
             continue;
 
-        if (details.isEmpty() || details.contains(detail.detailType)) {
+        if (definitionMask.isEmpty() || definitionMask.contains(detail.detailType)) {
             // we need to query this particular detail table
             // use cached prepared queries if available, else prepare and cache query.
             bool haveCachedQuery = m_cachedDetailTableQueries[tableName].contains(detail.table);
@@ -1881,8 +1917,6 @@ QContactManager::Error ContactReader::queryContacts(
             flags.setFlag(QContactStatusFlags::IsOnline, query.value(18).toBool());
             flags.setFlag(QContactStatusFlags::IsDeactivated, query.value(19).toBool());
             flags.setFlag(QContactStatusFlags::IsIncidental, query.value(20).toBool());
-            QContactManagerEngine::setDetailAccessConstraints(&flags, QContactDetail::ReadOnly | QContactDetail::Irremovable);
-            contact.saveDetail(&flags);
 
             if (flags.testFlag(QContactStatusFlags::IsDeactivated)) {
                 QContactDeactivated deactivated;
@@ -1914,6 +1948,21 @@ QContactManager::Error ContactReader::queryContacts(
                     // Copy the transient detail into the contact
                     const QContactDetail &transient(*it);
 
+                    const QContactDetail::DetailType transientType(transient.type());
+
+                    if (transientType == QContactGlobalPresence::Type) {
+                        // If global presence is in the transient details, the IsOnline status flag is out of date
+                        const int presenceState = transient.value<int>(QContactGlobalPresence::FieldPresenceState);
+                        const bool isOnline(presenceState >= QContactPresence::PresenceAvailable &&
+                                            presenceState <= QContactPresence::PresenceExtendedAway);
+                        flags.setFlag(QContactStatusFlags::IsOnline, isOnline);
+                    }
+
+                    // Ignore details that aren't in the requested types
+                    if (!definitionMask.isEmpty() && !definitionMask.contains(transientType)) {
+                        continue;
+                    }
+
                     QContactDetail detail(transient.type());
                     if (!relaxConstraints) {
                         QContactManagerEngine::setDetailAccessConstraints(&detail, transient.accessConstraints());
@@ -1935,7 +1984,7 @@ QContactManager::Error ContactReader::queryContacts(
 
                     contact.saveDetail(&detail);
 
-                    transientTypes.insert(detail.type());
+                    transientTypes.insert(transientType);
                 }
 
                 // Mark this contact as not requiring table data for these detailtypes
@@ -1944,6 +1993,10 @@ QContactManager::Error ContactReader::queryContacts(
                     idList.append(dbId);
                 }
             }
+
+            // Add the updated status flags
+            QContactManagerEngine::setDetailAccessConstraints(&flags, QContactDetail::ReadOnly | QContactDetail::Irremovable);
+            contact.saveDetail(&flags);
 
             contacts->append(contact);
         }
@@ -2142,10 +2195,12 @@ QContactManager::Error ContactReader::readContactIds(
     m_database.clearTransientContactIdsTable(tableName);
 
     QString join;
-    const QString orderBy = buildOrderBy(order, &join);
+    bool globalPresenceRequired = false;
+    const QString orderBy = buildOrderBy(order, &join, &globalPresenceRequired);
+
     bool failed = false;
     QVariantList bindings;
-    QString where = buildWhere(filter, m_database, tableName, &bindings, &failed);
+    QString where = buildWhere(filter, m_database, tableName, &bindings, &failed, &globalPresenceRequired);
 
     if (failed) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create WHERE expression: invalid filter specification"));
@@ -2153,6 +2208,15 @@ QContactManager::Error ContactReader::readContactIds(
     }
 
     where = expandWhere(where, filter, m_database.aggregating());
+
+    if (globalPresenceRequired) {
+        // Provide the temporary global presence state information to sort on
+        if (!m_database.populateTemporaryGlobalPresenceStates()) {
+            return QContactManager::UnspecifiedError;
+        }
+
+        join.append(QStringLiteral(" LEFT JOIN temp.GlobalPresenceStates ON Contacts.contactId = temp.GlobalPresenceStates.contactId"));
+    }
 
     QString queryString = QString(QLatin1String(
                 "\n SELECT DISTINCT Contacts.contactId"
