@@ -35,15 +35,42 @@
 
 #include <QByteArray>
 
+#include <iterator>
+
 class MemoryTablePrivate;
 class MemoryTable
 {
 public:
-    MemoryTable(void *base, size_t size, bool initialize);
-    ~MemoryTable();
-
     typedef quint32 key_type;
     typedef QByteArray value_type;
+
+    class const_iterator
+        : std::iterator<std::forward_iterator_tag, MemoryTable::value_type, std::ptrdiff_t, const MemoryTable::value_type *, const MemoryTable::value_type &>
+    {
+        friend class MemoryTable;
+
+    protected:
+        const_iterator(const MemoryTable *table, quint32 position);
+
+        const MemoryTable *table;
+        quint32 position;
+
+    public:
+        const_iterator();
+        const_iterator(const const_iterator &other);
+        const_iterator &operator=(const const_iterator &other);
+
+        bool operator==(const const_iterator &other);
+        bool operator!=(const const_iterator &other);
+
+        MemoryTable::key_type key();
+        MemoryTable::value_type value();
+
+        const const_iterator &operator++();
+    };
+
+    MemoryTable(void *base, size_t size, bool initialize);
+    ~MemoryTable();
 
     enum Error {
         NoError = 0,
@@ -58,6 +85,12 @@ public:
     value_type value(const key_type &key) const;
     Error insert(const key_type &key, const value_type &value);
     bool remove(const key_type &key);
+
+    key_type keyAt(size_t index) const;
+    value_type valueAt(size_t index) const;
+
+    const_iterator constBegin() const;
+    const_iterator constEnd() const;
 
     Error migrateTo(MemoryTable &other) const;
 

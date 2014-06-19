@@ -34,6 +34,8 @@
 #ifndef __CONTACTSTRANSIENTSTORE_H__
 #define __CONTACTSTRANSIENTSTORE_H__
 
+#include "memorytable_p.h"
+
 #include <QContactDetail>
 
 QTCONTACTS_USE_NAMESPACE
@@ -41,6 +43,21 @@ QTCONTACTS_USE_NAMESPACE
 class ContactsTransientStore
 {
 public:
+    class const_iterator : public MemoryTable::const_iterator
+    {
+        friend class ContactsTransientStore;
+
+    protected:
+        const_iterator(const MemoryTable *table, quint32 position);
+
+    public:
+        const_iterator(const const_iterator &other);
+        const_iterator &operator=(const const_iterator &other);
+
+        quint32 key();
+        QList<QContactDetail> value();
+    };
+
     ContactsTransientStore();
     ~ContactsTransientStore();
 
@@ -53,6 +70,9 @@ public:
 
     bool remove(quint32 contactId);
     bool remove(const QList<quint32> &contactId);
+
+    const_iterator constBegin() const;
+    const_iterator constEnd() const;
 
 private:
     QString m_identifier;
