@@ -38,6 +38,9 @@
 
 #include <QContactDetail>
 
+#include <QDateTime>
+#include <QPair>
+
 QTCONTACTS_USE_NAMESPACE
 
 class ContactsTransientStore
@@ -55,7 +58,7 @@ public:
         const_iterator &operator=(const const_iterator &other);
 
         quint32 key();
-        QList<QContactDetail> value();
+        QPair<QDateTime, QList<QContactDetail> > value();
     };
 
     ContactsTransientStore();
@@ -65,8 +68,8 @@ public:
 
     bool contains(quint32 contactId) const;
 
-    QList<QContactDetail> contactDetails(quint32 contactId) const;
-    bool setContactDetails(quint32 contactId, const QList<QContactDetail> &details);
+    QPair<QDateTime, QList<QContactDetail> > contactDetails(quint32 contactId) const;
+    bool setContactDetails(quint32 contactId, const QDateTime &timestamp, const QList<QContactDetail> &details);
 
     bool remove(quint32 contactId);
     bool remove(const QList<quint32> &contactId);

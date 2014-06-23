@@ -134,25 +134,6 @@ static QVariant dateValue(const QVariant &columnValue)
     return QDate::fromString(dtString, Qt::ISODate);
 }
 
-// Input must be UTC
-static QString dateTimeString(const QDateTime &qdt)
-{
-    return qdt.toString(QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz"));
-}
-
-// Input must be UTC
-static QString dateString(const QDateTime &qdt)
-{
-    return qdt.toString(QStringLiteral("yyyy-MM-dd"));
-}
-
-static QDateTime fromDateTimeString(const QString &s)
-{
-    QDateTime rv(QDateTime::fromString(s, QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz")));
-    rv.setTimeSpec(Qt::UTC);
-    return rv;
-}
-
 static const FieldInfo displayLabelFields[] =
 {
     { QContactDisplayLabel::FieldLabel, "displayLabel", StringField }
@@ -425,7 +406,7 @@ static void setValues(QContactPresence *detail, QSqlQuery *query, const int offs
     typedef QContactPresence T;
 
     setValue(detail, T::FieldPresenceState, query->value(offset + 0).toInt());
-    setValue(detail, T::FieldTimestamp    , fromDateTimeString(query->value(offset + 1).toString()));
+    setValue(detail, T::FieldTimestamp    , ContactsDatabase::fromDateTimeString(query->value(offset + 1).toString()));
     setValue(detail, T::FieldNickname     , query->value(offset + 2));
     setValue(detail, T::FieldCustomMessage, query->value(offset + 3));
 }
@@ -435,7 +416,7 @@ static void setValues(QContactGlobalPresence *detail, QSqlQuery *query, const in
     typedef QContactPresence T;
 
     setValue(detail, T::FieldPresenceState, query->value(offset + 0).toInt());
-    setValue(detail, T::FieldTimestamp    , fromDateTimeString(query->value(offset + 1).toString()));
+    setValue(detail, T::FieldTimestamp    , ContactsDatabase::fromDateTimeString(query->value(offset + 1).toString()));
     setValue(detail, T::FieldNickname     , query->value(offset + 2));
     setValue(detail, T::FieldCustomMessage, query->value(offset + 3));
 }
@@ -711,10 +692,10 @@ static QString dateString(const DetailInfo &detail, const QDateTime &qdt)
     if (detail.detailType == QContactBirthday::Type
             || detail.detailType == QContactAnniversary::Type) {
         // just interested in the date, not the whole date time
-        return dateString(qdt.toUTC());
+        return ContactsDatabase::dateString(qdt.toUTC());
     }
 
-    return dateTimeString(qdt.toUTC());
+    return ContactsDatabase::dateTimeString(qdt.toUTC());
 }
 
 template<typename T1, typename T2>
@@ -771,7 +752,8 @@ static QString convertFilterValueToString(const QContactDetailFilter &filter, co
     return defaultValue;
 }
 
-static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bindings, bool *failed, bool *globalPresenceRequired)
+static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bindings,
+                          bool *failed, bool *transientModifiedRequired, bool *globalPresenceRequired)
 {
     if (filter.matchFlags() & QContactFilter::MatchKeypadCollation) {
         *failed = true;
@@ -867,6 +849,7 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
                                    filter.matchFlags() & QContactFilter::MatchFixedString &&
                                    (filter.matchFlags() & QContactFilter::MatchCaseSensitive) == 0;
 
+            QString clause(detail.where());
             QString comparison = QLatin1String("%1");
             QString bindValue;
             QString column;
@@ -912,12 +895,28 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
                 const QVariant &v(filter.value());
                 if (dateField) {
                     bindValue = dateString(detail, v.toDateTime());
+
+                    if (filterOnField<QContactTimestamp>(filter, QContactTimestamp::FieldModificationTimestamp)) {
+                        // Special case: we need to include the transient data timestamp in our comparison
+                        column = QStringLiteral("COALESCE(temp.Timestamps.modified, Contacts.modified)");
+                        *transientModifiedRequired = true;
+                    }
                 } else if (!stringField && (v.type() == QVariant::Bool)) {
                     // Convert to "1"/"0" rather than "true"/"false"
                     bindValue = QString::number(v.toBool() ? 1 : 0);
                 } else {
                     stringValue = convertFilterValueToString(filter, stringValue);
                     bindValue = caseInsensitive ? stringValue.toLower() : stringValue;
+
+                    if (filterOnField<QContactGlobalPresence>(filter, QContactGlobalPresence::FieldPresenceState)) {
+                        // Special case: we need to include the transient data state in our comparison
+                        clause = QLatin1String("Contacts.contactId IN ("
+                                                   "SELECT GlobalPresences.contactId FROM GlobalPresences "
+                                                   "LEFT JOIN temp.GlobalPresenceStates ON temp.GlobalPresenceStates.contactId = GlobalPresences.contactId "
+                                                   "WHERE %1)");
+                        column = QStringLiteral("COALESCE(temp.GlobalPresenceStates.presenceState, GlobalPresences.presenceState)");
+                        *globalPresenceRequired = true;
+                    }
                 }
             }
 
@@ -954,7 +953,7 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
                 }
             }
 
-            return detail.where().arg(comparison.arg(column.isEmpty() ? field.column : column));
+            return clause.arg(comparison.arg(column.isEmpty() ? field.column : column));
         }
     }
 
@@ -1167,15 +1166,16 @@ static QString buildWhere(const QContactRelationshipFilter &filter, QVariantList
     return statement;
 }
 
-static QString buildWhere(const QContactChangeLogFilter &filter, QVariantList *bindings, bool *failed)
+static QString buildWhere(const QContactChangeLogFilter &filter, QVariantList *bindings, bool *failed, bool *transientModifiedRequired)
 {
-    static const QString statement(QLatin1String("Contacts.%1 >= ?"));
-    bindings->append(dateTimeString(filter.since().toUTC()));
+    static const QString statement(QLatin1String("%1 >= ?"));
+    bindings->append(ContactsDatabase::dateTimeString(filter.since().toUTC()));
     switch (filter.eventType()) {
         case QContactChangeLogFilter::EventAdded:
-            return statement.arg(QLatin1String("created"));
+            return statement.arg(QLatin1String("Contacts.created"));
         case QContactChangeLogFilter::EventChanged:
-            return statement.arg(QLatin1String("modified"));
+            *transientModifiedRequired = true;
+            return statement.arg(QLatin1String("COALESCE(temp.Timestamps.modified, Contacts.modified)"));
         default: break;
     }
 
@@ -1184,9 +1184,11 @@ static QString buildWhere(const QContactChangeLogFilter &filter, QVariantList *b
     return QLatin1String("FALSE");
 }
 
-static QString buildWhere(const QContactFilter &filter, ContactsDatabase &db, const QString &table, QVariantList *bindings, bool *failed, bool *globalPresenceRequired);
+static QString buildWhere(const QContactFilter &filter, ContactsDatabase &db, const QString &table, QVariantList *bindings,
+                          bool *failed, bool *transientModifiedRequired, bool *globalPresenceRequired);
 
-static QString buildWhere(const QContactUnionFilter &filter, ContactsDatabase &db, const QString &table, QVariantList *bindings, bool *failed, bool *globalPresenceRequired)
+static QString buildWhere(const QContactUnionFilter &filter, ContactsDatabase &db, const QString &table, QVariantList *bindings,
+                          bool *failed, bool *transientModifiedRequired, bool *globalPresenceRequired)
 {
     const QList<QContactFilter> filters  = filter.filters();
     if (filters.isEmpty())
@@ -1194,7 +1196,7 @@ static QString buildWhere(const QContactUnionFilter &filter, ContactsDatabase &d
 
     QStringList fragments;
     foreach (const QContactFilter &filter, filters) {
-        const QString fragment = buildWhere(filter, db, table, bindings, failed, globalPresenceRequired);
+        const QString fragment = buildWhere(filter, db, table, bindings, failed, transientModifiedRequired, globalPresenceRequired);
         if (!*failed && !fragment.isEmpty()) {
             fragments.append(fragment);
         }
@@ -1203,7 +1205,8 @@ static QString buildWhere(const QContactUnionFilter &filter, ContactsDatabase &d
     return QString::fromLatin1("( %1 )").arg(fragments.join(QLatin1String(" OR ")));
 }
 
-static QString buildWhere(const QContactIntersectionFilter &filter, ContactsDatabase &db, const QString &table, QVariantList *bindings, bool *failed, bool *globalPresenceRequired)
+static QString buildWhere(const QContactIntersectionFilter &filter, ContactsDatabase &db, const QString &table, QVariantList *bindings,
+                          bool *failed, bool *transientModifiedRequired, bool *globalPresenceRequired)
 {
     const QList<QContactFilter> filters  = filter.filters();
     if (filters.isEmpty())
@@ -1211,7 +1214,7 @@ static QString buildWhere(const QContactIntersectionFilter &filter, ContactsData
 
     QStringList fragments;
     foreach (const QContactFilter &filter, filters) {
-        const QString fragment = buildWhere(filter, db, table, bindings, failed, globalPresenceRequired);
+        const QString fragment = buildWhere(filter, db, table, bindings, failed, transientModifiedRequired, globalPresenceRequired);
         if (filter.type() != QContactFilter::DefaultFilter && !*failed) {
             // default filter gets special (permissive) treatment by the intersection filter.
             fragments.append(fragment.isEmpty() ? QLatin1String("NULL") : fragment);
@@ -1221,26 +1224,28 @@ static QString buildWhere(const QContactIntersectionFilter &filter, ContactsData
     return fragments.join(QLatin1String(" AND "));
 }
 
-static QString buildWhere(const QContactFilter &filter, ContactsDatabase &db, const QString &table, QVariantList *bindings, bool *failed, bool *globalPresenceRequired)
+static QString buildWhere(const QContactFilter &filter, ContactsDatabase &db, const QString &table, QVariantList *bindings,
+                          bool *failed, bool *transientModifiedRequired, bool *globalPresenceRequired)
 {
     Q_ASSERT(failed);
     Q_ASSERT(globalPresenceRequired);
+    Q_ASSERT(transientModifiedRequired);
 
     switch (filter.type()) {
     case QContactFilter::DefaultFilter:
         return QString();
     case QContactFilter::ContactDetailFilter:
-        return buildWhere(static_cast<const QContactDetailFilter &>(filter), bindings, failed, globalPresenceRequired);
+        return buildWhere(static_cast<const QContactDetailFilter &>(filter), bindings, failed, transientModifiedRequired, globalPresenceRequired);
     case QContactFilter::ContactDetailRangeFilter:
         return buildWhere(static_cast<const QContactDetailRangeFilter &>(filter), bindings, failed);
     case QContactFilter::ChangeLogFilter:
-        return buildWhere(static_cast<const QContactChangeLogFilter &>(filter), bindings, failed);
+        return buildWhere(static_cast<const QContactChangeLogFilter &>(filter), bindings, failed, transientModifiedRequired);
     case QContactFilter::RelationshipFilter:
         return buildWhere(static_cast<const QContactRelationshipFilter &>(filter), bindings, failed);
     case QContactFilter::IntersectionFilter:
-        return buildWhere(static_cast<const QContactIntersectionFilter &>(filter), db, table, bindings, failed, globalPresenceRequired);
+        return buildWhere(static_cast<const QContactIntersectionFilter &>(filter), db, table, bindings, failed, transientModifiedRequired, globalPresenceRequired);
     case QContactFilter::UnionFilter:
-        return buildWhere(static_cast<const QContactUnionFilter &>(filter), db, table, bindings, failed, globalPresenceRequired);
+        return buildWhere(static_cast<const QContactUnionFilter &>(filter), db, table, bindings, failed, transientModifiedRequired, globalPresenceRequired);
     case QContactFilter::IdFilter:
         return buildWhere(static_cast<const QContactIdFilter &>(filter), db, table, bindings, failed);
     default:
@@ -1252,9 +1257,10 @@ static QString buildWhere(const QContactFilter &filter, ContactsDatabase &db, co
 
 static int sortField(const QContactSortOrder &sort) { return sort.detailField(); }
 
-static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins, bool *globalPresenceRequired)
+static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins, bool *transientModifiedRequired, bool *globalPresenceRequired)
 {
     Q_ASSERT(joins);
+    Q_ASSERT(transientModifiedRequired);
     Q_ASSERT(globalPresenceRequired);
 
     for (int i = 0; i < lengthOf(detailInfo); ++i) {
@@ -1267,39 +1273,57 @@ static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins, 
             if (sortField(order) != field.field)
                 continue;
 
-            QString direction = (order.direction() == Qt::AscendingOrder)
-                    ? QLatin1String("ASC")
-                    : QLatin1String("DESC");
+            QString sortExpression(QStringLiteral("%1.%2").arg(detail.join ? detail.table : QStringLiteral("Contacts")).arg(field.column));
+            bool sortBlanks = true;
+            bool collate = true;
 
-#ifdef SORT_PRESENCE_BY_AVAILABILITY
+            // Special case for accessing transient data
             if (detail.detailType == detailIdentifier<QContactGlobalPresence>() &&
                 field.field == QContactGlobalPresence::FieldPresenceState) {
-                // Special case handling for presence ordering
-                QString join = QString::fromLatin1("LEFT JOIN GlobalPresences ON Contacts.contactId = GlobalPresences.contactId");
-                if (!joins->contains(join))
-                    joins->append(join);
-
+                // We need to coalesce the transient values with the table values
                 *globalPresenceRequired = true;
 
                 // Look at the temporary state value if present, otherwise use the normal value
-                // The order we want is Available(1),Away(4),ExtendedAway(5),Busy(3),Hidden(2),Offline(6),Unknown(0)
-                return QString::fromLatin1("CASE COALESCE(temp.GlobalPresenceStates.presenceState, GlobalPresences.presenceState) "
-                                           "WHEN 1 THEN 0 "
-                                           "WHEN 4 THEN 1 "
-                                           "WHEN 5 THEN 2 "
-                                           "WHEN 3 THEN 3 "
-                                           "WHEN 2 THEN 4 "
-                                           "WHEN 6 THEN 5 "
-                                           "ELSE 6 END %1").arg(direction);
-            }
-#endif
+                sortExpression = QStringLiteral("COALESCE(temp.GlobalPresenceStates.presenceState, GlobalPresences.presenceState)");
+                sortBlanks = false;
+                collate = false;
 
-            QString collate = (order.caseSensitivity() == Qt::CaseSensitive)
-                    ? QLatin1String("COLLATE RTRIM")
-                    : QLatin1String("COLLATE NOCASE");
-            QString blanksLocation = (order.blankPolicy() == QContactSortOrder::BlanksLast)
-                    ? QLatin1String("CASE WHEN %2.%3 IS NULL OR %2.%3 = '' THEN 1 ELSE 0 END,")
-                    : QLatin1String("CASE WHEN %2.%3 IS NULL OR %2.%3 = '' THEN 0 ELSE 1 END,");
+#ifdef SORT_PRESENCE_BY_AVAILABILITY
+                // The order we want is Available(1),Away(4),ExtendedAway(5),Busy(3),Hidden(2),Offline(6),Unknown(0)
+                sortExpression = QStringLiteral("CASE %1 WHEN 1 THEN 0 "
+                                                        "WHEN 4 THEN 1 "
+                                                        "WHEN 5 THEN 2 "
+                                                        "WHEN 3 THEN 3 "
+                                                        "WHEN 2 THEN 4 "
+                                                        "WHEN 6 THEN 5 "
+                                                               "ELSE 6 END").arg(sortExpression);
+#endif
+            } else if (detail.detailType == detailIdentifier<QContactTimestamp>() &&
+                       field.field == QContactTimestamp::FieldModificationTimestamp) {
+                *transientModifiedRequired = true;
+
+                // Look at the temporary modified timestamp if present, otherwise use the normal value
+                sortExpression = QStringLiteral("COALESCE(temp.Timestamps.modified, modified)");
+                sortBlanks = false;
+                collate = false;
+            }
+
+            QString result;
+
+            if (sortBlanks) {
+                QString blanksLocation = (order.blankPolicy() == QContactSortOrder::BlanksLast)
+                        ? QLatin1String("CASE WHEN %1 IS NULL OR %1 = '' THEN 1 ELSE 0 END, ")
+                        : QLatin1String("CASE WHEN %1 IS NULL OR %1 = '' THEN 0 ELSE 1 END, ");
+                result = blanksLocation.arg(sortExpression);
+            }
+
+            result.append(sortExpression);
+
+            if (collate) {
+                result.append((order.caseSensitivity() == Qt::CaseSensitive) ? QLatin1String(" COLLATE RTRIM") : QLatin1String(" COLLATE NOCASE"));
+            }
+
+            result.append((order.direction() == Qt::AscendingOrder) ? QLatin1String(" ASC") : QLatin1String(" DESC"));
 
             if (detail.join) {
                 QString join = QString(QLatin1String(
@@ -1309,17 +1333,9 @@ static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins, 
                 if (!joins->contains(join))
                     joins->append(join);
 
-                return QString(QLatin1String("%1 %2.%3 %4 %5"))
-                        .arg(blanksLocation)
-                        .arg(QLatin1String(detail.table))
-                        .arg(QLatin1String(field.column))
-                        .arg(collate).arg(direction);
+                return result;
             } else if (!detail.table) {
-                return QString(QLatin1String("%1 %2.%3 %4 %5"))
-                        .arg(blanksLocation)
-                        .arg(QLatin1String("Contacts"))
-                        .arg(QLatin1String(field.column))
-                        .arg(collate).arg(direction);
+                return result;
             } else {
                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("UNSUPPORTED SORTING: no join and not primary table for ORDER BY in query with: %1, %2")
                            .arg(order.detailType()).arg(order.detailField()));
@@ -1330,9 +1346,10 @@ static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins, 
     return QString();
 }
 
-static QString buildOrderBy(const QList<QContactSortOrder> &order, QString *join, bool *globalPresenceRequired)
+static QString buildOrderBy(const QList<QContactSortOrder> &order, QString *join, bool *transientModifiedRequired, bool *globalPresenceRequired)
 {
     Q_ASSERT(join);
+    Q_ASSERT(transientModifiedRequired);
     Q_ASSERT(globalPresenceRequired);
 
     if (order.isEmpty())
@@ -1341,9 +1358,9 @@ static QString buildOrderBy(const QList<QContactSortOrder> &order, QString *join
     QStringList joins;
     QStringList fragments;
     foreach (const QContactSortOrder &sort, order) {
-        QString fragment = buildOrderBy(sort, &joins, globalPresenceRequired);
+        const QString fragment = buildOrderBy(sort, &joins, transientModifiedRequired, globalPresenceRequired);
         if (!fragment.isEmpty()) {
-            fragments.append(buildOrderBy(sort, &joins, globalPresenceRequired));
+            fragments.append(fragment);
         }
     }
 
@@ -1670,12 +1687,13 @@ QContactManager::Error ContactReader::readContacts(
     m_database.clearTemporaryContactIdsTable(table);
 
     QString join;
+    bool transientModifiedRequired = false;
     bool globalPresenceRequired = false;
-    const QString orderBy = buildOrderBy(order, &join, &globalPresenceRequired);
+    const QString orderBy = buildOrderBy(order, &join, &transientModifiedRequired, &globalPresenceRequired);
 
     bool whereFailed = false;
     QVariantList bindings;
-    QString where = buildWhere(filter, m_database, table, &bindings, &whereFailed, &globalPresenceRequired);
+    QString where = buildWhere(filter, m_database, table, &bindings, &whereFailed, &transientModifiedRequired, &globalPresenceRequired);
     if (whereFailed) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create WHERE expression: invalid filter specification"));
         return QContactManager::UnspecifiedError;
@@ -1683,13 +1701,18 @@ QContactManager::Error ContactReader::readContacts(
 
     where = expandWhere(where, filter, m_database.aggregating());
 
-    if (globalPresenceRequired) {
-        // Provide the temporary global presence state information to sort on
-        if (!m_database.populateTemporaryGlobalPresenceStates()) {
+    if (transientModifiedRequired || globalPresenceRequired) {
+        // Provide the temporary transient state information to filter/sort on
+        if (!m_database.populateTemporaryTransientState(transientModifiedRequired, globalPresenceRequired)) {
             return QContactManager::UnspecifiedError;
         }
 
-        join.append(QStringLiteral(" LEFT JOIN temp.GlobalPresenceStates ON Contacts.contactId = temp.GlobalPresenceStates.contactId"));
+        if (transientModifiedRequired) {
+            join.append(QStringLiteral(" LEFT JOIN temp.Timestamps ON Contacts.contactId = temp.Timestamps.contactId"));
+        }
+        if (globalPresenceRequired) {
+            join.append(QStringLiteral(" LEFT JOIN temp.GlobalPresenceStates ON Contacts.contactId = temp.GlobalPresenceStates.contactId"));
+        }
     }
 
     QContactManager::Error error = QContactManager::NoError;
@@ -1887,10 +1910,8 @@ QContactManager::Error ContactReader::queryContacts(
                 contact.saveDetail(&starget);
 
             QContactTimestamp timestamp;
-            setValue(&timestamp, QContactTimestamp::FieldCreationTimestamp    , fromDateTimeString(query.value(11).toString()));
-            setValue(&timestamp, QContactTimestamp::FieldModificationTimestamp, fromDateTimeString(query.value(12).toString()));
-            if (!timestamp.isEmpty())
-                contact.saveDetail(&timestamp);
+            setValue(&timestamp, QContactTimestamp::FieldCreationTimestamp    , ContactsDatabase::fromDateTimeString(query.value(11).toString()));
+            setValue(&timestamp, QContactTimestamp::FieldModificationTimestamp, ContactsDatabase::fromDateTimeString(query.value(12).toString()));
 
             QContactGender gender;
             // Gender is an enum in qtpim
@@ -1940,10 +1961,13 @@ QContactManager::Error ContactReader::queryContacts(
 
             // Find any transient details for this contact
             if (m_database.hasTransientDetails(dbId)) {
-                const QList<QContactDetail> transientDetails(m_database.transientDetails(dbId));
+                const QPair<QDateTime, QList<QContactDetail> > transientDetails(m_database.transientDetails(dbId));
+
+                // Update the contact timestamp to that of the transient details
+                setValue(&timestamp, QContactTimestamp::FieldModificationTimestamp, transientDetails.first);
 
                 QSet<QContactDetail::DetailType> transientTypes;
-                QList<QContactDetail>::const_iterator it = transientDetails.constBegin(), end = transientDetails.constEnd();
+                QList<QContactDetail>::const_iterator it = transientDetails.second.constBegin(), end = transientDetails.second.constEnd();
                 for ( ; it != end; ++it) {
                     // Copy the transient detail into the contact
                     const QContactDetail &transient(*it);
@@ -1997,6 +2021,10 @@ QContactManager::Error ContactReader::queryContacts(
             // Add the updated status flags
             QContactManagerEngine::setDetailAccessConstraints(&flags, QContactDetail::ReadOnly | QContactDetail::Irremovable);
             contact.saveDetail(&flags);
+
+            // Add the timestamp info
+            if (!timestamp.isEmpty())
+                contact.saveDetail(&timestamp);
 
             contacts->append(contact);
         }
@@ -2131,7 +2159,7 @@ QContactManager::Error ContactReader::readDeletedContactIds(
     QVariantList bindings;
     if (!since.isNull()) {
         restrictions.append(QString::fromLatin1("deleted >= ?"));
-        bindings.append(dateTimeString(since.toUTC()));
+        bindings.append(ContactsDatabase::dateTimeString(since.toUTC()));
     }
     if (!syncTarget.isNull()) {
         restrictions.append(QString::fromLatin1("syncTarget = ?"));
@@ -2195,13 +2223,13 @@ QContactManager::Error ContactReader::readContactIds(
     m_database.clearTransientContactIdsTable(tableName);
 
     QString join;
+    bool transientModifiedRequired = false;
     bool globalPresenceRequired = false;
-    const QString orderBy = buildOrderBy(order, &join, &globalPresenceRequired);
+    const QString orderBy = buildOrderBy(order, &join, &transientModifiedRequired, &globalPresenceRequired);
 
     bool failed = false;
     QVariantList bindings;
-    QString where = buildWhere(filter, m_database, tableName, &bindings, &failed, &globalPresenceRequired);
-
+    QString where = buildWhere(filter, m_database, tableName, &bindings, &failed, &transientModifiedRequired, &globalPresenceRequired);
     if (failed) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create WHERE expression: invalid filter specification"));
         return QContactManager::UnspecifiedError;
@@ -2209,13 +2237,18 @@ QContactManager::Error ContactReader::readContactIds(
 
     where = expandWhere(where, filter, m_database.aggregating());
 
-    if (globalPresenceRequired) {
-        // Provide the temporary global presence state information to sort on
-        if (!m_database.populateTemporaryGlobalPresenceStates()) {
+    if (transientModifiedRequired || globalPresenceRequired) {
+        // Provide the temporary transient state information to filter/sort on
+        if (!m_database.populateTemporaryTransientState(transientModifiedRequired, globalPresenceRequired)) {
             return QContactManager::UnspecifiedError;
         }
 
-        join.append(QStringLiteral(" LEFT JOIN temp.GlobalPresenceStates ON Contacts.contactId = temp.GlobalPresenceStates.contactId"));
+        if (transientModifiedRequired) {
+            join.append(QStringLiteral(" LEFT JOIN temp.Timestamps ON Contacts.contactId = temp.Timestamps.contactId"));
+        }
+        if (globalPresenceRequired) {
+            join.append(QStringLiteral(" LEFT JOIN temp.GlobalPresenceStates ON Contacts.contactId = temp.GlobalPresenceStates.contactId"));
+        }
     }
 
     QString queryString = QString(QLatin1String(

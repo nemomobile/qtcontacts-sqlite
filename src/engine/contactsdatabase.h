@@ -129,18 +129,15 @@ public:
     bool createTransientContactIdsTable(const QString &table, const QVariantList &ids, QString *transientTableName);
     void clearTransientContactIdsTable(const QString &table);
 
-    bool createTemporaryContactPresenceTable(const QString &table, const QList<QPair<quint32, qint64> > &values);
-    void clearTemporaryContactPresenceTable(const QString &table);
-
-    bool populateTemporaryGlobalPresenceStates();
+    bool populateTemporaryTransientState(bool timestamps, bool globalPresence);
 
     Query prepare(const char *statement);
     Query prepare(const QString &statement);
 
     bool hasTransientDetails(quint32 contactId);
 
-    QList<QContactDetail> transientDetails(quint32 contactId) const;
-    bool setTransientDetails(quint32 contactId, const QList<QContactDetail> &details);
+    QPair<QDateTime, QList<QContactDetail> > transientDetails(quint32 contactId) const;
+    bool setTransientDetails(quint32 contactId, const QDateTime &timestamp, const QList<QContactDetail> &details);
 
     bool removeTransientDetails(quint32 contactId);
     bool removeTransientDetails(const QList<quint32> &contactIds);
@@ -148,6 +145,13 @@ public:
     static QString expandQuery(const QString &queryString, const QVariantList &bindings);
     static QString expandQuery(const QString &queryString, const QMap<QString, QVariant> &bindings);
     static QString expandQuery(const QSqlQuery &query);
+
+    // Input must be UTC
+    static QString dateTimeString(const QDateTime &qdt);
+    static QString dateString(const QDateTime &qdt);
+
+    // Output is UTC
+    static QDateTime fromDateTimeString(const QString &s);
 
 private:
     QSqlDatabase m_database;

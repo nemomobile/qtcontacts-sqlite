@@ -3192,12 +3192,6 @@ static QDateTime epochDateTime()
     return rv;
 }
 
-// Input must be UTC
-static QString dateTimeString(const QDateTime &qdt)
-{
-    return qdt.toString(QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz"));
-}
-
 struct ConstituentDetails {
     quint32 id;
     QString syncTarget;
@@ -3211,11 +3205,17 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
     const QDateTime sinceTime((lastSync.isValid() ? lastSync : epochDateTime()).toUTC());
     *maxTimestamp = sinceTime; // fall back to current sync timestamp if no data found.
 
-    const QString since(dateTimeString(sinceTime));
+    const QString since(ContactsDatabase::dateTimeString(sinceTime));
 
     const bool exportUpdate(syncTarget == exportSyncTarget);
 
     if (syncContacts || addedContacts) {
+        // We need the transient timestamps to be available
+        if (!m_database.populateTemporaryTransientState(true, false)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error populating transient timestamp table"));
+            return QContactManager::UnspecifiedError;
+        }
+
         if (exportUpdate) {
             // This is a fetch for the export adaptor - it's a subset of the usual mechanism, since
             // no contact is treated as originating in the exported database.  Instead, changes that
@@ -3225,9 +3225,10 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
             {
                 // Find all aggregates of any kind modified since the last sync
                 const QString exportContactIds(QStringLiteral(
-                    " SELECT contactId FROM Contacts"
+                    " SELECT Contacts.contactId FROM Contacts"
+                    " LEFT JOIN temp.Timestamps on temp.Timestamps.contactId = Contacts.contactId"
                     " WHERE syncTarget = 'aggregate'"
-                    " AND modified > :lastSync"
+                    " AND COALESCE(temp.Timestamps.modified, Contacts.modified) > :lastSync"
                 ));
 
                 ContactsDatabase::Query query(m_database.prepare(exportContactIds));
@@ -3278,10 +3279,11 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
                         " SELECT DISTINCT Relationships.firstId"
                         " FROM Relationships"
                         " JOIN Contacts AS Aggregates ON Aggregates.contactId = Relationships.firstId"
+                        " LEFT JOIN temp.Timestamps on temp.Timestamps.contactId = Aggregates.contactId"
                         " JOIN Contacts AS Constituents ON Constituents.contactId = Relationships.secondId"
                         " WHERE Relationships.type = 'Aggregates'"
                         " AND Constituents.syncTarget = :syncTarget"
-                        " AND Aggregates.modified > :lastSync"
+                        " AND COALESCE(temp.Timestamps.modified, Aggregates.modified) > :lastSync"
                     ));
 
                     ContactsDatabase::Query query(m_database.prepare(syncContactIds));
@@ -3314,9 +3316,10 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
                         " SELECT Relationships.firstId"
                         " FROM Relationships"
                         " JOIN Contacts ON Contacts.contactId = Relationships.firstId"
+                        " LEFT JOIN temp.Timestamps on temp.Timestamps.contactId = Contacts.contactId"
                         " WHERE Relationships.type = 'Aggregates' AND secondId IN ("
                         "  SELECT contactId FROM temp.syncConstituents)"
-                        " AND Contacts.modified > :lastSync"
+                        " AND COALESCE(temp.Timestamps.modified, Contacts.modified) > :lastSync"
                     ));
 
                     ContactsDatabase::Query query(m_database.prepare(aggregateContactIds));
@@ -4582,7 +4585,8 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
             }
         }
 
-        if (!m_database.setTransientDetails(contactId, transientDetails)) {
+        const QDateTime lastModified(contact->detail<QContactTimestamp>().lastModified());
+        if (!m_database.setTransientDetails(contactId, lastModified, transientDetails)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Could not perform transient update; fallback to durable update"));
             transientUpdate = false;
         }
@@ -4818,8 +4822,8 @@ ContactsDatabase::Query ContactWriter::bindContactDetails(const QContact &contac
     query.bindValue(9, syncTarget);
 
     const QContactTimestamp timestamp = contact.detail<QContactTimestamp>();
-    query.bindValue(10, dateTimeString(timestamp.value<QDateTime>(QContactTimestamp::FieldCreationTimestamp).toUTC()));
-    query.bindValue(11, dateTimeString(timestamp.value<QDateTime>(QContactTimestamp::FieldModificationTimestamp).toUTC()));
+    query.bindValue(10, ContactsDatabase::dateTimeString(timestamp.value<QDateTime>(QContactTimestamp::FieldCreationTimestamp).toUTC()));
+    query.bindValue(11, ContactsDatabase::dateTimeString(timestamp.value<QDateTime>(QContactTimestamp::FieldModificationTimestamp).toUTC()));
 
     const QContactGender gender = contact.detail<QContactGender>();
     const QString gv(gender.gender() == QContactGender::GenderFemale ? QString::fromLatin1("Female") :
@@ -5042,7 +5046,7 @@ ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QCont
     typedef QContactGlobalPresence T;
     query.bindValue(0, contactId);
     query.bindValue(1, detailValue(detail, T::FieldPresenceState));
-    query.bindValue(2, dateTimeString(detail.value<QDateTime>(T::FieldTimestamp).toUTC()));
+    query.bindValue(2, ContactsDatabase::dateTimeString(detail.value<QDateTime>(T::FieldTimestamp).toUTC()));
     query.bindValue(3, detail.value<QString>(T::FieldNickname).trimmed());
     query.bindValue(4, detail.value<QString>(T::FieldCustomMessage).trimmed());
     return query;
@@ -5259,7 +5263,7 @@ ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QCont
     typedef QContactPresence T;
     query.bindValue(0, contactId);
     query.bindValue(1, detailValue(detail, T::FieldPresenceState));
-    query.bindValue(2, dateTimeString(detail.value<QDateTime>(T::FieldTimestamp).toUTC()));
+    query.bindValue(2, ContactsDatabase::dateTimeString(detail.value<QDateTime>(T::FieldTimestamp).toUTC()));
     query.bindValue(3, detail.value<QString>(T::FieldNickname).trimmed());
     query.bindValue(4, detail.value<QString>(T::FieldCustomMessage).trimmed());
     return query;
