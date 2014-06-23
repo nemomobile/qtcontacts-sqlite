@@ -1471,13 +1471,13 @@ void tst_QContactManager::presenceReporting()
     QContactName n;
     n.setFirstName("A");
     n.setMiddleName("Test");
-    n.setLastName("Presence-Update");
+    n.setLastName("PresenceUpdate");
     a.saveDetail(&n);
 
     QDateTime ts(QDateTime::currentDateTime());
 
     QContactPresence p;
-    p.setPresenceState(QContactPresence::PresenceAway);
+    p.setPresenceState(QContactPresence::PresenceBusy);
     p.setTimestamp(ts);
     QVERIFY(a.saveDetail(&p));
 
@@ -1495,15 +1495,52 @@ void tst_QContactManager::presenceReporting()
     QVERIFY(cm->saveContact(&a));
     a = cm->contact(retrievalId(a));
 
-    QCOMPARE(a.detail<QContactPresence>().presenceState(), QContactPresence::PresenceAway);
-    QCOMPARE(a.detail<QContactPresence>().timestamp(), ts);
+    QContact b;
+
+    QContactName n2;
+    n2.setFirstName("B");
+    n2.setLastName("PresenceUnchanged");
+    b.saveDetail(&n2);
+
+    QContactPresence p2;
+    p2.setPresenceState(QContactPresence::PresenceAway);
+    p2.setTimestamp(ts);
+    QVERIFY(b.saveDetail(&p2));
+
+    QVERIFY(cm->saveContact(&b));
+    b = cm->contact(retrievalId(b));
+
+    QDateTime saveTimestamp(QDateTime::currentDateTime());
 
     QTest::qWait(500); // wait for signal coalescing.
     QTRY_VERIFY(addedSpy.count() > 0);
     addedSpy.clear();
-    QCOMPARE(changedSpy.count(), 0);
     QCOMPARE(presenceChangedSpy.count(), 0);
-    QCOMPARE(removedSpy.count(), 0);
+    changedSpy.clear();
+    removedSpy.clear();
+
+    // Sort on presence
+    QContactIdFilter idFilter;
+    idFilter.setIds(QList<QContactId>() << a.id() << b.id());
+
+    QList<QContactSortOrder> sortOrders;
+    QContactSortOrder byPhoneNumber;
+    setSortDetail<QContactPhoneNumber>(byPhoneNumber, QContactPhoneNumber::FieldNumber);
+    sortOrders.append(byPhoneNumber);
+
+    QContactSortOrder presenceOrder;
+    setSortDetail<QContactGlobalPresence>(presenceOrder, QContactGlobalPresence::FieldPresenceState);
+
+    QList<QContactId> sortedIds(cm->contactIds(idFilter, QList<QContactSortOrder>() << presenceOrder));
+    QCOMPARE(sortedIds.count(), 2);
+    QCOMPARE(sortedIds.at(0), b.id());
+    QCOMPARE(sortedIds.at(1), a.id());
+
+    QContactChangeLogFilter clFilter(QContactChangeLogFilter::EventChanged);
+    clFilter.setSince(saveTimestamp);
+
+    sortedIds = cm->contactIds(idFilter & clFilter);
+    QCOMPARE(sortedIds.count(), 0);
 
     // Test a presence-only update (can include presence/origin-metadata/online-account changes)
     p = a.detail<QContactPresence>();
@@ -1541,6 +1578,27 @@ void tst_QContactManager::presenceReporting()
     }
     QCOMPARE(addedSpy.count(), 0);
     QCOMPARE(removedSpy.count(), 0);
+
+    // Check that the sort now includes the update state
+    sortedIds = cm->contactIds(idFilter, QList<QContactSortOrder>() << presenceOrder);
+    QCOMPARE(sortedIds.count(), 2);
+    QCOMPARE(sortedIds.at(0), a.id());
+    QCOMPARE(sortedIds.at(1), b.id());
+
+    // Perform queries that require access to the presence for filtering
+    QContactDetailFilter availableFilter;
+    setFilterDetail<QContactGlobalPresence>(availableFilter, QContactGlobalPresence::FieldPresenceState);
+    setFilterValue(availableFilter, QContactPresence::PresenceAvailable);
+
+    sortedIds = cm->contactIds(idFilter & availableFilter);
+    QEXPECT_FAIL("", "fails due to invalid SQL result", Continue);
+    QCOMPARE(sortedIds.count(), 1);
+    //QCOMPARE(sortedIds.at(0), a.id());
+
+    // Check that the modified timestamp is updated
+    sortedIds = cm->contactIds(idFilter & clFilter);
+    QCOMPARE(sortedIds.count(), 1);
+    QCOMPARE(sortedIds.at(0), a.id());
 
     // Test an update including non-presence changes
     p = a.detail<QContactPresence>();
