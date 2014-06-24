@@ -112,7 +112,7 @@ public:
         Function m_release;
     };
 
-    bool open(const QString &identifier, bool initialProcess, bool reinitialize);
+    bool open(const QString &identifier, bool createIfNecessary, bool reinitialize);
 
     TableHandle table(const QString &identifier);
     TableHandle reallocateTable(const QString &identifier);
@@ -184,7 +184,7 @@ private:
 
 Q_GLOBAL_STATIC(SharedMemoryManager, sharedMemory);
 
-bool SharedMemoryManager::open(const QString &identifier, bool initialProcess, bool reinitialize)
+bool SharedMemoryManager::open(const QString &identifier, bool createIfNecessary, bool reinitialize)
 {
     QMutexLocker threadLock(&m_mutex);
 
@@ -227,25 +227,30 @@ bool SharedMemoryManager::open(const QString &identifier, bool initialProcess, b
     // Attach to the memory region where the key to the data region is stored
     QSharedPointer<QSharedMemory> keyRegion(new QSharedMemory());
     keyRegion->setNativeKey(nativeKey);
-    if (!keyRegion->attach()) {
-        // Only the initial process can create the key region
-        if (keyRegion->error() != QSharedMemory::NotFound || !initialProcess) {
-            QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to attach key memory region for %1: %2")
-                    .arg(identifier).arg(keyRegion->errorString()));
-            return false;
-        }
 
-        // Allow far more space than we need in the key region, in case we want to use it for something else
-        const int keyRegionSize = 512;
-        if (!keyRegion->create(keyRegionSize)) {
-            QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to create key memory region for %1: %2")
-                    .arg(identifier).arg(keyRegion->errorString()));
-            return false;
-        }
+    do {
+        if (!keyRegion->attach()) {
+            if (keyRegion->error() != QSharedMemory::NotFound || !createIfNecessary) {
+                QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to attach key memory region for %1: %2")
+                        .arg(identifier).arg(keyRegion->errorString()));
+                return false;
+            }
 
-        // Write the key details to the key region
-        setRegionGeneration(keyRegion, initialGeneration);
-    }
+            // Allow far more space than we need in the key region, in case we want to use it for something else
+            const int keyRegionSize = 512;
+            if (!keyRegion->create(keyRegionSize)) {
+                // If we lost the race to create, try to attach again; otherwise we have failed
+                if (keyRegion->error() != QSharedMemory::AlreadyExists) {
+                    QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to create key memory region for %1: %2")
+                            .arg(identifier).arg(keyRegion->errorString()));
+                    return false;
+                }
+            } else {
+                // Write the key details to the key region
+                setRegionGeneration(keyRegion, initialGeneration);
+            }
+        }
+    } while (!keyRegion->isAttached());
 
     // Find the details from the key region
     const QByteArray keyData(QByteArray::fromRawData(reinterpret_cast<char *>(keyRegion->data()), keyRegion->size()));
@@ -593,7 +598,7 @@ ContactsTransientStore::~ContactsTransientStore()
 {
 }
 
-bool ContactsTransientStore::open(bool nonprivileged, bool initialProcess, bool reinitialize)
+bool ContactsTransientStore::open(bool nonprivileged, bool createIfNecessary, bool reinitialize)
 {
     const QString identifier(nonprivileged ? QStringLiteral("qtcontacts-sqlite-np") : QStringLiteral("qtcontacts-sqlite"));
 
@@ -603,7 +608,7 @@ bool ContactsTransientStore::open(bool nonprivileged, bool initialProcess, bool 
         return false;
     }
 
-    if (sharedMemory()->open(identifier, initialProcess, reinitialize)) {
+    if (sharedMemory()->open(identifier, createIfNecessary, reinitialize)) {
         m_identifier = identifier;
         return true;
     }
