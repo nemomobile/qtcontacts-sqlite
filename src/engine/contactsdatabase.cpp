@@ -1579,59 +1579,51 @@ bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, b
         m_database.close();
         QFile::remove(databaseFile);
         return false;
+    } else if (databasePreexisting && !configureDatabase(m_database)) {
+        m_database.close();
+        return false;
     }
 
     // Get the process mutex for this database
     ProcessMutex *mutex(processMutex());
 
-    if (mutex->lock()) {
-        struct Cleanup {
-            ProcessMutex *mutex;
-            QSqlDatabase *database;
+    // Only the first connection in the first process to concurrently open the DB is the owner
+    const bool databaseOwner(!secondaryConnection && mutex->isInitialProcess());
 
-            Cleanup(ProcessMutex *m, QSqlDatabase *db) : mutex(m), database(db) {}
-            ~Cleanup() {
-                if (mutex->isLocked()) {
-                    // Initialization code did not complete; do the clean up
-                    database->close();
-                    mutex->unlock();
-                }
+    if (databasePreexisting && databaseOwner) {
+        // Try to upgrade, if necessary
+        if (mutex->lock()) {
+            // Perform an integrity check
+            if (!checkDatabase(m_database)) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to check integrity of contacts database: %1")
+                        .arg(m_database.lastError().text()));
+                m_database.close();
+                mutex->unlock();
+                return false;
             }
-        } cleanup(mutex, &m_database);
 
-        if (databasePreexisting && !secondaryConnection) {
-            // Only the first process to concurrently open the DB should try to upgrade it
-            if (mutex->isInitialProcess()) {
-                // Perform an integrity check
-                if (!checkDatabase(m_database)) {
-                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to check integrity of contacts database: %1")
-                            .arg(m_database.lastError().text()));
-                    return false;
-                }
-
-                if (!upgradeDatabase(m_database)) {
-                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to upgrade contacts database: %1")
-                            .arg(m_database.lastError().text()));
-                    return false;
-                }
-
+            if (!upgradeDatabase(m_database)) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to upgrade contacts database: %1")
+                        .arg(m_database.lastError().text()));
+                m_database.close();
+                mutex->unlock();
+                return false;
             }
-        }
 
-        // Attach to the transient store
-        if (!m_transientStore.open(nonprivileged, mutex->isInitialProcess(), !databasePreexisting)) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to open contacts transient store"));
-            return false;
-        }
-
-        mutex->unlock();
-    }
-
-    if (databasePreexisting) {
-        if (!configureDatabase(m_database)) {
+            mutex->unlock();
+        } else {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to lock mutex for contacts database: %1")
+                    .arg(databaseFile));
             m_database.close();
             return false;
         }
+    }
+
+    // Attach to the transient store - any process can create it, but only the primary connection of each
+    if (!m_transientStore.open(nonprivileged, !secondaryConnection, !databasePreexisting)) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to open contacts transient store"));
+        m_database.close();
+        return false;
     }
 
     QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Opened contacts database: %1").arg(databaseFile));
