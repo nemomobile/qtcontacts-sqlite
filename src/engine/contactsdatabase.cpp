@@ -821,7 +821,7 @@ static bool executeUpgradeStatements(QSqlDatabase &database)
 static bool checkDatabase(QSqlDatabase &database)
 {
     QSqlQuery query(database);
-    if (query.exec(QLatin1String("PRAGMA integrity_check"))) {
+    if (query.exec(QLatin1String("PRAGMA quick_check"))) {
         while (query.next()) {
             const QString result(query.value(0).toString());
             if (result == QLatin1String("ok")) {
