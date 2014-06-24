@@ -64,7 +64,7 @@ public:
     ContactsTransientStore();
     ~ContactsTransientStore();
 
-    bool open(bool nonprivileged, bool initialProcess, bool reinitialize);
+    bool open(bool nonprivileged, bool createIfNecessary, bool reinitialize);
 
     bool contains(quint32 contactId) const;
 
