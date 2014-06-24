@@ -1128,6 +1128,84 @@ void clearTemporaryContactIdsTable(QSqlDatabase &db, const QString &table)
     dropOrDeleteTable(db, table);
 }
 
+bool createTemporaryContactTimestampTable(QSqlDatabase &db, const QString &table, const QList<QPair<quint32, QString> > &values)
+{
+    static const QString createStatement(QString::fromLatin1("CREATE TABLE IF NOT EXISTS temp.%1 ("
+                                                                 "contactId INTEGER PRIMARY KEY ASC,"
+                                                                 "modified DATETIME"
+                                                             ")"));
+
+    // Create the temporary table (if we haven't already).
+    QSqlQuery tableQuery(db);
+    if (!tableQuery.prepare(createStatement.arg(table))) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary timestamp table query: %1\n%2")
+                .arg(tableQuery.lastError().text())
+                .arg(createStatement.arg(table)));
+        return false;
+    }
+    if (!tableQuery.exec()) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create temporary timestamp table: %1\n%2")
+                .arg(tableQuery.lastError().text())
+                .arg(createStatement.arg(table)));
+        return false;
+    }
+    tableQuery.finish();
+
+    // insert into the temporary table, all of the values
+    if (!values.isEmpty()) {
+        QSqlQuery insertQuery(db);
+        QList<QPair<quint32, QString> >::const_iterator it = values.constBegin(), end = values.constEnd();
+        while (it != end) {
+            // SQLite/QtSql limits the amount of data we can insert per individual query
+            quint32 first = (it - values.constBegin());
+            quint32 remainder = (end - it);
+            quint32 count = std::min<quint32>(remainder, 250);
+            QList<QPair<quint32, QString> >::const_iterator batchEnd = it + count;
+
+            QString insertStatement = QString::fromLatin1("INSERT INTO temp.%1 (contactId, modified) VALUES ").arg(table);
+            while (true) {
+                insertStatement.append(QString::fromLatin1("(?,?)"));
+                if (++it == batchEnd) {
+                    break;
+                } else {
+                    insertStatement.append(QString::fromLatin1(","));
+                }
+            }
+
+            if (!insertQuery.prepare(insertStatement)) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary timestamp values: %1\n%2")
+                        .arg(insertQuery.lastError().text())
+                        .arg(insertStatement));
+                return false;
+            }
+
+            QList<QPair<quint32, QString> >::const_iterator vit = values.constBegin() + first, vend = vit + count;
+            while (vit != vend) {
+                const QPair<quint32, QString> &pair(*vit);
+                ++vit;
+
+                insertQuery.addBindValue(QVariant(pair.first));
+                insertQuery.addBindValue(QVariant(pair.second));
+            }
+
+            if (!insertQuery.exec()) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to insert temporary timestamp values: %1\n%2")
+                        .arg(insertQuery.lastError().text())
+                        .arg(insertStatement));
+                return false;
+            }
+            insertQuery.finish();
+        }
+    }
+
+    return true;
+}
+
+void clearTemporaryContactTimestampTable(QSqlDatabase &db, const QString &table)
+{
+    dropOrDeleteTable(db, table);
+}
+
 bool createTemporaryContactPresenceTable(QSqlDatabase &db, const QString &table, const QList<QPair<quint32, qint64> > &values)
 {
     static const QString createStatement(QString::fromLatin1("CREATE TABLE IF NOT EXISTS temp.%1 ("
@@ -1174,7 +1252,7 @@ bool createTemporaryContactPresenceTable(QSqlDatabase &db, const QString &table,
             }
 
             if (!insertQuery.prepare(insertStatement)) {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary integer values: %1\n%2")
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary presence values: %1\n%2")
                         .arg(insertQuery.lastError().text())
                         .arg(insertStatement));
                 return false;
@@ -1193,7 +1271,7 @@ bool createTemporaryContactPresenceTable(QSqlDatabase &db, const QString &table,
             }
 
             if (!insertQuery.exec()) {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to insert temporary integer values: %1\n%2")
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to insert temporary presence values: %1\n%2")
                         .arg(insertQuery.lastError().text())
                         .arg(insertStatement));
                 return false;
@@ -1665,14 +1743,14 @@ bool ContactsDatabase::hasTransientDetails(quint32 contactId)
     return m_transientStore.contains(contactId);
 }
 
-QList<QContactDetail> ContactsDatabase::transientDetails(quint32 contactId) const
+QPair<QDateTime, QList<QContactDetail> > ContactsDatabase::transientDetails(quint32 contactId) const
 {
     return m_transientStore.contactDetails(contactId);
 }
 
-bool ContactsDatabase::setTransientDetails(quint32 contactId, const QList<QContactDetail> &details)
+bool ContactsDatabase::setTransientDetails(quint32 contactId, const QDateTime &timestamp, const QList<QContactDetail> &details)
 {
-    return m_transientStore.setContactDetails(contactId, details);
+    return m_transientStore.setContactDetails(contactId, timestamp, details);
 }
 
 bool ContactsDatabase::removeTransientDetails(quint32 contactId)
@@ -1770,18 +1848,6 @@ void ContactsDatabase::clearTemporaryContactIdsTable(const QString &table)
     ::clearTemporaryContactIdsTable(m_database, table);
 }
 
-bool ContactsDatabase::createTemporaryContactPresenceTable(const QString &table, const QList<QPair<quint32, qint64> > &values)
-{
-    QMutexLocker locker(accessMutex());
-    return ::createTemporaryContactPresenceTable(m_database, table, values);
-}
-
-void ContactsDatabase::clearTemporaryContactPresenceTable(const QString &table)
-{
-    QMutexLocker locker(accessMutex());
-    ::clearTemporaryContactPresenceTable(m_database, table);
-}
-
 bool ContactsDatabase::createTemporaryValuesTable(const QString &table, const QVariantList &values)
 {
     QMutexLocker locker(accessMutex());
@@ -1806,28 +1872,67 @@ void ContactsDatabase::clearTransientContactIdsTable(const QString &table)
     ::dropTransientTables(m_database, table);
 }
 
-bool ContactsDatabase::populateTemporaryGlobalPresenceStates()
+bool ContactsDatabase::populateTemporaryTransientState(bool timestamps, bool globalPresence)
 {
-    const QString table(QStringLiteral("GlobalPresenceStates"));
+    const QString timestampTable(QStringLiteral("Timestamps"));
+    const QString presenceTable(QStringLiteral("GlobalPresenceStates"));
 
     QMutexLocker locker(accessMutex());
 
-    ::clearTemporaryContactPresenceTable(m_database, table);
+    if (timestamps) {
+        ::clearTemporaryContactTimestampTable(m_database, timestampTable);
+    }
+    if (globalPresence) {
+        ::clearTemporaryContactPresenceTable(m_database, presenceTable);
+    }
 
     // Find the current temporary states from transient storage
-    QList<QPair<quint32, qint64> > values;
+    QList<QPair<quint32, qint64> > presenceValues;
+    QList<QPair<quint32, QString> > timestampValues;
     ContactsTransientStore::const_iterator it = m_transientStore.constBegin(), end = m_transientStore.constEnd();
     for ( ; it != end; ++it) {
-        QList<QContactDetail> details(it.value());
-        foreach (const QContactDetail &detail, details) {
-            if (detail.type() == QContactGlobalPresence::Type) {
-                values.append(qMakePair<quint32, qint64>(it.key(), detail.value<int>(QContactGlobalPresence::FieldPresenceState)));
-                break;
+        QPair<QDateTime, QList<QContactDetail> > details(it.value());
+
+        if (timestamps) {
+            timestampValues.append(qMakePair<quint32, QString>(it.key(), dateTimeString(details.first)));
+        }
+
+        if (globalPresence) {
+            foreach (const QContactDetail &detail, details.second) {
+                if (detail.type() == QContactGlobalPresence::Type) {
+                    presenceValues.append(qMakePair<quint32, qint64>(it.key(), detail.value<int>(QContactGlobalPresence::FieldPresenceState)));
+                    break;
+                }
             }
         }
     }
 
-    return ::createTemporaryContactPresenceTable(m_database, table, values);
+    bool rv = true;
+    if (timestamps && !::createTemporaryContactTimestampTable(m_database, timestampTable, timestampValues)) {
+        rv = false;
+    } else if (globalPresence && !::createTemporaryContactPresenceTable(m_database, presenceTable, presenceValues)) {
+        rv = false;
+    }
+    return rv;
+}
+
+QString ContactsDatabase::dateTimeString(const QDateTime &qdt)
+{
+    // Input must be UTC
+    return qdt.toString(QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz"));
+}
+
+QString ContactsDatabase::dateString(const QDateTime &qdt)
+{
+    // Input must be UTC
+    return qdt.toString(QStringLiteral("yyyy-MM-dd"));
+}
+
+QDateTime ContactsDatabase::fromDateTimeString(const QString &s)
+{
+    QDateTime rv(QDateTime::fromString(s, QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz")));
+    rv.setTimeSpec(Qt::UTC);
+    return rv;
 }
 
 #include "../extensions/qcontactdeactivated_impl.h"

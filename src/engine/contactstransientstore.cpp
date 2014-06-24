@@ -571,17 +571,18 @@ quint32 ContactsTransientStore::const_iterator::key()
     return MemoryTable::const_iterator::key();
 }
 
-QList<QContactDetail> ContactsTransientStore::const_iterator::value()
+QPair<QDateTime, QList<QContactDetail> > ContactsTransientStore::const_iterator::value()
 {
     const QByteArray data(MemoryTable::const_iterator::value());
     if (!data.isEmpty()) {
         QDataStream is(data);
+        QDateTime dt;
         QList<QContactDetail> details;
-        is >> details;
-        return details;
+        is >> dt >> details;
+        return qMakePair(dt, details);
     }
 
-    return QList<QContactDetail>();
+    return qMakePair(QDateTime(), QList<QContactDetail>());
 }
 
 ContactsTransientStore::ContactsTransientStore()
@@ -620,29 +621,30 @@ bool ContactsTransientStore::contains(quint32 contactId) const
     return false;
 }
 
-QList<QContactDetail> ContactsTransientStore::contactDetails(quint32 contactId) const
+QPair<QDateTime, QList<QContactDetail> > ContactsTransientStore::contactDetails(quint32 contactId) const
 {
     const SharedMemoryManager::TableHandle table(sharedMemory()->table(m_identifier));
     if (table) {
         const QByteArray data(table->value(contactId));
         if (!data.isEmpty()) {
             QDataStream is(data);
+            QDateTime dt;
             QList<QContactDetail> details;
-            is >> details;
-            return details;
+            is >> dt >> details;
+            return qMakePair(dt, details);
         }
     }
 
-    return QList<QContactDetail>();
+    return qMakePair(QDateTime(), QList<QContactDetail>());
 }
 
-bool ContactsTransientStore::setContactDetails(quint32 contactId, const QList<QContactDetail> &details)
+bool ContactsTransientStore::setContactDetails(quint32 contactId, const QDateTime &timestamp, const QList<QContactDetail> &details)
 {
     SharedMemoryManager::TableHandle table(sharedMemory()->table(m_identifier));
     if (table) {
         QByteArray data;
         QDataStream os(&data, QIODevice::WriteOnly);
-        os << details;
+        os << timestamp << details;
 
         MemoryTable::Error err = table->insert(contactId, data);
         if (err == MemoryTable::InsufficientSpace) {
