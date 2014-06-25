@@ -1961,54 +1961,56 @@ QContactManager::Error ContactReader::queryContacts(
 
             // Find any transient details for this contact
             if (m_database.hasTransientDetails(dbId)) {
-                const QPair<QDateTime, QList<QContactDetail> > transientDetails(m_database.transientDetails(dbId));
-
-                // Update the contact timestamp to that of the transient details
-                setValue(&timestamp, QContactTimestamp::FieldModificationTimestamp, transientDetails.first);
-
                 QSet<QContactDetail::DetailType> transientTypes;
-                QList<QContactDetail>::const_iterator it = transientDetails.second.constBegin(), end = transientDetails.second.constEnd();
-                for ( ; it != end; ++it) {
-                    // Copy the transient detail into the contact
-                    const QContactDetail &transient(*it);
 
-                    const QContactDetail::DetailType transientType(transient.type());
+                const QPair<QDateTime, QList<QContactDetail> > transientDetails(m_database.transientDetails(dbId));
+                if (!transientDetails.first.isNull()) {
+                    // Update the contact timestamp to that of the transient details
+                    setValue(&timestamp, QContactTimestamp::FieldModificationTimestamp, transientDetails.first);
 
-                    if (transientType == QContactGlobalPresence::Type) {
-                        // If global presence is in the transient details, the IsOnline status flag is out of date
-                        const int presenceState = transient.value<int>(QContactGlobalPresence::FieldPresenceState);
-                        const bool isOnline(presenceState >= QContactPresence::PresenceAvailable &&
-                                            presenceState <= QContactPresence::PresenceExtendedAway);
-                        flags.setFlag(QContactStatusFlags::IsOnline, isOnline);
-                    }
+                    QList<QContactDetail>::const_iterator it = transientDetails.second.constBegin(), end = transientDetails.second.constEnd();
+                    for ( ; it != end; ++it) {
+                        // Copy the transient detail into the contact
+                        const QContactDetail &transient(*it);
 
-                    // Ignore details that aren't in the requested types
-                    if (!definitionMask.isEmpty() && !definitionMask.contains(transientType)) {
-                        continue;
-                    }
+                        const QContactDetail::DetailType transientType(transient.type());
 
-                    QContactDetail detail(transient.type());
-                    if (!relaxConstraints) {
-                        QContactManagerEngine::setDetailAccessConstraints(&detail, transient.accessConstraints());
-                    }
-
-                    const QMap<int, QVariant> values(transient.values());
-                    QMap<int, QVariant>::const_iterator vit = values.constBegin(), vend = values.constEnd();
-                    for ( ; vit != vend; ++vit) {
-                        bool append(true);
-
-                        if (vit.key() == QContactDetail__FieldModifiable) {
-                            append = syncable;
+                        if (transientType == QContactGlobalPresence::Type) {
+                            // If global presence is in the transient details, the IsOnline status flag is out of date
+                            const int presenceState = transient.value<int>(QContactGlobalPresence::FieldPresenceState);
+                            const bool isOnline(presenceState >= QContactPresence::PresenceAvailable &&
+                                                presenceState <= QContactPresence::PresenceExtendedAway);
+                            flags.setFlag(QContactStatusFlags::IsOnline, isOnline);
                         }
 
-                        if (append) {
-                            detail.setValue(vit.key(), vit.value());
+                        // Ignore details that aren't in the requested types
+                        if (!definitionMask.isEmpty() && !definitionMask.contains(transientType)) {
+                            continue;
                         }
+
+                        QContactDetail detail(transient.type());
+                        if (!relaxConstraints) {
+                            QContactManagerEngine::setDetailAccessConstraints(&detail, transient.accessConstraints());
+                        }
+
+                        const QMap<int, QVariant> values(transient.values());
+                        QMap<int, QVariant>::const_iterator vit = values.constBegin(), vend = values.constEnd();
+                        for ( ; vit != vend; ++vit) {
+                            bool append(true);
+
+                            if (vit.key() == QContactDetail__FieldModifiable) {
+                                append = syncable;
+                            }
+
+                            if (append) {
+                                detail.setValue(vit.key(), vit.value());
+                            }
+                        }
+
+                        contact.saveDetail(&detail);
+
+                        transientTypes.insert(transientType);
                     }
-
-                    contact.saveDetail(&detail);
-
-                    transientTypes.insert(transientType);
                 }
 
                 // Mark this contact as not requiring table data for these detailtypes

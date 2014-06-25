@@ -564,11 +564,17 @@ bool MemoryTable::const_iterator::operator!=(const const_iterator &other)
 
 MemoryTable::key_type MemoryTable::const_iterator::key()
 {
+    if (!table)
+        return MemoryTable::key_type();
+
     return table->keyAt(position);
 }
 
 MemoryTable::value_type MemoryTable::const_iterator::value()
 {
+    if (!table)
+        return MemoryTable::value_type();
+
     return table->valueAt(position);
 }
 
