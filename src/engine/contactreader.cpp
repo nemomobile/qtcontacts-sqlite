@@ -1390,7 +1390,7 @@ ContactReader::~ContactReader()
 
 struct Table
 {
-    QSqlQuery query;
+    QSqlQuery *query;
     QContactDetail::DetailType detailType;
     ReadDetail read;
     quint32 currentId;
@@ -1798,6 +1798,24 @@ QContactManager::Error ContactReader::queryContacts(
         return QContactManager::UnspecifiedError;
     }
 
+    QList<QSqlQuery> activeQueries;
+    QContactManager::Error err = queryContacts(tableName, contacts, fetchHint, relaxConstraints, query, &activeQueries);
+
+    // Ensure all active queries are completed
+    query.finish();
+    QList<QSqlQuery>::iterator it = activeQueries.begin(), end = activeQueries.end();
+    for ( ; it != end; ++it) {
+        (*it).finish();
+    }
+
+    return err;
+}
+
+QContactManager::Error ContactReader::queryContacts(
+        const QString &tableName, QList<QContact> *contacts, const QContactFetchHint &fetchHint, bool relaxConstraints, QSqlQuery &query, QList<QSqlQuery> *activeQueries)
+{
+    Q_ASSERT(activeQueries);
+
     const QString tableTemplate = QString(QLatin1String(
             "\n SELECT"
             "\n  Details.detailUri,"
@@ -1818,6 +1836,8 @@ QContactManager::Error ContactReader::queryContacts(
 
     const ContactWriter::DetailList &definitionMask = fetchHint.detailTypesHint();
 
+    QMap<QString, QSqlQuery> &cachedQueries(m_cachedDetailTableQueries[tableName]);
+
     QList<Table> tables;
     for (int i = 0; i < lengthOf(detailInfo); ++i) {
         const DetailInfo &detail = detailInfo[i];
@@ -1827,39 +1847,38 @@ QContactManager::Error ContactReader::queryContacts(
         if (definitionMask.isEmpty() || definitionMask.contains(detail.detailType)) {
             // we need to query this particular detail table
             // use cached prepared queries if available, else prepare and cache query.
-            bool haveCachedQuery = m_cachedDetailTableQueries[tableName].contains(detail.table);
-            Table table = {
-                haveCachedQuery ? m_cachedDetailTableQueries[tableName].value(detail.table) : QSqlQuery(m_database),
-                detail.detailType,
-                detail.read,
-                0
-            };
-
-            if (!haveCachedQuery) {
-                // have to prepare the query.
+            QMap<QString, QSqlQuery>::iterator qit = cachedQueries.find(detail.table);
+            if (qit == cachedQueries.end()) {
+                // Not yet in the cache
                 const QString tableQueryStatement(tableTemplate.arg(QLatin1String(detail.table)));
-                table.query.setForwardOnly(true);
-                if (!table.query.prepare(tableQueryStatement)) {
+                QSqlQuery detailTableQuery(m_database);
+                detailTableQuery.setForwardOnly(true);
+                if (!detailTableQuery.prepare(tableQueryStatement)) {
                     QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare table %1:\n%2\n%3")
                             .arg(detail.table)
                             .arg(tableQueryStatement)
-                            .arg(table.query.lastError().text()));
+                            .arg(detailTableQuery.lastError().text()));
+                    return QContactManager::UnspecifiedError;
                 } else {
-                    m_cachedDetailTableQueries[tableName].insert(detail.table, table.query);
-                    haveCachedQuery = true;
+                    qit = cachedQueries.insert(detail.table, detailTableQuery);
                 }
             }
 
-            if (haveCachedQuery) {
-                table.query.bindValue(0, QString::fromLatin1(detail.detailName));
-                if (!table.query.exec()) {
-                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to query table %1:\n%2")
-                            .arg(detail.table)
-                            .arg(table.query.lastError().text()));
-                } else if (table.query.next()) {
-                    table.currentId = table.query.value(idValueOffset).toUInt();
-                    tables.append(table);
-                }
+            // Make a copy of the prepared query
+            activeQueries->append(*qit);
+            QSqlQuery &tableQuery(activeQueries->last());
+
+            tableQuery.bindValue(0, QString::fromLatin1(detail.detailName));
+            if (!tableQuery.exec()) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to query table %1:\n%2")
+                        .arg(detail.table)
+                        .arg(tableQuery.lastError().text()));
+                return QContactManager::UnspecifiedError;
+            } else if (tableQuery.next()) {
+                quint32 currentId = tableQuery.value(idValueOffset).toUInt();
+
+                Table table = { &tableQuery, detail.detailType, detail.read, currentId };
+                tables.append(table);
             }
         }
     }
@@ -2041,12 +2060,12 @@ QContactManager::Error ContactReader::queryContacts(
                 QContact &contact(*it);
                 quint32 contactId = ContactId::databaseId(contact.id());
 
-                if (table.query.isValid() && (table.currentId == contactId)) {
+                if (table.query->isValid() && (table.currentId == contactId)) {
                     // If the transient store contains details of this type for this contact, they take precedence over the
                     // details stored in the tables
                     const bool contactHasTransient(transientContactIds.contains(contactId));
 
-                    table.read(contactId, table.currentId, &contact, &table.query, *sit, relaxConstraints, !contactHasTransient);
+                    table.read(contactId, table.currentId, &contact, table.query, *sit, relaxConstraints, !contactHasTransient);
                 }
             }
         }
@@ -2112,12 +2131,6 @@ QContactManager::Error ContactReader::queryContacts(
 
         contactsAvailable(*contacts);
     } while (query.isValid() && (maximumCount < 0));
-
-    query.finish();
-    for (int k = 0; k < tables.count(); ++k) {
-        Table &table = tables[k];
-        table.query.finish();
-    }
 
     return QContactManager::NoError;
 }
