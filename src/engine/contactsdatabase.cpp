@@ -1884,6 +1884,8 @@ bool ContactsDatabase::populateTemporaryTransientState(bool timestamps, bool glo
     ContactsTransientStore::const_iterator it = m_transientStore.constBegin(), end = m_transientStore.constEnd();
     for ( ; it != end; ++it) {
         QPair<QDateTime, QList<QContactDetail> > details(it.value());
+        if (details.first.isNull())
+            continue;
 
         if (timestamps) {
             timestampValues.append(qMakePair<quint32, QString>(it.key(), dateTimeString(details.first)));
