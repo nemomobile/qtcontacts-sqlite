@@ -304,8 +304,11 @@ SharedMemoryManager::TableHandle SharedMemoryManager::table(const QString &ident
     }
 
     QMap<QString, TableData>::iterator it = m_tables.find(identifier);
-    if (it == m_tables.end())
+    if (it == m_tables.end()) {
+        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Cannot open unknown shared memory table: %1")
+                .arg(identifier));
         return TableHandle();
+    }
 
     TableData &tableData(*it);
 
@@ -315,7 +318,7 @@ SharedMemoryManager::TableHandle SharedMemoryManager::table(const QString &ident
     // Lock the data region
     Function dataRelease(lockDataRegion());
     if (!dataRelease) {
-        QTCONTACTS_SQLITE_WARNING(QStringLiteral("1:Failed to lock data region for %1")
+        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to lock data region for %1")
                 .arg(identifier));
         return TableHandle();
     }
@@ -536,7 +539,7 @@ SharedMemoryManager::Function SharedMemoryManager::lockDataRegion() const
 SharedMemoryManager::Function SharedMemoryManager::acquire(int index) const
 {
     if (m_semaphore) {
-        if (m_semaphore->decrement(index, true, 1000)) {
+        if (m_semaphore->decrement(index, true, 5000)) {
             return std::tr1::bind(&SharedMemoryManager::release, this, index);
         }
     }
@@ -711,6 +714,6 @@ ContactsTransientStore::const_iterator ContactsTransientStore::constEnd() const
     // Note: iterators do not keep the table active
     SharedMemoryManager::TableHandle table(sharedMemory()->table(m_identifier));
     const MemoryTable *tablePtr(table);
-    return const_iterator(tablePtr, table->count());
+    return const_iterator(tablePtr, table ? table->count() : 0);
 }
 
