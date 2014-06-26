@@ -43,6 +43,7 @@
 
 QTCONTACTS_USE_NAMESPACE
 
+class DataLockPrivate;
 class ContactsTransientStore
 {
 public:
@@ -61,6 +62,24 @@ public:
         QPair<QDateTime, QList<QContactDetail> > value();
     };
 
+    class DataLock
+    {
+    public:
+        ~DataLock();
+
+        DataLock(const DataLock &other);
+        DataLock& operator=(const DataLock &other);
+
+        operator bool() const;
+
+    private:
+        friend class ContactsTransientStore;
+
+        DataLock(DataLockPrivate *);
+
+        QSharedPointer<DataLockPrivate> lock;
+    };
+
     ContactsTransientStore();
     ~ContactsTransientStore();
 
@@ -74,8 +93,10 @@ public:
     bool remove(quint32 contactId);
     bool remove(const QList<quint32> &contactId);
 
-    const_iterator constBegin() const;
-    const_iterator constEnd() const;
+    DataLock dataLock() const;
+
+    const_iterator constBegin(const DataLock &) const;
+    const_iterator constEnd(const DataLock &) const;
 
 private:
     QString m_identifier;

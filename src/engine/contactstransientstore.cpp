@@ -579,6 +579,42 @@ quint32 ContactsTransientStore::const_iterator::key()
     return MemoryTable::const_iterator::key();
 }
 
+class DataLockPrivate
+{
+public:
+    SharedMemoryManager::TableHandle m_table;
+
+    DataLockPrivate(SharedMemoryManager::TableHandle table)
+        : m_table(table)
+    {
+    }
+};
+
+ContactsTransientStore::DataLock::DataLock(DataLockPrivate *p)
+    : lock(p)
+{
+}
+
+ContactsTransientStore::DataLock::~DataLock()
+{
+}
+
+ContactsTransientStore::DataLock::DataLock(const DataLock &other)
+{
+    *this = other;
+}
+
+ContactsTransientStore::DataLock &ContactsTransientStore::DataLock::operator=(const DataLock &other)
+{
+    lock = other.lock;
+    return *this;
+}
+
+ContactsTransientStore::DataLock::operator bool() const
+{
+    return lock->m_table;
+}
+
 QPair<QDateTime, QList<QContactDetail> > ContactsTransientStore::const_iterator::value()
 {
     const QByteArray data(MemoryTable::const_iterator::value());
@@ -701,19 +737,33 @@ bool ContactsTransientStore::remove(const QList<quint32> &contactIds)
     return false;
 }
 
-ContactsTransientStore::const_iterator ContactsTransientStore::constBegin() const
+ContactsTransientStore::DataLock ContactsTransientStore::dataLock() const
 {
-    // Note: iterators do not keep the table active
     SharedMemoryManager::TableHandle table(sharedMemory()->table(m_identifier));
-    const MemoryTable *tablePtr(table);
+    return DataLock(new DataLockPrivate(table));
+}
+
+ContactsTransientStore::const_iterator ContactsTransientStore::constBegin(const DataLock &lock) const
+{
+    if (!lock) {
+        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Cannot iterate over unlocked data: %1")
+                .arg(m_identifier));
+        return const_iterator(0, 0);
+    }
+
+    const MemoryTable *tablePtr(lock.lock->m_table);
     return const_iterator(tablePtr, 0);
 }
 
-ContactsTransientStore::const_iterator ContactsTransientStore::constEnd() const
+ContactsTransientStore::const_iterator ContactsTransientStore::constEnd(const DataLock &lock) const
 {
-    // Note: iterators do not keep the table active
-    SharedMemoryManager::TableHandle table(sharedMemory()->table(m_identifier));
-    const MemoryTable *tablePtr(table);
-    return const_iterator(tablePtr, table ? table->count() : 0);
+    if (!lock) {
+        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Cannot iterate over unlocked data: %1")
+                .arg(m_identifier));
+        return const_iterator(0, 0);
+    }
+
+    const MemoryTable *tablePtr(lock.lock->m_table);
+    return const_iterator(tablePtr, tablePtr->count());
 }
 
