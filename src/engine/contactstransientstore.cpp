@@ -171,10 +171,12 @@ private:
 
     QSharedPointer<QSharedMemory> getDataRegion(const QString &identifier, quint32 generation, bool createIfNecessary, size_t dataSize = 0, bool reinitialize = false) const;
 
-    Function lockKeyRegion() const;
-    Function lockDataRegion() const;
+    enum { DefaultWaitMs = 5000 };
 
-    Function acquire(int index) const;
+    Function lockKeyRegion() const;
+    Function lockDataRegion(int waitMs = DefaultWaitMs) const;
+
+    Function acquire(int index, int waitMs = DefaultWaitMs) const;
     void release(int index) const;
 
     QMap<QString, TableData> m_tables;
@@ -209,14 +211,6 @@ bool SharedMemoryManager::open(const QString &identifier, bool createIfNecessary
         return false;
     }
 
-    // Lock the region, so that only one process can find the region nonexisting
-    SemaphoreLock keyLock(lockKeyRegion());
-    if (!keyLock) {
-        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to lock key memory region for %1")
-                .arg(identifier));
-        return false;
-    }
-
     const QString nativeKey(getNativeIdentifier(identifier, true));
     if (nativeKey.isEmpty()) {
         QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to create key token for %1")
@@ -228,8 +222,20 @@ bool SharedMemoryManager::open(const QString &identifier, bool createIfNecessary
     QSharedPointer<QSharedMemory> keyRegion(new QSharedMemory());
     keyRegion->setNativeKey(nativeKey);
 
-    do {
-        if (!keyRegion->attach()) {
+    // Table reallocation requires the process holding the data lock to acquire the key lock,
+    // while we need to acquire the locks in the other order.  To avoid potential deadlock,
+    // give up and try again if we can't acquire the data lock while holding the key lock
+    int lockAttempts = 0;
+    while (true) {
+        // Lock the region, so that only one process can find the region nonexisting
+        SemaphoreLock keyLock(lockKeyRegion());
+        if (!keyLock) {
+            QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to lock key memory region for %1")
+                    .arg(identifier));
+            return false;
+        }
+
+        if (!keyRegion->isAttached() && !keyRegion->attach()) {
             if (keyRegion->error() != QSharedMemory::NotFound || !createIfNecessary) {
                 QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to attach key memory region for %1: %2")
                         .arg(identifier).arg(keyRegion->errorString()));
@@ -239,118 +245,133 @@ bool SharedMemoryManager::open(const QString &identifier, bool createIfNecessary
             // Allow far more space than we need in the key region, in case we want to use it for something else
             const int keyRegionSize = 512;
             if (!keyRegion->create(keyRegionSize)) {
-                // If we lost the race to create, try to attach again; otherwise we have failed
-                if (keyRegion->error() != QSharedMemory::AlreadyExists) {
-                    QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to create key memory region for %1: %2")
-                            .arg(identifier).arg(keyRegion->errorString()));
-                    return false;
-                }
+                QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to create key memory region for %1: %2")
+                        .arg(identifier).arg(keyRegion->errorString()));
+                return false;
             } else {
                 // Write the key details to the key region
                 setRegionGeneration(keyRegion, initialGeneration);
             }
         }
-    } while (!keyRegion->isAttached());
 
-    // Find the details from the key region
-    const QByteArray keyData(QByteArray::fromRawData(reinterpret_cast<char *>(keyRegion->data()), keyRegion->size()));
-    QDataStream is(keyData);
+        // Find the details from the key region
+        const QByteArray keyData(QByteArray::fromRawData(reinterpret_cast<char *>(keyRegion->data()), keyRegion->size()));
+        QDataStream is(keyData);
 
-    quint32 formatVersion;
-    quint32 regionGeneration;
+        quint32 formatVersion;
+        quint32 regionGeneration;
 
-    is >> formatVersion;
-    if (formatVersion == keyDataFormatVersion) {
-        is >> regionGeneration;
-    } else {
-        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Invalid key data format in key region for %1: %2")
-                .arg(identifier).arg(formatVersion));
-        return false;
+        is >> formatVersion;
+        if (formatVersion == keyDataFormatVersion) {
+            is >> regionGeneration;
+        } else {
+            QTCONTACTS_SQLITE_WARNING(QStringLiteral("Invalid key data format in key region for %1: %2")
+                    .arg(identifier).arg(formatVersion));
+            return false;
+        }
+
+        // We need the data lock in order to validate the data region
+        SemaphoreLock dataLock(lockDataRegion(100));
+        if (!dataLock) {
+            if (++lockAttempts >= 50) {
+                QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to lock data memory region during open for %1")
+                        .arg(identifier));
+                return false;
+            } else if ((lockAttempts % 10) == 0) {
+                QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to lock data memory region for %1 after %2 attempts")
+                        .arg(identifier).arg(lockAttempts));
+            }
+            continue;
+        }
+
+        // Try to open the data region
+        // What size should we use? Using an estimate of 512 bytes per contact, we could store about 2K contacts in a 1M region
+        const int memoryRegionSize = 1024 * 1024;
+
+        QSharedPointer<QSharedMemory> dataRegion(getDataRegion(identifier, regionGeneration, true, memoryRegionSize, reinitialize));
+        if (!dataRegion || !dataRegion->isAttached())
+            return false;
+
+        QSharedPointer<SharedMemoryTable> dataTable(new SharedMemoryTable(dataRegion));
+
+        // Store our handle to this table
+        TableData tableData(keyRegion, dataTable, regionGeneration);
+        m_tables.insert(identifier, tableData);
+        return true;
     }
-
-    // We need the data lock in order to validate the data region
-    SemaphoreLock dataLock(lockDataRegion());
-    if (!dataLock) {
-        QTCONTACTS_SQLITE_WARNING(QStringLiteral("2:Failed to lock data memory region for %1")
-                .arg(identifier));
-        return false;
-    }
-
-    // Try to open the data region
-    // What size should we use? Using an estimate of 512 bytes per contact, we could store about 2K contacts in a 1M region
-    const int memoryRegionSize = 1024 * 1024;
-
-    QSharedPointer<QSharedMemory> dataRegion(getDataRegion(identifier, regionGeneration, true, memoryRegionSize, reinitialize));
-    if (!dataRegion || !dataRegion->isAttached())
-        return false;
-
-    QSharedPointer<SharedMemoryTable> dataTable(new SharedMemoryTable(dataRegion));
-
-    // Store our handle to this table
-    TableData tableData(keyRegion, dataTable, regionGeneration);
-    m_tables.insert(identifier, tableData);
-    return true;
 }
 
 SharedMemoryManager::TableHandle SharedMemoryManager::table(const QString &identifier)
 {
     QMutexLocker threadLock(&m_mutex);
 
-    SemaphoreLock keyLock(lockKeyRegion());
-    if (!keyLock) {
-        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to lock key memory region for %1")
-                .arg(identifier));
-        return TableHandle();
-    }
-
-    QMap<QString, TableData>::iterator it = m_tables.find(identifier);
-    if (it == m_tables.end()) {
-        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Cannot open unknown shared memory table: %1")
-                .arg(identifier));
-        return TableHandle();
-    }
-
-    TableData &tableData(*it);
-
-    // Find the current generation of the table
-    quint32 regionGeneration = getRegionGeneration(tableData.m_keyRegion);
-
-    // Lock the data region
-    Function dataRelease(lockDataRegion());
-    if (!dataRelease) {
-        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to lock data region for %1")
-                .arg(identifier));
-        return TableHandle();
-    }
-
-    // Release the data lock if we can't yield an initialized table handle
-    struct Cleanup {
-        Function release;
-        bool active;
-
-        Cleanup(Function f) : release(f), active(true) {}
-        ~Cleanup() { if (active) release(); }
-    } cleanup(dataRelease);
-
-    if (regionGeneration != tableData.m_generation) {
-        // We need to attach to the new version of the table
-        QSharedPointer<QSharedMemory> newRegion(getDataRegion(identifier, regionGeneration, false));
-        if (!newRegion || !newRegion->isAttached()) {
-            QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to attach to new data region for %1")
+    // Table reallocation requires the process holding the data lock to acquire the key lock,
+    // while we need to acquire the locks in the other order.  To avoid potential deadlock,
+    // give up and try again if we can't acquire the data lock while holding the key lock
+    int lockAttempts = 0;
+    while (true) {
+        SemaphoreLock keyLock(lockKeyRegion());
+        if (!keyLock) {
+            QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to lock key memory region for %1")
                     .arg(identifier));
             return TableHandle();
         }
 
-        QSharedPointer<SharedMemoryTable> dataTable(new SharedMemoryTable(newRegion));
+        QMap<QString, TableData>::iterator it = m_tables.find(identifier);
+        if (it == m_tables.end()) {
+            QTCONTACTS_SQLITE_WARNING(QStringLiteral("Cannot open unknown shared memory table: %1")
+                    .arg(identifier));
+            return TableHandle();
+        }
 
-        // Update the table with the new region
-        tableData.m_generation = regionGeneration;
-        tableData.m_dataTable = dataTable;
+        TableData &tableData(*it);
+
+        // Find the current generation of the table
+        quint32 regionGeneration = getRegionGeneration(tableData.m_keyRegion);
+
+        // Lock the data region
+        Function dataRelease(lockDataRegion(100));
+        if (!dataRelease) {
+            if (++lockAttempts >= 50) {
+                QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to lock data region for table access for %1")
+                        .arg(identifier));
+                return TableHandle();
+            } else if ((lockAttempts % 10) == 0) {
+                QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to lock data region for table access for %1 after %2 attempts")
+                        .arg(identifier).arg(lockAttempts));
+            }
+            continue;
+        }
+
+        // Release the data lock if we can't yield an initialized table handle
+        struct Cleanup {
+            Function release;
+            bool active;
+
+            Cleanup(Function f) : release(f), active(true) {}
+            ~Cleanup() { if (active) release(); }
+        } cleanup(dataRelease);
+
+        if (regionGeneration != tableData.m_generation) {
+            // We need to attach to the new version of the table
+            QSharedPointer<QSharedMemory> newRegion(getDataRegion(identifier, regionGeneration, false));
+            if (!newRegion || !newRegion->isAttached()) {
+                QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to attach to new data region for %1")
+                        .arg(identifier));
+                return TableHandle();
+            }
+
+            QSharedPointer<SharedMemoryTable> dataTable(new SharedMemoryTable(newRegion));
+
+            // Update the table with the new region
+            tableData.m_generation = regionGeneration;
+            tableData.m_dataTable = dataTable;
+        }
+
+        // The handle will release the lock on destruction
+        cleanup.active = false;
+        return TableHandle(tableData.m_dataTable, dataRelease);
     }
-
-    // The handle will release the lock on destruction
-    cleanup.active = false;
-    return TableHandle(tableData.m_dataTable, dataRelease);
 }
 
 SharedMemoryManager::TableHandle SharedMemoryManager::reallocateTable(const QString &identifier)
@@ -531,15 +552,15 @@ SharedMemoryManager::Function SharedMemoryManager::lockKeyRegion() const
     return acquire(keyIndex);
 }
 
-SharedMemoryManager::Function SharedMemoryManager::lockDataRegion() const
+SharedMemoryManager::Function SharedMemoryManager::lockDataRegion(int waitMs) const
 {
-    return acquire(dataIndex);
+    return acquire(dataIndex, waitMs);
 }
 
-SharedMemoryManager::Function SharedMemoryManager::acquire(int index) const
+SharedMemoryManager::Function SharedMemoryManager::acquire(int index, int waitMs) const
 {
     if (m_semaphore) {
-        if (m_semaphore->decrement(index, true, 5000)) {
+        if (m_semaphore->decrement(index, true, waitMs)) {
             return std::tr1::bind(&SharedMemoryManager::release, this, index);
         }
     }
