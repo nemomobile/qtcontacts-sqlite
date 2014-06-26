@@ -1881,21 +1881,25 @@ bool ContactsDatabase::populateTemporaryTransientState(bool timestamps, bool glo
     // Find the current temporary states from transient storage
     QList<QPair<quint32, qint64> > presenceValues;
     QList<QPair<quint32, QString> > timestampValues;
-    ContactsTransientStore::const_iterator it = m_transientStore.constBegin(), end = m_transientStore.constEnd();
-    for ( ; it != end; ++it) {
-        QPair<QDateTime, QList<QContactDetail> > details(it.value());
-        if (details.first.isNull())
-            continue;
 
-        if (timestamps) {
-            timestampValues.append(qMakePair<quint32, QString>(it.key(), dateTimeString(details.first)));
-        }
+    {
+        ContactsTransientStore::DataLock lock(m_transientStore.dataLock());
+        ContactsTransientStore::const_iterator it = m_transientStore.constBegin(lock), end = m_transientStore.constEnd(lock);
+        for ( ; it != end; ++it) {
+            QPair<QDateTime, QList<QContactDetail> > details(it.value());
+            if (details.first.isNull())
+                continue;
 
-        if (globalPresence) {
-            foreach (const QContactDetail &detail, details.second) {
-                if (detail.type() == QContactGlobalPresence::Type) {
-                    presenceValues.append(qMakePair<quint32, qint64>(it.key(), detail.value<int>(QContactGlobalPresence::FieldPresenceState)));
-                    break;
+            if (timestamps) {
+                timestampValues.append(qMakePair<quint32, QString>(it.key(), dateTimeString(details.first)));
+            }
+
+            if (globalPresence) {
+                foreach (const QContactDetail &detail, details.second) {
+                    if (detail.type() == QContactGlobalPresence::Type) {
+                        presenceValues.append(qMakePair<quint32, qint64>(it.key(), detail.value<int>(QContactGlobalPresence::FieldPresenceState)));
+                        break;
+                    }
                 }
             }
         }
