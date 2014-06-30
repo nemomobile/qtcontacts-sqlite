@@ -269,6 +269,10 @@ int main(int argc, char  *argv[])
 {
     QCoreApplication application(argc, argv);
 
+    const QStringList &args(application.arguments());
+
+    const bool quickMode(args.contains(QStringLiteral("-q")) || args.contains(QStringLiteral("--quick")));
+
     QMap<QString, QString> parameters;
     parameters.insert(QString::fromLatin1("mergePresenceChanges"), QString::fromLatin1("false"));
 
@@ -350,10 +354,13 @@ int main(int argc, char  *argv[])
     // Time some synchronous operations.  First, generate the test data.
     qsrand((int)asyncTotalElapsed);
     QList<int> nbrContacts;
-    nbrContacts << 10 << 100 << 500 << 1000 << 2000;
+    if (quickMode) {
+        nbrContacts << 200;
+    } else {
+        nbrContacts << 10 << 100 << 500 << 1000 << 2000;
+    }
     QList<QList<QContact> > testData;
-    qDebug() << "\n\n\n\n\n";
-    qDebug() << "Generating test data for timings...";
+    qDebug() << "\n\nGenerating test data for timings...";
     for (int i = 0; i < nbrContacts.size(); ++i) {
         int howMany = nbrContacts.at(i);
         QList<QContact> newTestData;
@@ -497,7 +504,11 @@ int main(int argc, char  *argv[])
     // these tests are slightly different to those above.  They operate on much smaller
     // batches, but occur after the database has already been prefilled with some data.
     QList<int> smallerNbrContacts;
-    smallerNbrContacts << 1 << 2 << 5 << 10 << 20 << 50;
+    if (quickMode) {
+        smallerNbrContacts << 20;
+    } else {
+        smallerNbrContacts << 1 << 2 << 5 << 10 << 20 << 50;
+    }
     QList<QList<QContact> > smallerTestData;
     qDebug() << "\n\nGenerating smaller test data for prefilled timings...";
     for (int i = 0; i < smallerNbrContacts.size(); ++i) {
@@ -614,7 +625,8 @@ int main(int argc, char  *argv[])
 
     // Now perform the test again, this time with more aggregates, to test nonlinearity.
     contactsToAggregate.clear();
-    for (int i = 200; i < 400; ++i) {
+    const int high = prefillData.size() / 2, low = high / 2;
+    for (int i = low; i < high; ++i) {
         QContact existingContact = prefillData.at(prefillData.size() - 1 - i);
         QContact contactToAggregate;
         QContactSyncTarget newSyncTarget;
@@ -711,7 +723,7 @@ int main(int argc, char  *argv[])
     // the third presence update test is identical to the previous, but with 2000 prefilled contacts in database.
     qDebug() << "    Adding more prefill data, please wait...";
     QList<QContact> morePrefillData;
-    for (int i = 0; i < 1000; ++i) {
+    for (int i = 0; i < contactsToUpdate.size(); ++i) {
         morePrefillData.append(generateContact(QString::fromLatin1("testing")));
     }
     manager.saveContacts(&morePrefillData);
@@ -775,7 +787,7 @@ int main(int argc, char  *argv[])
     // the fourth presence update test checks update time for non-overlapping sets of data.
     qDebug() << "    generating non-overlapping / aggregated prefill data, please wait...";
     morePrefillData.clear();
-    for (int i = 0; i < 1000; ++i) {
+    for (int i = 0; i < prefillData.size(); ++i) {
         morePrefillData.append(generateContact("test-presence-4", false)); // false = don't aggregate.
     }
     manager.saveContacts(&morePrefillData);
@@ -827,8 +839,8 @@ int main(int argc, char  *argv[])
     // never aggregates two contacts from the same sync source...)
     qDebug() << "    generating partially-overlapping / aggregated prefill data, please wait...";
     morePrefillData.clear();
-    for (int i = 0; i < 1000; ++i) {
-        if (i < 500) {
+    for (int i = 0; i < prefillData.size(); ++i) {
+        if (i < (prefillData.size() / 2)) {
             morePrefillData.append(generateContact("test-presence-5", false)); // false = don't aggregate.
         } else {
             morePrefillData.append(generateContact("test-presence-5", true));  // true = possibly aggregate.
@@ -862,7 +874,7 @@ int main(int argc, char  *argv[])
     manager.saveContacts(&contactsToUpdate);
     presenceElapsed = syncTimer.elapsed();
     totalAggregatesInDatabase = manager.contactIds().count();
-    qDebug() << "    update ( batch of" << contactsToUpdate.size() << ") presence+nick+avatar (with" << totalAggregatesInDatabase << "existing in database, 500 overlap):" << presenceElapsed
+    qDebug() << "    update ( batch of" << contactsToUpdate.size() << ") presence+nick+avatar (with" << totalAggregatesInDatabase << "existing in database, partial overlap):" << presenceElapsed
              << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
     elapsedTimeTotal += presenceElapsed;
 
@@ -883,7 +895,7 @@ int main(int argc, char  *argv[])
     manager.saveContacts(&contactsToUpdate);
     presenceElapsed = syncTimer.elapsed();
     totalAggregatesInDatabase = manager.contactIds().count();
-    qDebug() << "    update ( batch of" << contactsToUpdate.size() << ") presence only (with" << totalAggregatesInDatabase << "existing in database, 500 overlap):" << presenceElapsed
+    qDebug() << "    update ( batch of" << contactsToUpdate.size() << ") presence only (with" << totalAggregatesInDatabase << "existing in database, partial overlap):" << presenceElapsed
              << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
     elapsedTimeTotal += presenceElapsed;
 
@@ -907,7 +919,7 @@ int main(int argc, char  *argv[])
     manager.saveContacts(&contactsToUpdate, typeMask);
     presenceElapsed = syncTimer.elapsed();
     totalAggregatesInDatabase = manager.contactIds().count();
-    qDebug() << "    update ( batch of" << contactsToUpdate.size() << ") masked presence only (with" << totalAggregatesInDatabase << "existing in database, 500 overlap):" << presenceElapsed
+    qDebug() << "    update ( batch of" << contactsToUpdate.size() << ") masked presence only (with" << totalAggregatesInDatabase << "existing in database, partial overlap):" << presenceElapsed
              << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
     elapsedTimeTotal += presenceElapsed;
 
