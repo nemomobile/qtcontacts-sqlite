@@ -4686,6 +4686,15 @@ QContactManager::Error ContactWriter::setAggregate(QContact *contact, quint32 co
                 query.reportError("Failed to update contact syncTarget");
                 return QContactManager::UnspecifiedError;
             }
+        } else if ((contact->detail<QContactSyncTarget>().syncTarget() == localSyncTarget) &&
+                   contact->details<QContactIncidental>().isEmpty()) {
+            // We have added a local to an existing aggregate that didn't have one - we must regenerate
+            // the aggregate, because the precedence order of the details has changed
+            writeErr = regenerateAggregates(QList<quint32>() << aggregateId, definitionMask, withinTransaction);
+            if (writeErr != QContactManager::NoError) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to regenerate aggregate contact %1 for local insertion").arg(aggregateId));
+                return writeErr;
+            }
         }
     }
 

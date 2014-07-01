@@ -85,6 +85,8 @@ private slots:
     void updateAggregateOfLocalAndSync();
     void updateAggregateOfLocalAndModifiableSync();
 
+    void compositionPrefersLocal();
+
     void promotionToSingleLocal();
     void uniquenessConstraints();
 
@@ -1286,6 +1288,193 @@ void tst_Aggregation::updateAggregateOfLocalAndModifiableSync()
     QCOMPARE(trialAlice.details<QContactEmailAddress>().count(), 1);
     QCOMPARE(trialAlice.details<QContactEmailAddress>().at(0).emailAddress(), QString::fromLatin1("alice3@example.org"));
     QCOMPARE(trialAlice.detail<QContactEmailAddress>().value(QContactDetail__FieldModifiable).toBool(), true);
+}
+
+void tst_Aggregation::compositionPrefersLocal()
+{
+    // Composed details should prefer the values of the local, where present
+    QContactDetailFilter allSyncTargets;
+    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
+
+    // These contacts should all be aggregated together
+    QContact stContact1, stContact2, stContact3, localContact;
+
+    QContactName n1;
+    n1.setPrefix(QLatin1String("Supt."));
+    n1.setFirstName(QLatin1String("Link"));
+    n1.setMiddleName(QLatin1String("Alice"));
+    n1.setLastName(QLatin1String("CompositionTester"));
+    stContact1.saveDetail(&n1);
+
+    QContactSyncTarget sast;
+    sast.setSyncTarget(QLatin1String("test1"));
+    stContact1.saveDetail(&sast);
+
+    QVERIFY(m_cm->saveContact(&stContact1));
+
+    QContactName n2;
+    n2.setFirstName(QLatin1String("Link"));
+    n2.setMiddleName(QLatin1String("Bob"));
+    n2.setLastName(QLatin1String("CompositionTester"));
+    localContact.saveDetail(&n2);
+
+    QVERIFY(m_cm->saveContact(&localContact));
+
+    QContactName n3;
+    n3.setFirstName(QLatin1String("Link"));
+    n3.setMiddleName(QLatin1String("Charlie"));
+    n3.setLastName(QLatin1String("CompositionTester"));
+    n3.setSuffix(QLatin1String("Esq."));
+    stContact2.saveDetail(&n3);
+
+    sast.setSyncTarget(QLatin1String("test2"));
+    stContact2.saveDetail(&sast);
+
+    QVERIFY(m_cm->saveContact(&stContact2));
+
+    // Add a contact via synchronization
+    QContactName n4;
+    n4.setFirstName(QLatin1String("Link"));
+    n4.setMiddleName(QLatin1String("Donatella"));
+    n4.setLastName(QLatin1String("CompositionTester"));
+    stContact3.saveDetail(&n4);
+
+    QList<QPair<QContact, QContact> > modifications;
+    modifications.append(qMakePair(QContact(), stContact3));
+
+    QtContactsSqliteExtensions::ContactManagerEngine::ConflictResolutionPolicy policy(QtContactsSqliteExtensions::ContactManagerEngine::PreserveLocalChanges);
+    QContactManager::Error err;
+
+    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(*m_cm);
+    QVERIFY(cme->storeSyncContacts("test3", policy, &modifications, &err));
+
+    QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
+    QContact st1, st2, st3, l, a;
+    foreach (const QContact &curr, allContacts) {
+        QContactName currName = curr.detail<QContactName>();
+        if (currName.firstName() == QLatin1String("Link") && currName.lastName() == QLatin1String("CompositionTester")) {
+            QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
+            if (currSt.syncTarget() == QLatin1String("test1")) {
+                st1 = curr;
+            } else if (currSt.syncTarget() == QLatin1String("test2")) {
+                st2 = curr;
+            } else if (currSt.syncTarget() == QLatin1String("test3")) {
+                st3 = curr;
+            } else if (currSt.syncTarget() == QLatin1String("local")) {
+                l = curr;
+            } else if (currSt.syncTarget() == QLatin1String("aggregate")) {
+                a = curr;
+            }
+        }
+    }
+
+    QVERIFY(st1.id() != QContactId());
+    QVERIFY(st2.id() != QContactId());
+    QVERIFY(st3.id() != QContactId());
+    QVERIFY(l.id() != QContactId());
+    QVERIFY(a.id() != QContactId());
+    QVERIFY(relatedContactIds(st1.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(a.id()));
+    QVERIFY(relatedContactIds(a.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(st1.id()));
+    QVERIFY(relatedContactIds(st2.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(a.id()));
+    QVERIFY(relatedContactIds(a.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(st2.id()));
+    QVERIFY(relatedContactIds(st3.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(a.id()));
+    QVERIFY(relatedContactIds(a.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(st3.id()));
+    QVERIFY(relatedContactIds(l.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(a.id()));
+    QVERIFY(relatedContactIds(a.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(l.id()));
+
+    // The name of the local contact should be prioritized in aggregation
+    QContactName name(a.detail<QContactName>());
+    QCOMPARE(name.middleName(), n2.middleName());
+
+    // The name elements unspecified by the local should be filled by other constituents in indeterminate order
+    QCOMPARE(name.prefix(), n1.prefix());
+    QCOMPARE(name.suffix(), n3.suffix());
+
+    // Change the names in non-local constituents
+    n1 = st1.detail<QContactName>();
+    n1.setPrefix(QLatin1String("Dr."));
+    n1.setMiddleName(QLatin1String("Enzo"));
+    st1.saveDetail(&n1);
+    QVERIFY(m_cm->saveContact(&st1));
+
+    // Update with a definition mask
+    n3 = st2.detail<QContactName>();
+    n3.setMiddleName(QLatin1String("Francois"));
+    n3.setSuffix(QLatin1String("MBA"));
+    st2.saveDetail(&n3);
+    QList<QContact> saveList;
+    saveList.append(st2);
+    QVERIFY(m_cm->saveContacts(&saveList, QList<QContactDetail::DetailType>() << QContactName::Type));
+
+    a = m_cm->contact(retrievalId(a));
+
+    name = a.detail<QContactName>();
+    QCOMPARE(name.middleName(), n2.middleName());
+    QCOMPARE(name.prefix(), n1.prefix());
+    QCOMPARE(name.suffix(), n3.suffix());
+
+    // Update with a definition mask not including name (should not update, but local still has priority)
+    QContactName n5 = st2.detail<QContactName>();
+    n5.setMiddleName(QLatin1String("Guillermo"));
+    n5.setSuffix(QLatin1String("Ph.D"));
+    st2.saveDetail(&n5);
+    QVERIFY(m_cm->saveContacts(&saveList, QList<QContactDetail::DetailType>() << QContactAvatar::Type));
+
+    a = m_cm->contact(retrievalId(a));
+
+    name = a.detail<QContactName>();
+    QCOMPARE(name.middleName(), n2.middleName());
+    QCOMPARE(name.prefix(), n1.prefix());
+    QCOMPARE(name.suffix(), n3.suffix());
+
+    // Update via synchronization
+    QList<QContactId> exportedIds;
+    QList<QContact> syncContacts;
+    QDateTime updatedSyncTime;
+    QVERIFY(cme->fetchSyncContacts("test3", QDateTime(), exportedIds, &syncContacts, 0, 0, &updatedSyncTime, &err));
+    QCOMPARE(syncContacts.count(), 1);
+
+    QContact modified(syncContacts.at(0));
+
+    n4 = modified.detail<QContactName>();
+    n4.setMiddleName(QLatin1String("Hector"));
+    modified.saveDetail(&n4);
+
+    modifications.clear();
+    modifications.append(qMakePair(syncContacts.at(0), modified));
+    QVERIFY(cme->storeSyncContacts("test3", policy, &modifications, &err));
+
+    a = m_cm->contact(retrievalId(a));
+    l = m_cm->contact(retrievalId(l));
+
+    // The sync update will also update the local
+    name = a.detail<QContactName>();
+    QCOMPARE(name.middleName(), n4.middleName());
+    QCOMPARE(name.prefix(), n1.prefix());
+    QCOMPARE(name.suffix(), n3.suffix());
+
+    name = l.detail<QContactName>();
+    QCOMPARE(name.middleName(), n4.middleName());
+
+    // Local changes override other changes
+    n2 = l.detail<QContactName>();
+    n2.setPrefix(QLatin1String("Monsignor"));
+    n2.setMiddleName(QLatin1String("Isaiah"));
+    l.saveDetail(&n2);
+    QVERIFY(m_cm->saveContact(&l));
+
+    a = m_cm->contact(retrievalId(a));
+
+    name = a.detail<QContactName>();
+    QCOMPARE(name.middleName(), n2.middleName());
+    QCOMPARE(name.prefix(), n2.prefix());
+    QCOMPARE(name.suffix(), n3.suffix());
+
+    // Local details should still be preferred
+    name = a.detail<QContactName>();
+    QCOMPARE(name.middleName(), n2.middleName());
+    QCOMPARE(name.prefix(), n2.prefix());
+    QCOMPARE(name.suffix(), n3.suffix());
 }
 
 void tst_Aggregation::promotionToSingleLocal()
