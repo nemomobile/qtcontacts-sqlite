@@ -81,7 +81,7 @@ static const char *createContactsTable =
 
 static const char *createAddressesTable =
         "\n CREATE TABLE Addresses ("
-        "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
         "\n contactId INTEGER KEY ASC,"
         "\n street TEXT,"
         "\n postOfficeBox TEXT,"
@@ -93,7 +93,7 @@ static const char *createAddressesTable =
 
 static const char *createAnniversariesTable =
         "\n CREATE TABLE Anniversaries ("
-        "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
         "\n contactId INTEGER KEY,"
         "\n originalDateTime DATETIME,"
         "\n calendarId TEXT,"
@@ -101,7 +101,7 @@ static const char *createAnniversariesTable =
 
 static const char *createAvatarsTable =
         "\n CREATE TABLE Avatars ("
-        "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
         "\n contactId INTEGER KEY,"
         "\n imageUrl TEXT,"
         "\n videoUrl TEXT,"
@@ -109,21 +109,21 @@ static const char *createAvatarsTable =
 
 static const char *createBirthdaysTable =
         "\n CREATE TABLE Birthdays ("
-        "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
         "\n contactId INTEGER KEY,"
         "\n birthday DATETIME,"
         "\n calendarId TEXT);";
 
 static const char *createEmailAddressesTable =
         "\n CREATE TABLE EmailAddresses ("
-        "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
         "\n contactId INTEGER KEY,"
         "\n emailAddress TEXT,"
         "\n lowerEmailAddress TEXT);";
 
 static const char *createGlobalPresencesTable =
         "\n CREATE TABLE GlobalPresences ("
-        "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
         "\n contactId INTEGER KEY,"
         "\n presenceState INTEGER,"
         "\n timestamp DATETIME,"
@@ -132,32 +132,32 @@ static const char *createGlobalPresencesTable =
 
 static const char *createGuidsTable =
         "\n CREATE TABLE Guids ("
-        "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
         "\n contactId INTEGER KEY,"
         "\n guid TEXT);";
 
 static const char *createHobbiesTable =
         "\n CREATE TABLE Hobbies ("
-        "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
         "\n contactId INTEGER KEY,"
         "\n hobby TEXT);";
 
 static const char *createNicknamesTable =
         "\n CREATE TABLE Nicknames ("
-        "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
         "\n contactId INTEGER KEY,"
         "\n nickname TEXT,"
         "\n lowerNickname TEXT);";
 
 static const char *createNotesTable =
         "\n CREATE TABLE Notes ("
-        "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
         "\n contactId INTEGER KEY,"
         "\n note TEXT);";
 
 static const char *createOnlineAccountsTable =
         "\n CREATE TABLE OnlineAccounts ("
-        "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
         "\n contactId INTEGER KEY,"
         "\n accountUri TEXT,"
         "\n lowerAccountUri TEXT,"
@@ -173,7 +173,7 @@ static const char *createOnlineAccountsTable =
 
 static const char *createOrganizationsTable =
         "\n CREATE TABLE Organizations ("
-        "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
         "\n contactId INTEGER KEY,"
         "\n name TEXT,"
         "\n role TEXT,"
@@ -184,7 +184,7 @@ static const char *createOrganizationsTable =
 
 static const char *createPhoneNumbersTable =
         "\n CREATE TABLE PhoneNumbers ("
-        "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
         "\n contactId INTEGER KEY,"
         "\n phoneNumber TEXT,"
         "\n subTypes TEXT,"
@@ -192,7 +192,7 @@ static const char *createPhoneNumbersTable =
 
 static const char *createPresencesTable =
         "\n CREATE TABLE Presences ("
-        "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
         "\n contactId INTEGER KEY,"
         "\n presenceState INTEGER,"
         "\n timestamp DATETIME,"
@@ -201,27 +201,27 @@ static const char *createPresencesTable =
 
 static const char *createRingtonesTable =
         "\n CREATE TABLE Ringtones ("
-        "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
         "\n contactId INTEGER KEY,"
         "\n audioRingtone TEXT,"
         "\n videoRingtone TEXT);";
 
 static const char *createTagsTable =
         "\n CREATE TABLE Tags ("
-        "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
         "\n contactId INTEGER KEY,"
         "\n tag TEXT);";
 
 static const char *createUrlsTable =
         "\n CREATE TABLE Urls ("
-        "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
         "\n contactId INTEGER KEY,"
         "\n url TEXT,"
         "\n subTypes TEXT);";
 
 static const char *createTpMetadataTable =
         "\n CREATE TABLE TpMetadata ("
-        "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
         "\n contactId INTEGER KEY,"
         "\n telepathyId TEXT,"
         "\n accountId TEXT,"
@@ -229,15 +229,15 @@ static const char *createTpMetadataTable =
 
 static const char *createExtendedDetailsTable =
         "\n CREATE TABLE ExtendedDetails ("
-        "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
         "\n contactId INTEGER KEY,"
         "\n name TEXT,"
         "\n data BLOB);";
 
 static const char *createDetailsTable =
         "\n CREATE TABLE Details ("
-        "\n contactId INTEGER KEY,"
-        "\n detailId INTEGER,"
+        "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
+        "\n contactId INTEGER REFERENCES Contacts (contactId),"
         "\n detail TEXT,"
         "\n detailUri TEXT UNIQUE,"
         "\n linkedDetailUris TEXT,"
@@ -247,8 +247,8 @@ static const char *createDetailsTable =
         "\n modifiable BOOL,"
         "\n nonexportable BOOL);";
 
-static const char *createDetailsJoinIndex =
-        "\n CREATE UNIQUE INDEX DetailsJoinIndex ON Details(detailId, detail);";
+//static const char *createDetailsJoinIndex =
+        //"\n CREATE UNIQUE INDEX DetailsJoinIndex ON Details(detailId, detail);";
 
 static const char *createDetailsRemoveIndex =
         "\n CREATE INDEX DetailsRemoveIndex ON Details(contactId, detail);";
@@ -532,7 +532,6 @@ static const char *createStatements[] =
     createTpMetadataTable,
     createExtendedDetailsTable,
     createDetailsTable,
-    createDetailsJoinIndex,
     createDetailsRemoveIndex,
     createAddressesDetailsContactIdIndex,
     createAnniversariesDetailsContactIdIndex,
@@ -645,7 +644,7 @@ static const char *upgradeVersion8[] = {
 };
 static const char *upgradeVersion9[] = {
     "DROP INDEX DetailsJoinIndex",
-    createDetailsJoinIndex,
+    //createDetailsJoinIndex,
     "PRAGMA user_version=10",
     0 // NULL-terminated
 };

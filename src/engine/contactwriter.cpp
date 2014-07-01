@@ -1401,13 +1401,12 @@ QVariant detailContexts(const QContactDetail &detail)
     return QVariant(contexts.join(separator));
 }
 
-bool writeCommonDetails(ContactsDatabase &db, quint32 contactId, const QVariant &detailId, const QContactDetail &detail,
-                        bool syncable, bool wasLocal, const QString &typeName, QContactManager::Error *error)
+quint32 writeCommonDetails(ContactsDatabase &db, quint32 contactId, const QContactDetail &detail,
+                        bool syncable, bool wasLocal, bool aggregateContact, const QString &typeName, QContactManager::Error *error)
 {
     const QString statement(QStringLiteral(
         " INSERT INTO Details ("
         "  contactId,"
-        "  detailId,"
         "  detail,"
         "  detailUri,"
         "  linkedDetailUris,"
@@ -1418,7 +1417,6 @@ bool writeCommonDetails(ContactsDatabase &db, quint32 contactId, const QVariant 
         "  nonexportable)"
         " VALUES ("
         "  :contactId,"
-        "  :detailId,"
         "  :detail,"
         "  :detailUri,"
         "  :linkedDetailUris,"
@@ -1434,21 +1432,20 @@ bool writeCommonDetails(ContactsDatabase &db, quint32 contactId, const QVariant 
     const QVariant detailUri = detailValue(detail, QContactDetail::FieldDetailUri);
     const QVariant linkedDetailUris = QVariant(detail.linkedDetailUris().join(QStringLiteral(";")));
     const QVariant contexts = detailContexts(detail);
-    const int accessConstraints = static_cast<int>(detail.accessConstraints());
-    const QVariant provenance = detailValue(detail, QContactDetail__FieldProvenance);
+    const QVariant accessConstraints = static_cast<int>(detail.accessConstraints());
+    const QVariant provenance = aggregateContact ? detailValue(detail, QContactDetail__FieldProvenance) : QVariant();
     const QVariant modifiable = wasLocal ? true : (syncable ? detailValue(detail, QContactDetail__FieldModifiable) : QVariant());
     const QVariant nonexportable = detailValue(detail, QContactDetail__FieldNonexportable);
 
-    query.bindValue(0, contactId);
-    query.bindValue(1, detailId);
-    query.bindValue(2, typeName);
-    query.bindValue(3, detailUri);
-    query.bindValue(4, linkedDetailUris);
-    query.bindValue(5, contexts);
-    query.bindValue(6, accessConstraints);
-    query.bindValue(7, provenance);
-    query.bindValue(8, modifiable);
-    query.bindValue(9, nonexportable);
+    query.bindValue(":contactId", contactId);
+    query.bindValue(":detail", typeName);
+    query.bindValue(":detailUri", detailUri);
+    query.bindValue(":linkedDetailUris", linkedDetailUris);
+    query.bindValue(":contexts", contexts);
+    query.bindValue(":accessConstraints", accessConstraints);
+    query.bindValue(":provenance", provenance);
+    query.bindValue(":modifiable", modifiable);
+    query.bindValue(":nonexportable", nonexportable);
 
     if (!query.exec()) {
         query.reportError(QStringLiteral("Failed to write common details for %1\ndetailUri: %2, linkedDetailUris: %3")
@@ -1456,16 +1453,16 @@ bool writeCommonDetails(ContactsDatabase &db, quint32 contactId, const QVariant 
                 .arg(detailUri.value<QString>())
                 .arg(linkedDetailUris.value<QString>()));
         *error = QContactManager::UnspecifiedError;
-        return false;
+        return 0;
     }
 
-    return true;
+    return query.lastInsertId().value<quint32>();
 }
 
-template <typename T> bool ContactWriter::writeCommonDetails(
-            quint32 contactId, const QVariant &detailId, const T &detail, bool syncable, bool wasLocal, QContactManager::Error *error)
+template <typename T> quint32 ContactWriter::writeCommonDetails(
+            quint32 contactId, const T &detail, bool syncable, bool wasLocal, bool aggregateContact, QContactManager::Error *error)
 {
-    return ::writeCommonDetails(m_database, contactId, detailId, detail, syncable, wasLocal, detailTypeName<T>(), error);
+    return ::writeCommonDetails(m_database, contactId, detail, syncable, wasLocal, aggregateContact, detailTypeName<T>(), error);
 }
 
 // Define the type that another type is generated from
@@ -1561,18 +1558,18 @@ template <typename T> bool removeSpecificDetails(ContactsDatabase &db, quint32 c
     return removeSpecificDetails(db, contactId, RemoveStatement<T>::statement, detailTypeName<T>(), error);
 }
 
-void adjustAggregateDetailProperties(QContactDetail &detail, quint32 contactId)
+static void adjustAggregateDetailProperties(QContactDetail &detail)
 {
     // Modify this detail URI to preserve uniqueness - the result must not clash with the
-    // URI in the constituent's copy, nor of any other aggregator of the same detail
+    // URI in the constituent's copy (there won't be any other aggregator of the same detail)
 
-    // If a detail URI is modified for aggregation, we need to insert the ID before the colon
-    const QString prefix(aggregateSyncTarget + QStringLiteral("-%1:").arg(contactId));
+    // If a detail URI is modified for aggregation, we need to insert a prefix
+    const QString prefix(aggregateSyncTarget + QStringLiteral(":"));
 
     QString detailUri = detail.detailUri();
     if (!detailUri.isEmpty() && !detailUri.startsWith(prefix)) {
         if (detailUri.startsWith(aggregateSyncTarget)) {
-            // Remove any invalid aggregate prefix that may have been stored
+            // Remove any invalid aggregate prefix that may have been previously stored
             int index = detailUri.indexOf(QChar::fromLatin1(':'));
             detailUri = detailUri.mid(index + 1);
         }
@@ -1586,7 +1583,7 @@ void adjustAggregateDetailProperties(QContactDetail &detail, quint32 contactId)
             QString &linkedUri(*it);
             if (!linkedUri.isEmpty() && !linkedUri.startsWith(prefix)) {
                 if (linkedUri.startsWith(aggregateSyncTarget)) {
-                    // Remove any invalid aggregate prefix that may have been stored
+                    // Remove any invalid aggregate prefix that may have been previously stored
                     int index = linkedUri.indexOf(QChar::fromLatin1(':'));
                     linkedUri = linkedUri.mid(index + 1);
                 }
@@ -1597,21 +1594,28 @@ void adjustAggregateDetailProperties(QContactDetail &detail, quint32 contactId)
     }
 }
 
-void setDetailProperties(QContactDetail &detail, quint32 contactId, quint32 detailId, const QString &syncTarget, bool aggregateContact)
-{
-    QString provenance;
-    if (aggregateContact) {
-        // Preserve the existing provenance information
-        provenance = detail.value(QContactDetail__FieldProvenance).toString();
-    } else {
-        // This detail is not aggregated from another
-        provenance = QStringLiteral("%1:%2:%3").arg(contactId).arg(detailId).arg(syncTarget);
-    }
-    detail.setValue(QContactDetail__FieldProvenance, provenance);
+namespace {
 
-    if (aggregateContact) {
-        adjustAggregateDetailProperties(detail, contactId);
-    }
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactAddress &detail);
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactAnniversary &detail);
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactAvatar &detail);
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactBirthday &detail);
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactEmailAddress &detail);
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactGlobalPresence &detail);
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactGuid &detail);
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactHobby &detail);
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactNickname &detail);
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactNote &detail);
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactOnlineAccount &detail);
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactOrganization &detail);
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactPhoneNumber &detail);
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactPresence &detail);
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactRingtone &detail);
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactTag &detail);
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactUrl &detail);
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactOriginMetadata &detail);
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactExtendedDetail &detail);
+
 }
 
 template <typename T> bool ContactWriter::writeDetails(
@@ -1641,24 +1645,29 @@ template <typename T> bool ContactWriter::writeDetails(
     for ( ; it != end; ++it) {
         T &detail(*it);
 
-        QVariant detailId;
-        {
-            ContactsDatabase::Query query = bindDetail(contactId, detail);
-            if (!query.exec()) {
-                query.reportError(QStringLiteral("Failed to write details for %1").arg(detailTypeName<T>()));
-                *error = QContactManager::UnspecifiedError;
-                return false;
-            }
-            detailId = query.lastInsertId();
+        if (aggregateContact) {
+            adjustAggregateDetailProperties(detail);
         }
 
-        setDetailProperties(detail, contactId, detailId.value<quint32>(), syncTarget, aggregateContact);
-
-        contact->saveDetail(&detail);
-
-        if (!writeCommonDetails(contactId, detailId, detail, syncable, wasLocal, error)) {
+        quint32 detailId = writeCommonDetails(contactId, detail, syncable, wasLocal, aggregateContact, error);
+        if (detailId == 0) {
             return false;
         }
+
+        if (!aggregateContact) {
+            // Insert the provenance value into the detail, now that we have it
+            const QString provenance(QStringLiteral("%1:%2:%3").arg(contactId).arg(detailId).arg(syncTarget));
+            detail.setValue(QContactDetail__FieldProvenance, provenance);
+        }
+
+        ContactsDatabase::Query query = bindDetail(m_database, contactId, detailId, detail);
+        if (!query.exec()) {
+            query.reportError(QStringLiteral("Failed to write details for %1").arg(detailTypeName<T>()));
+            *error = QContactManager::UnspecifiedError;
+            return false;
+        }
+
+        contact->saveDetail(&detail);
     }
     return true;
 }
@@ -2373,6 +2382,8 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
     }
 }
 
+// TODO: StringPair is typically used for <provenance>:<detailtype> - now that provenance
+// uniquely identifies a detail, we probably don't need detailtype in most uses...
 typedef QPair<QString, QString> StringPair;
 typedef QPair<QContactDetail, QContactDetail> DetailPair;
 
@@ -2526,9 +2537,11 @@ QContactManager::Error ContactWriter::calculateDelta(QContact *contact, const Co
         }
 
         // See if any of these details are modifiable in-place
+        // TODO: This query results in a scan of the details table - we can use cross join to force scan of the temp table
         const QString modifiableDetails(QStringLiteral(
-            " SELECT provenance, detail, Details.contactId FROM Details"
+            " SELECT Contacts.syncTarget, detail, Details.contactId, detailId FROM Details"
             " JOIN temp.modifiableContacts ON temp.modifiableContacts.contactId = Details.contactId"
+            " JOIN Contacts ON temp.modifiableContacts.contactId = Contacts.contactId"
             " WHERE Details.modifiable = 1"
         ));
 
@@ -2537,10 +2550,12 @@ QContactManager::Error ContactWriter::calculateDelta(QContact *contact, const Co
             query.reportError("Failed to select modifiable details");
         } else {
             while (query.next()) {
-                const QString provenance = query.value<QString>(0);
+                const QString syncTarget = query.value<QString>(0);
                 const QString detail = query.value<QString>(1);
                 const quint32 contactId = query.value<quint32>(2);
+                const quint32 detailId = query.value<quint32>(3);
 
+                const QString provenance(QStringLiteral("%1:%2:%3").arg(contactId).arg(detailId).arg(syncTarget));
                 const StringPair identity = qMakePair(provenance, detail);
 
                 for (oit = originalDetails.begin(), oend = originalDetails.end(); oit != oend; ++oit) {
@@ -4575,7 +4590,7 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
             // We need to modify the detail URIs in these details
             QList<QContactDetail>::iterator it = transientDetails.begin(), end = transientDetails.end();
             for ( ; it != end; ++it) {
-                adjustAggregateDetailProperties(*it, contactId);
+                adjustAggregateDetailProperties(*it);
             }
         }
 
@@ -4894,10 +4909,13 @@ ContactsDatabase::Query ContactWriter::bindContactDetails(const QContact &contac
     return query;
 }
 
-ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QContactAddress &detail)
+namespace {
+
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactAddress &detail)
 {
     const QString statement(QStringLiteral(
         " INSERT INTO Addresses ("
+        "  detailId,"
         "  contactId,"
         "  street,"
         "  postOfficeBox,"
@@ -4907,6 +4925,7 @@ ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QCont
         "  country,"
         "  subTypes)"
         " VALUES ("
+        "  :detailId,"
         "  :contactId,"
         "  :street,"
         "  :postOfficeBox,"
@@ -4917,126 +4936,140 @@ ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QCont
         "  :subTypes)"
     ));
 
-    ContactsDatabase::Query query(m_database.prepare(statement));
+    ContactsDatabase::Query query(db.prepare(statement));
 
     typedef QContactAddress T;
-    query.bindValue(0, contactId);
-    query.bindValue(1, detail.value<QString>(T::FieldStreet).trimmed());
-    query.bindValue(2, detail.value<QString>(T::FieldPostOfficeBox).trimmed());
-    query.bindValue(3, detail.value<QString>(T::FieldRegion).trimmed());
-    query.bindValue(4, detail.value<QString>(T::FieldLocality).trimmed());
-    query.bindValue(5, detail.value<QString>(T::FieldPostcode).trimmed());
-    query.bindValue(6, detail.value<QString>(T::FieldCountry).trimmed());
-    query.bindValue(7, Address::subTypeList(detail.subTypes()).join(QLatin1String(";")));
+    query.addBindValue(detailId);
+    query.addBindValue(contactId);
+    query.addBindValue(detail.value<QString>(T::FieldStreet).trimmed());
+    query.addBindValue(detail.value<QString>(T::FieldPostOfficeBox).trimmed());
+    query.addBindValue(detail.value<QString>(T::FieldRegion).trimmed());
+    query.addBindValue(detail.value<QString>(T::FieldLocality).trimmed());
+    query.addBindValue(detail.value<QString>(T::FieldPostcode).trimmed());
+    query.addBindValue(detail.value<QString>(T::FieldCountry).trimmed());
+    query.addBindValue(Address::subTypeList(detail.subTypes()).join(QLatin1String(";")));
     return query;
 }
 
-ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QContactAnniversary &detail)
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactAnniversary &detail)
 {
     const QString statement(QStringLiteral(
         " INSERT INTO Anniversaries ("
+        "  detailId,"
         "  contactId,"
         "  originalDateTime,"
         "  calendarId,"
         "  subType)"
         " VALUES ("
+        "  :detailId,"
         "  :contactId,"
         "  :originalDateTime,"
         "  :calendarId,"
         "  :subType)"
     ));
 
-    ContactsDatabase::Query query(m_database.prepare(statement));
+    ContactsDatabase::Query query(db.prepare(statement));
 
     typedef QContactAnniversary T;
-    query.bindValue(0, contactId);
-    query.bindValue(1, detailValue(detail, T::FieldOriginalDate));
-    query.bindValue(2, detailValue(detail, T::FieldCalendarId));
-    query.bindValue(3, Anniversary::subType(detail.subType()));
+    query.addBindValue(detailId);
+    query.addBindValue(contactId);
+    query.addBindValue(detailValue(detail, T::FieldOriginalDate));
+    query.addBindValue(detailValue(detail, T::FieldCalendarId));
+    query.addBindValue(Anniversary::subType(detail.subType()));
     return query;
 }
 
-
-ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QContactAvatar &detail)
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactAvatar &detail)
 {
     const QString statement(QStringLiteral(
         " INSERT INTO Avatars ("
+        "  detailId,"
         "  contactId,"
         "  imageUrl,"
         "  videoUrl,"
         "  avatarMetadata)"
         " VALUES ("
+        "  :detailId,"
         "  :contactId,"
         "  :imageUrl,"
         "  :videoUrl,"
         "  :avatarMetadata)"
     ));
 
-    ContactsDatabase::Query query(m_database.prepare(statement));
+    ContactsDatabase::Query query(db.prepare(statement));
 
     typedef QContactAvatar T;
-    query.bindValue(0, contactId);
-    query.bindValue(1, detail.value<QString>(T::FieldImageUrl).trimmed());
-    query.bindValue(2, detail.value<QString>(T::FieldVideoUrl).trimmed());
-    query.bindValue(3, detailValue(detail, QContactAvatar__FieldAvatarMetadata));
+    query.addBindValue(detailId);
+    query.addBindValue(contactId);
+    query.addBindValue(detail.value<QString>(T::FieldImageUrl).trimmed());
+    query.addBindValue(detail.value<QString>(T::FieldVideoUrl).trimmed());
+    query.addBindValue(detailValue(detail, QContactAvatar__FieldAvatarMetadata));
     return query;
 }
 
-ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QContactBirthday &detail)
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactBirthday &detail)
 {
     const QString statement(QStringLiteral(
         " INSERT INTO Birthdays ("
+        "  detailId,"
         "  contactId,"
         "  birthday,"
         "  calendarId)"
         " VALUES ("
+        "  :detailId,"
         "  :contactId,"
         "  :birthday,"
         "  :calendarId)"
     ));
 
-    ContactsDatabase::Query query(m_database.prepare(statement));
+    ContactsDatabase::Query query(db.prepare(statement));
 
     typedef QContactBirthday T;
-    query.bindValue(0, contactId);
-    query.bindValue(1, detailValue(detail, T::FieldBirthday));
-    query.bindValue(2, detailValue(detail, T::FieldCalendarId));
+    query.addBindValue(detailId);
+    query.addBindValue(contactId);
+    query.addBindValue(detailValue(detail, T::FieldBirthday));
+    query.addBindValue(detailValue(detail, T::FieldCalendarId));
     return query;
 }
 
-ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QContactEmailAddress &detail)
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactEmailAddress &detail)
 {
     const QString statement(QStringLiteral(
         " INSERT INTO EmailAddresses ("
+        "  detailId,"
         "  contactId,"
         "  emailAddress,"
         "  lowerEmailAddress)"
         " VALUES ("
+        "  :detailId,"
         "  :contactId,"
         "  :emailAddress,"
         "  :lowerEmailAddress)"
     ));
 
-    ContactsDatabase::Query query(m_database.prepare(statement));
+    ContactsDatabase::Query query(db.prepare(statement));
 
     typedef QContactEmailAddress T;
     const QString address(detail.value<QString>(T::FieldEmailAddress).trimmed());
-    query.bindValue(0, contactId);
-    query.bindValue(1, address);
-    query.bindValue(2, address.toLower());
+    query.addBindValue(detailId);
+    query.addBindValue(contactId);
+    query.addBindValue(address);
+    query.addBindValue(address.toLower());
     return query;
 }
 
-ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QContactGlobalPresence &detail)
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactGlobalPresence &detail)
 {
     const QString statement(QStringLiteral(
         " INSERT INTO GlobalPresences ("
+        "  detailId,"
         "  contactId,"
         "  presenceState,"
         "  timestamp,"
         "  nickname,"
         "  customMessage)"
         " VALUES ("
+        "  :detailId,"
         "  :contactId,"
         "  :presenceState,"
         "  :timestamp,"
@@ -5044,101 +5077,115 @@ ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QCont
         "  :customMessage)"
     ));
 
-    ContactsDatabase::Query query(m_database.prepare(statement));
+    ContactsDatabase::Query query(db.prepare(statement));
 
     typedef QContactGlobalPresence T;
-    query.bindValue(0, contactId);
-    query.bindValue(1, detailValue(detail, T::FieldPresenceState));
-    query.bindValue(2, ContactsDatabase::dateTimeString(detail.value<QDateTime>(T::FieldTimestamp).toUTC()));
-    query.bindValue(3, detail.value<QString>(T::FieldNickname).trimmed());
-    query.bindValue(4, detail.value<QString>(T::FieldCustomMessage).trimmed());
+    query.addBindValue(detailId);
+    query.addBindValue(contactId);
+    query.addBindValue(detailValue(detail, T::FieldPresenceState));
+    query.addBindValue(ContactsDatabase::dateTimeString(detail.value<QDateTime>(T::FieldTimestamp).toUTC()));
+    query.addBindValue(detail.value<QString>(T::FieldNickname).trimmed());
+    query.addBindValue(detail.value<QString>(T::FieldCustomMessage).trimmed());
     return query;
 }
 
-ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QContactGuid &detail)
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactGuid &detail)
 {
     const QString statement(QStringLiteral(
         " INSERT INTO Guids ("
+        "  detailId,"
         "  contactId,"
         "  guid)"
         " VALUES ("
+        "  :detailId,"
         "  :contactId,"
         "  :guid)"
     ));
 
-    ContactsDatabase::Query query(m_database.prepare(statement));
+    ContactsDatabase::Query query(db.prepare(statement));
 
     typedef QContactGuid T;
-    query.bindValue(0, contactId);
-    query.bindValue(1, detailValue(detail, T::FieldGuid));
+    query.addBindValue(detailId);
+    query.addBindValue(contactId);
+    query.addBindValue(detailValue(detail, T::FieldGuid));
     return query;
 }
 
-ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QContactHobby &detail)
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactHobby &detail)
 {
     const QString statement(QStringLiteral(
         " INSERT INTO Hobbies ("
+        "  detailId,"
         "  contactId,"
         "  hobby)"
         " VALUES ("
+        "  :detailId,"
         "  :contactId,"
         "  :hobby)"
     ));
 
-    ContactsDatabase::Query query(m_database.prepare(statement));
+    ContactsDatabase::Query query(db.prepare(statement));
 
     typedef QContactHobby T;
-    query.bindValue(0, contactId);
-    query.bindValue(1, detailValue(detail, T::FieldHobby));
+    query.addBindValue(detailId);
+    query.addBindValue(contactId);
+    query.addBindValue(detailValue(detail, T::FieldHobby));
     return query;
 }
 
-ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QContactNickname &detail)
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactNickname &detail)
 {
     const QString statement(QStringLiteral(
         " INSERT INTO Nicknames ("
+        "  detailId,"
         "  contactId,"
         "  nickname,"
         "  lowerNickname)"
         " VALUES ("
+        "  :detailId,"
         "  :contactId,"
         "  :nickname,"
         "  :lowerNickname)"
     ));
 
-    ContactsDatabase::Query query(m_database.prepare(statement));
+    ContactsDatabase::Query query(db.prepare(statement));
 
     typedef QContactNickname T;
     const QString nickname(detail.value<QString>(T::FieldNickname).trimmed());
-    query.bindValue(0, contactId);
-    query.bindValue(1, nickname);
-    query.bindValue(2, nickname.toLower());
+    query.addBindValue(detailId);
+    query.addBindValue(contactId);
+    query.addBindValue(nickname);
+    query.addBindValue(nickname.toLower());
     return query;
 }
 
-ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QContactNote &detail)
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactNote &detail)
 {
     const QString statement(QStringLiteral(
         " INSERT INTO Notes ("
+        "  detailId,"
         "  contactId,"
         "  note)"
         " VALUES ("
+        "  :detailId,"
         "  :contactId,"
         "  :note)"
     ));
 
-    ContactsDatabase::Query query(m_database.prepare(statement));
+    ContactsDatabase::Query query(db.prepare(statement));
 
     typedef QContactNote T;
-    query.bindValue(0, contactId);
-    query.bindValue(1, detailValue(detail, T::FieldNote));
+    query.addBindValue(detailId);
+    query.addBindValue(contactId);
+    query.addBindValue(detailValue(detail, T::FieldNote));
     return query;
 }
 
-ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QContactOnlineAccount &detail)
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactOnlineAccount &detail)
 {
     const QString statement(QStringLiteral(
         " INSERT INTO OnlineAccounts ("
+        "  detailId,"
         "  contactId,"
         "  accountUri,"
         "  lowerAccountUri,"
@@ -5152,6 +5199,7 @@ ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QCont
         "  accountDisplayName,"
         "  serviceProviderDisplayName)"
         " VALUES ("
+        "  :detailId,"
         "  :contactId,"
         "  :accountUri,"
         "  :lowerAccountUri,"
@@ -5166,29 +5214,31 @@ ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QCont
         "  :serviceProviderDisplayName)"
     ));
 
-    ContactsDatabase::Query query(m_database.prepare(statement));
+    ContactsDatabase::Query query(db.prepare(statement));
 
     typedef QContactOnlineAccount T;
     const QString uri(detail.value<QString>(T::FieldAccountUri).trimmed());
-    query.bindValue(0, contactId);
-    query.bindValue(1, uri);
-    query.bindValue(2, uri.toLower());
-    query.bindValue(3, OnlineAccount::protocol(detail.protocol()));
-    query.bindValue(4, detailValue(detail, T::FieldServiceProvider));
-    query.bindValue(5, detailValue(detail, T::FieldCapabilities).value<QStringList>().join(QLatin1String(";")));
-    query.bindValue(6, OnlineAccount::subTypeList(detail.subTypes()).join(QLatin1String(";")));
-    query.bindValue(7, detailValue(detail, QContactOnlineAccount__FieldAccountPath));
-    query.bindValue(8, detailValue(detail, QContactOnlineAccount__FieldAccountIconPath));
-    query.bindValue(9, detailValue(detail, QContactOnlineAccount__FieldEnabled));
-    query.bindValue(10, detailValue(detail, QContactOnlineAccount__FieldAccountDisplayName));
-    query.bindValue(11, detailValue(detail, QContactOnlineAccount__FieldServiceProviderDisplayName));
+    query.addBindValue(detailId);
+    query.addBindValue(contactId);
+    query.addBindValue(uri);
+    query.addBindValue(uri.toLower());
+    query.addBindValue(OnlineAccount::protocol(detail.protocol()));
+    query.addBindValue(detailValue(detail, T::FieldServiceProvider));
+    query.addBindValue(detailValue(detail, T::FieldCapabilities).value<QStringList>().join(QLatin1String(";")));
+    query.addBindValue(OnlineAccount::subTypeList(detail.subTypes()).join(QLatin1String(";")));
+    query.addBindValue(detailValue(detail, QContactOnlineAccount__FieldAccountPath));
+    query.addBindValue(detailValue(detail, QContactOnlineAccount__FieldAccountIconPath));
+    query.addBindValue(detailValue(detail, QContactOnlineAccount__FieldEnabled));
+    query.addBindValue(detailValue(detail, QContactOnlineAccount__FieldAccountDisplayName));
+    query.addBindValue(detailValue(detail, QContactOnlineAccount__FieldServiceProviderDisplayName));
     return query;
 }
 
-ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QContactOrganization &detail)
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactOrganization &detail)
 {
     const QString statement(QStringLiteral(
         " INSERT INTO Organizations ("
+        "  detailId,"
         "  contactId,"
         "  name,"
         "  role,"
@@ -5197,6 +5247,7 @@ ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QCont
         "  department,"
         "  logoUrl)"
         " VALUES ("
+        "  :detailId,"
         "  :contactId,"
         "  :name,"
         "  :role,"
@@ -5206,54 +5257,60 @@ ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QCont
         "  :logoUrl)"
     ));
 
-    ContactsDatabase::Query query(m_database.prepare(statement));
+    ContactsDatabase::Query query(db.prepare(statement));
 
     typedef QContactOrganization T;
-    query.bindValue(0, contactId);
-    query.bindValue(1, detail.value<QString>(T::FieldName).trimmed());
-    query.bindValue(2, detail.value<QString>(T::FieldRole).trimmed());
-    query.bindValue(3, detail.value<QString>(T::FieldTitle).trimmed());
-    query.bindValue(4, detail.value<QString>(T::FieldLocation).trimmed());
-    query.bindValue(5, detail.department().join(QLatin1String(";")));
-    query.bindValue(6, detail.value<QString>(T::FieldLogoUrl).trimmed());
+    query.addBindValue(detailId);
+    query.addBindValue(contactId);
+    query.addBindValue(detail.value<QString>(T::FieldName).trimmed());
+    query.addBindValue(detail.value<QString>(T::FieldRole).trimmed());
+    query.addBindValue(detail.value<QString>(T::FieldTitle).trimmed());
+    query.addBindValue(detail.value<QString>(T::FieldLocation).trimmed());
+    query.addBindValue(detail.department().join(QLatin1String(";")));
+    query.addBindValue(detail.value<QString>(T::FieldLogoUrl).trimmed());
     return query;
 }
 
-ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QContactPhoneNumber &detail)
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactPhoneNumber &detail)
 {
     const QString statement(QStringLiteral(
         " INSERT INTO PhoneNumbers ("
+        "  detailId,"
         "  contactId,"
         "  phoneNumber,"
         "  subTypes,"
         "  normalizedNumber)"
         " VALUES ("
+        "  :detailId,"
         "  :contactId,"
         "  :phoneNumber,"
         "  :subTypes,"
         "  :normalizedNumber)"
     ));
 
-    ContactsDatabase::Query query(m_database.prepare(statement));
+    ContactsDatabase::Query query(db.prepare(statement));
 
     typedef QContactPhoneNumber T;
-    query.bindValue(0, contactId);
-    query.bindValue(1, detail.value<QString>(T::FieldNumber).trimmed());
-    query.bindValue(2, PhoneNumber::subTypeList(detail.subTypes()).join(QLatin1String(";")));
-    query.bindValue(3, QVariant(ContactsEngine::normalizedPhoneNumber(detail.number())));
+    query.addBindValue(detailId);
+    query.addBindValue(contactId);
+    query.addBindValue(detail.value<QString>(T::FieldNumber).trimmed());
+    query.addBindValue(PhoneNumber::subTypeList(detail.subTypes()).join(QLatin1String(";")));
+    query.addBindValue(QVariant(ContactsEngine::normalizedPhoneNumber(detail.number())));
     return query;
 }
 
-ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QContactPresence &detail)
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactPresence &detail)
 {
     const QString statement(QStringLiteral(
         " INSERT INTO Presences ("
+        "  detailId,"
         "  contactId,"
         "  presenceState,"
         "  timestamp,"
         "  nickname,"
         "  customMessage)"
         " VALUES ("
+        "  :detailId,"
         "  :contactId,"
         "  :presenceState,"
         "  :timestamp,"
@@ -5261,124 +5318,142 @@ ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QCont
         "  :customMessage)"
     ));
 
-    ContactsDatabase::Query query(m_database.prepare(statement));
+    ContactsDatabase::Query query(db.prepare(statement));
 
     typedef QContactPresence T;
-    query.bindValue(0, contactId);
-    query.bindValue(1, detailValue(detail, T::FieldPresenceState));
-    query.bindValue(2, ContactsDatabase::dateTimeString(detail.value<QDateTime>(T::FieldTimestamp).toUTC()));
-    query.bindValue(3, detail.value<QString>(T::FieldNickname).trimmed());
-    query.bindValue(4, detail.value<QString>(T::FieldCustomMessage).trimmed());
+    query.addBindValue(detailId);
+    query.addBindValue(contactId);
+    query.addBindValue(detailValue(detail, T::FieldPresenceState));
+    query.addBindValue(ContactsDatabase::dateTimeString(detail.value<QDateTime>(T::FieldTimestamp).toUTC()));
+    query.addBindValue(detail.value<QString>(T::FieldNickname).trimmed());
+    query.addBindValue(detail.value<QString>(T::FieldCustomMessage).trimmed());
     return query;
 }
 
-ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QContactRingtone &detail)
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactRingtone &detail)
 {
     const QString statement(QStringLiteral(
         " INSERT INTO Ringtones ("
+        "  detailId,"
         "  contactId,"
         "  audioRingtone,"
         "  videoRingtone)"
         " VALUES ("
+        "  :detailId,"
         "  :contactId,"
         "  :audioRingtone,"
         "  :videoRingtone)"
     ));
 
-    ContactsDatabase::Query query(m_database.prepare(statement));
+    ContactsDatabase::Query query(db.prepare(statement));
 
     typedef QContactRingtone T;
-    query.bindValue(0, contactId);
-    query.bindValue(1, detail.value<QString>(T::FieldAudioRingtoneUrl).trimmed());
-    query.bindValue(2, detail.value<QString>(T::FieldVideoRingtoneUrl).trimmed());
+    query.addBindValue(detailId);
+    query.addBindValue(contactId);
+    query.addBindValue(detail.value<QString>(T::FieldAudioRingtoneUrl).trimmed());
+    query.addBindValue(detail.value<QString>(T::FieldVideoRingtoneUrl).trimmed());
     return query;
 }
 
-ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QContactTag &detail)
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactTag &detail)
 {
     const QString statement(QStringLiteral(
         " INSERT INTO Tags ("
+        "  detailId,"
         "  contactId,"
         "  tag)"
         " VALUES ("
+        "  :detailId,"
         "  :contactId,"
         "  :tag)"
     ));
 
-    ContactsDatabase::Query query(m_database.prepare(statement));
+    ContactsDatabase::Query query(db.prepare(statement));
 
     typedef QContactTag T;
-    query.bindValue(0, contactId);
-    query.bindValue(1, detail.value<QString>(T::FieldTag).trimmed());
+    query.addBindValue(detailId);
+    query.addBindValue(contactId);
+    query.addBindValue(detail.value<QString>(T::FieldTag).trimmed());
     return query;
 }
 
-ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QContactUrl &detail)
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactUrl &detail)
 {
     const QString statement(QStringLiteral(
         " INSERT INTO Urls ("
+        "  detailId,"
         "  contactId,"
         "  url,"
         "  subTypes)"
         " VALUES ("
+        "  :detailId,"
         "  :contactId,"
         "  :url,"
         "  :subTypes)"
     ));
 
-    ContactsDatabase::Query query(m_database.prepare(statement));
+    ContactsDatabase::Query query(db.prepare(statement));
 
     typedef QContactUrl T;
-    query.bindValue(0, contactId);
-    query.bindValue(1, detail.value<QString>(T::FieldUrl).trimmed());
-    query.bindValue(2, Url::subType(detail.subType()));
+    query.addBindValue(detailId);
+    query.addBindValue(contactId);
+    query.addBindValue(detail.value<QString>(T::FieldUrl).trimmed());
+    query.addBindValue(Url::subType(detail.subType()));
     return query;
 }
 
-ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QContactOriginMetadata &detail)
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactOriginMetadata &detail)
 {
     const QString statement(QStringLiteral(
         " INSERT INTO TpMetadata ("
+        "  detailId,"
         "  contactId,"
         "  telepathyId,"
         "  accountId,"
         "  accountEnabled)"
         " VALUES ("
+        "  :detailId,"
         "  :contactId,"
         "  :telepathyId,"
         "  :accountId,"
         "  :accountEnabled)"
     ));
 
-    ContactsDatabase::Query query(m_database.prepare(statement));
+    ContactsDatabase::Query query(db.prepare(statement));
 
     typedef QContactOriginMetadata T;
-    query.bindValue(0, contactId);
-    query.bindValue(1, detailValue(detail, T::FieldId));
-    query.bindValue(2, detailValue(detail, T::FieldGroupId));
-    query.bindValue(3, detailValue(detail, T::FieldEnabled));
+    query.addBindValue(detailId);
+    query.addBindValue(contactId);
+    query.addBindValue(detailValue(detail, T::FieldId));
+    query.addBindValue(detailValue(detail, T::FieldGroupId));
+    query.addBindValue(detailValue(detail, T::FieldEnabled));
     return query;
 }
 
-ContactsDatabase::Query ContactWriter::bindDetail(quint32 contactId, const QContactExtendedDetail &detail)
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactExtendedDetail &detail)
 {
     const QString statement(QStringLiteral(
         " INSERT INTO ExtendedDetails ("
+        "  detailId,"
         "  contactId,"
         "  name,"
         "  data)"
         " VALUES ("
+        "  :detailId,"
         "  :contactId,"
         "  :name,"
         "  :data)"
     ));
 
-    ContactsDatabase::Query query(m_database.prepare(statement));
+    ContactsDatabase::Query query(db.prepare(statement));
 
     typedef QContactExtendedDetail T;
-    query.bindValue(0, contactId);
-    query.bindValue(1, detailValue(detail, T::FieldName));
-    query.bindValue(2, detailValue(detail, T::FieldData));
+    query.addBindValue(detailId);
+    query.addBindValue(contactId);
+    query.addBindValue(detailValue(detail, T::FieldName));
+    query.addBindValue(detailValue(detail, T::FieldData));
     return query;
+}
+
 }
 
