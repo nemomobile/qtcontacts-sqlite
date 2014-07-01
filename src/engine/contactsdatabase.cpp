@@ -248,7 +248,7 @@ static const char *createDetailsTable =
         "\n nonexportable BOOL);";
 
 static const char *createDetailsJoinIndex =
-        "\n CREATE INDEX DetailsJoinIndex ON Details(detailId, detail);";
+        "\n CREATE UNIQUE INDEX DetailsJoinIndex ON Details(detailId, detail);";
 
 static const char *createDetailsRemoveIndex =
         "\n CREATE INDEX DetailsRemoveIndex ON Details(contactId, detail);";
@@ -637,6 +637,12 @@ static const char *upgradeVersion8[] = {
     "PRAGMA user_version=9",
     0 // NULL-terminated
 };
+static const char *upgradeVersion9[] = {
+    "DROP INDEX DetailsJoinIndex",
+    createDetailsJoinIndex,
+    "PRAGMA user_version=10",
+    0 // NULL-terminated
+};
 
 typedef bool (*UpgradeFunction)(QSqlDatabase &database);
 
@@ -711,9 +717,10 @@ static UpgradeOperation upgradeVersions[] = {
     { 0,                        upgradeVersion6 },
     { updateNormalizedNumbers,  upgradeVersion7 },
     { 0,                        upgradeVersion8 },
+    { 0,                        upgradeVersion9 },
 };
 
-static const int currentSchemaVersion = 9;
+static const int currentSchemaVersion = 10;
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {
