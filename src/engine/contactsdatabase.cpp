@@ -219,13 +219,13 @@ static const char *createUrlsTable =
         "\n url TEXT,"
         "\n subTypes TEXT);";
 
-static const char *createTpMetadataTable =
-        "\n CREATE TABLE TpMetadata ("
+static const char *createOriginMetadataTable =
+        "\n CREATE TABLE OriginMetadata ("
         "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
         "\n contactId INTEGER KEY,"
-        "\n telepathyId TEXT,"
-        "\n accountId TEXT,"
-        "\n accountEnabled BOOL);";
+        "\n id TEXT,"
+        "\n groupId TEXT,"
+        "\n enabled BOOL);";
 
 static const char *createExtendedDetailsTable =
         "\n CREATE TABLE ExtendedDetails ("
@@ -247,50 +247,47 @@ static const char *createDetailsTable =
         "\n modifiable BOOL,"
         "\n nonexportable BOOL);";
 
-//static const char *createDetailsJoinIndex =
-        //"\n CREATE UNIQUE INDEX DetailsJoinIndex ON Details(detailId, detail);";
-
 static const char *createDetailsRemoveIndex =
         "\n CREATE INDEX DetailsRemoveIndex ON Details(contactId, detail);";
 
 static const char *createAddressesDetailsContactIdIndex =
-        "\n CREATE INDEX createAddressesDetailsContactIdIndex ON Addresses(contactId);";
+        "\n CREATE INDEX AddressesDetailsContactIdIndex ON Addresses(contactId);";
 static const char *createAnniversariesDetailsContactIdIndex =
-        "\n CREATE INDEX createAnniversariesDetailsContactIdIndex ON Anniversaries(contactId);";
+        "\n CREATE INDEX AnniversariesDetailsContactIdIndex ON Anniversaries(contactId);";
 static const char *createAvatarsDetailsContactIdIndex =
-        "\n CREATE INDEX createAvatarsDetailsContactIdIndex ON Avatars(contactId);";
+        "\n CREATE INDEX AvatarsDetailsContactIdIndex ON Avatars(contactId);";
 static const char *createBirthdaysDetailsContactIdIndex =
-        "\n CREATE INDEX createBirthdaysDetailsContactIdIndex ON Birthdays(contactId);";
+        "\n CREATE INDEX BirthdaysDetailsContactIdIndex ON Birthdays(contactId);";
 static const char *createEmailAddressesDetailsContactIdIndex =
-        "\n CREATE INDEX createEmailAddressesDetailsContactIdIndex ON EmailAddresses(contactId);";
+        "\n CREATE INDEX EmailAddressesDetailsContactIdIndex ON EmailAddresses(contactId);";
 static const char *createGlobalPresencesDetailsContactIdIndex =
-        "\n CREATE INDEX createGlobalPresencesDetailsContactIdIndex ON GlobalPresences(contactId);";
+        "\n CREATE INDEX GlobalPresencesDetailsContactIdIndex ON GlobalPresences(contactId);";
 static const char *createGuidsDetailsContactIdIndex =
-        "\n CREATE INDEX createGuidsDetailsContactIdIndex ON Guids(contactId);";
+        "\n CREATE INDEX GuidsDetailsContactIdIndex ON Guids(contactId);";
 static const char *createHobbiesDetailsContactIdIndex =
-        "\n CREATE INDEX createHobbiesDetailsContactIdIndex ON Hobbies(contactId);";
+        "\n CREATE INDEX HobbiesDetailsContactIdIndex ON Hobbies(contactId);";
 static const char *createNicknamesDetailsContactIdIndex =
-        "\n CREATE INDEX createNicknamesDetailsContactIdIndex ON Nicknames(contactId);";
+        "\n CREATE INDEX NicknamesDetailsContactIdIndex ON Nicknames(contactId);";
 static const char *createNotesDetailsContactIdIndex =
-        "\n CREATE INDEX createNotesDetailsContactIdIndex ON Notes(contactId);";
+        "\n CREATE INDEX NotesDetailsContactIdIndex ON Notes(contactId);";
 static const char *createOnlineAccountsDetailsContactIdIndex =
-        "\n CREATE INDEX createOnlineAccountsDetailsContactIdIndex ON OnlineAccounts(contactId);";
+        "\n CREATE INDEX OnlineAccountsDetailsContactIdIndex ON OnlineAccounts(contactId);";
 static const char *createOrganizationsDetailsContactIdIndex =
-        "\n CREATE INDEX createOrganizationsDetailsContactIdIndex ON Organizations(contactId);";
+        "\n CREATE INDEX OrganizationsDetailsContactIdIndex ON Organizations(contactId);";
 static const char *createPhoneNumbersDetailsContactIdIndex =
-        "\n CREATE INDEX createPhoneNumbersDetailsContactIdIndex ON PhoneNumbers(contactId);";
+        "\n CREATE INDEX PhoneNumbersDetailsContactIdIndex ON PhoneNumbers(contactId);";
 static const char *createPresencesDetailsContactIdIndex =
-        "\n CREATE INDEX createPresencesDetailsContactIdIndex ON Presences(contactId);";
+        "\n CREATE INDEX PresencesDetailsContactIdIndex ON Presences(contactId);";
 static const char *createRingtonesDetailsContactIdIndex =
-        "\n CREATE INDEX createRingtonesDetailsContactIdIndex ON Ringtones(contactId);";
+        "\n CREATE INDEX RingtonesDetailsContactIdIndex ON Ringtones(contactId);";
 static const char *createTagsDetailsContactIdIndex =
-        "\n CREATE INDEX createTagsDetailsContactIdIndex ON Tags(contactId);";
+        "\n CREATE INDEX TagsDetailsContactIdIndex ON Tags(contactId);";
 static const char *createUrlsDetailsContactIdIndex =
-        "\n CREATE INDEX createUrlsDetailsContactIdIndex ON Urls(contactId);";
-static const char *createTpMetadataDetailsContactIdIndex =
-        "\n CREATE INDEX createTpMetadataDetailsContactIdIndex ON TpMetadata(contactId);";
+        "\n CREATE INDEX UrlsDetailsContactIdIndex ON Urls(contactId);";
+static const char *createOriginMetadataDetailsContactIdIndex =
+        "\n CREATE INDEX OriginMetadataDetailsContactIdIndex ON OriginMetadata(contactId);";
 static const char *createExtendedDetailsContactIdIndex =
-        "\n CREATE INDEX createExtendedDetailsContactIdIndex ON ExtendedDetails(contactId);";
+        "\n CREATE INDEX ExtendedDetailsContactIdIndex ON ExtendedDetails(contactId);";
 
 static const char *createIdentitiesTable =
         "\n CREATE Table Identities ("
@@ -339,7 +336,7 @@ static const char *createRemoveTrigger =
         "\n  DELETE FROM Ringtones WHERE contactId = old.contactId;"
         "\n  DELETE FROM Tags WHERE contactId = old.contactId;"
         "\n  DELETE FROM Urls WHERE contactId = old.contactId;"
-        "\n  DELETE FROM TpMetadata WHERE contactId = old.contactId;"
+        "\n  DELETE FROM OriginMetadata WHERE contactId = old.contactId;"
         "\n  DELETE FROM ExtendedDetails WHERE contactId = old.contactId;"
         "\n  DELETE FROM Details WHERE contactId = old.contactId;"
         "\n  DELETE FROM Identities WHERE contactId = old.contactId;"
@@ -503,11 +500,11 @@ static const char *createOnlineAccountsIndex =
 static const char *createNicknamesIndex =
         "\n CREATE INDEX NicknamesIndex ON Nicknames(lowerNickname);";
 
-static const char *createTpMetadataTelepathyIdIndex =
-        "\n CREATE INDEX TpMetadataTelepathyIdIndex ON TpMetadata(telepathyId);";
+static const char *createOriginMetadataIdIndex =
+        "\n CREATE INDEX OriginMetadataIdIndex ON OriginMetadata(id);";
 
-static const char *createTpMetadataAccountIdIndex =
-        "\n CREATE INDEX TpMetadataAccountIdIndex ON TpMetadata(accountId);";
+static const char *createOriginMetadataGroupIdIndex =
+        "\n CREATE INDEX OriginMetadataGroupIdIndex ON OriginMetadata(groupId);";
 
 static const char *createStatements[] =
 {
@@ -529,7 +526,7 @@ static const char *createStatements[] =
     createRingtonesTable,
     createTagsTable,
     createUrlsTable,
-    createTpMetadataTable,
+    createOriginMetadataTable,
     createExtendedDetailsTable,
     createDetailsTable,
     createDetailsRemoveIndex,
@@ -550,7 +547,7 @@ static const char *createStatements[] =
     createRingtonesDetailsContactIdIndex,
     createTagsDetailsContactIdIndex,
     createUrlsDetailsContactIdIndex,
-    createTpMetadataDetailsContactIdIndex,
+    createOriginMetadataDetailsContactIdIndex,
     createExtendedDetailsContactIdIndex,
     createIdentitiesTable,
     createRelationshipsTable,
@@ -567,8 +564,8 @@ static const char *createStatements[] =
     createEmailAddressesIndex,
     createOnlineAccountsIndex,
     createNicknamesIndex,
-    createTpMetadataTelepathyIdIndex,
-    createTpMetadataAccountIdIndex,
+    createOriginMetadataIdIndex,
+    createOriginMetadataGroupIdIndex,
     createContactsModifiedIndex,
     createContactsIsFavoriteIndex,
     createContactsHasPhoneNumberIndex,
@@ -644,8 +641,499 @@ static const char *upgradeVersion8[] = {
 };
 static const char *upgradeVersion9[] = {
     "DROP INDEX DetailsJoinIndex",
+    // Don't recreate the index since it doesn't exist in versions after 10:
     //createDetailsJoinIndex,
     "PRAGMA user_version=10",
+    0 // NULL-terminated
+};
+static const char *upgradeVersion10[] = {
+    // Drop the remove trigger
+    "DROP TRIGGER RemoveContactDetails",
+    // Preserve the existing state of the Details table
+    "ALTER TABLE Details RENAME TO OldDetails",
+    // Create an index to map new version of detail rows to the old ones
+    "CREATE TEMP TABLE DetailsIndexing("
+        "detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
+        "oldDetailId INTEGER,"
+        "contactId INTEGER,"
+        "detail TEXT,"
+        "syncTarget TEXT,"
+        "provenance TEXT)",
+    "INSERT INTO DetailsIndexing(oldDetailId, contactId, detail, syncTarget, provenance) "
+        "SELECT OD.detailId, OD.contactId, OD.detail, Contacts.syncTarget, CASE WHEN Contacts.syncTarget = 'aggregate' THEN OD.provenance ELSE '' END "
+        "FROM OldDetails AS OD "
+        "JOIN Contacts ON Contacts.contactId = OD.contactId",
+    // Index the indexing table by the detail ID and type name used to select from it
+    "CREATE INDEX DetailsIndexingOldDetailIdIndex ON DetailsIndexing(oldDetailId)",
+    "CREATE INDEX DetailsIndexingDetailIndex ON DetailsIndexing(detail)",
+    // Find the new detail ID for existing provenance ID values
+    "CREATE TEMP TABLE ProvenanceIndexing("
+        "detailId INTEGER PRIMARY KEY,"
+        "detail TEXT,"
+        "provenance TEXT,"
+        "provenanceContactId TEXT,"
+        "provenanceDetailId TEXT,"
+        "provenanceSyncTarget TEXT,"
+        "newProvenanceDetailId TEXT)",
+    "INSERT INTO ProvenanceIndexing(detailId, detail, provenance) "
+        "SELECT detailId, detail, provenance "
+        "FROM DetailsIndexing "
+        "WHERE provenance != ''",
+    // Calculate the new equivalent form for the existing 'provenance' values
+    "UPDATE ProvenanceIndexing SET "
+        "provenanceContactId = substr(provenance, 0, instr(provenance, ':')),"
+        "provenance = substr(provenance, instr(provenance, ':') + 1)",
+    "UPDATE ProvenanceIndexing SET "
+        "provenanceDetailId = substr(provenance, 0, instr(provenance, ':')),"
+        "provenanceSyncTarget = substr(provenance, instr(provenance, ':') + 1),"
+        "provenance = ''",
+    "REPLACE INTO ProvenanceIndexing (detailId, provenance) "
+        "SELECT PI.detailId, PI.provenanceContactId || ':' || DI.detailId || ':' || PI.provenanceSyncTarget "
+        "FROM ProvenanceIndexing AS PI "
+        "JOIN DetailsIndexing AS DI ON DI.oldDetailId = PI.provenanceDetailId AND DI.detail = PI.detail",
+    // Update the provenance values in the DetailsIndexing table with the updated values
+    "REPLACE INTO DetailsIndexing (detailId, oldDetailId, contactId, detail, syncTarget, provenance) "
+        "SELECT PI.detailId, DI.oldDetailId, DI.contactId, DI.detail, DI.syncTarget, PI.provenance "
+        "FROM ProvenanceIndexing PI "
+        "JOIN DetailsIndexing DI ON DI.detailId = PI.detailId",
+    "DROP TABLE ProvenanceIndexing",
+    // Re-create and populate the Details table from the old version
+    createDetailsTable,
+    "INSERT INTO Details("
+            "detailId,"
+            "contactId,"
+            "detail,"
+            "detailUri,"
+            "linkedDetailUris,"
+            "contexts,"
+            "accessConstraints,"
+            "provenance,"
+            "modifiable,"
+            "nonexportable) "
+        "SELECT "
+            "DI.detailId,"
+            "OD.contactId,"
+            "OD.detail,"
+            "OD.detailUri,"
+            "OD.linkedDetailUris,"
+            "OD.contexts,"
+            "OD.accessConstraints,"
+            "DI.provenance,"
+            "OD.modifiable,"
+            "OD.nonexportable "
+        "FROM DetailsIndexing AS DI "
+        "JOIN OldDetails AS OD ON OD.detailId = DI.oldDetailId AND OD.detail = DI.detail",
+    "DROP INDEX IF EXISTS DetailsJoinIndex",
+    "DROP INDEX DetailsRemoveIndex",
+    "DROP TABLE OldDetails",
+    // Drop all indexes for tables we are rebuilding
+    "DROP INDEX createAddressesDetailsContactIdIndex",
+    "DROP INDEX createAnniversariesDetailsContactIdIndex",
+    "DROP INDEX createAvatarsDetailsContactIdIndex",
+    "DROP INDEX createBirthdaysDetailsContactIdIndex",
+    "DROP INDEX createEmailAddressesDetailsContactIdIndex",
+    "DROP INDEX createGlobalPresencesDetailsContactIdIndex",
+    "DROP INDEX createGuidsDetailsContactIdIndex",
+    "DROP INDEX createHobbiesDetailsContactIdIndex",
+    "DROP INDEX createNicknamesDetailsContactIdIndex",
+    "DROP INDEX createNotesDetailsContactIdIndex",
+    "DROP INDEX createOnlineAccountsDetailsContactIdIndex",
+    "DROP INDEX createOrganizationsDetailsContactIdIndex",
+    "DROP INDEX createPhoneNumbersDetailsContactIdIndex",
+    "DROP INDEX createPresencesDetailsContactIdIndex",
+    "DROP INDEX createRingtonesDetailsContactIdIndex",
+    "DROP INDEX createTagsDetailsContactIdIndex",
+    "DROP INDEX createUrlsDetailsContactIdIndex",
+    "DROP INDEX createTpMetadataDetailsContactIdIndex",
+    "DROP INDEX createExtendedDetailsContactIdIndex",
+    "DROP INDEX PhoneNumbersIndex",
+    "DROP INDEX EmailAddressesIndex",
+    "DROP INDEX OnlineAccountsIndex",
+    "DROP INDEX NicknamesIndex",
+    "DROP INDEX TpMetadataTelepathyIdIndex",
+    "DROP INDEX TpMetadataAccountIdIndex",
+    // Migrate the Addresses table to the new form
+    "ALTER TABLE Addresses RENAME TO OldAddresses",
+    createAddressesTable,
+    "INSERT INTO Addresses("
+            "detailId,"
+            "contactId,"
+            "street,"
+            "postOfficeBox,"
+            "region,"
+            "locality,"
+            "postCode,"
+            "country,"
+            "subTypes) "
+        "SELECT "
+            "DI.detailId,"
+            "OD.contactId,"
+            "OD.street,"
+            "OD.postOfficeBox,"
+            "OD.region,"
+            "OD.locality,"
+            "OD.postCode,"
+            "OD.country,"
+            "OD.subTypes "
+        "FROM OldAddresses AS OD "
+        "JOIN DetailsIndexing AS DI ON DI.oldDetailId = OD.detailId AND DI.detail = 'Address'",
+    "DROP TABLE OldAddresses",
+    // Migrate the Anniversaries table to the new form
+    "ALTER TABLE Anniversaries RENAME TO OldAnniversaries",
+    createAnniversariesTable,
+    "INSERT INTO Anniversaries("
+            "detailId,"
+            "contactId,"
+            "originalDateTime,"
+            "calendarId,"
+            "subType) "
+        "SELECT "
+            "DI.detailId,"
+            "OD.contactId,"
+            "OD.originalDateTime,"
+            "OD.calendarId,"
+            "OD.subType "
+        "FROM OldAnniversaries AS OD "
+        "JOIN DetailsIndexing AS DI ON DI.oldDetailId = OD.detailId AND DI.detail = 'Anniversary'",
+    "DROP TABLE OldAnniversaries",
+    // Migrate the Avatars table to the new form
+    "ALTER TABLE Avatars RENAME TO OldAvatars",
+    createAvatarsTable,
+    "INSERT INTO Avatars("
+            "detailId,"
+            "contactId,"
+            "imageUrl,"
+            "videoUrl,"
+            "avatarMetadata) "
+        "SELECT "
+            "DI.detailId,"
+            "OD.contactId,"
+            "OD.imageUrl,"
+            "OD.videoUrl,"
+            "OD.avatarMetadata "
+        "FROM OldAvatars AS OD "
+        "JOIN DetailsIndexing AS DI ON DI.oldDetailId = OD.detailId AND DI.detail = 'Avatar'",
+    "DROP TABLE OldAvatars",
+    // Migrate the Birthdays table to the new form
+    "ALTER TABLE Birthdays RENAME TO OldBirthdays",
+    createBirthdaysTable,
+    "INSERT INTO Birthdays("
+            "detailId,"
+            "contactId,"
+            "birthday,"
+            "calendarId) "
+        "SELECT "
+            "DI.detailId,"
+            "OD.contactId,"
+            "OD.birthday,"
+            "OD.calendarId "
+        "FROM OldBirthdays AS OD "
+        "JOIN DetailsIndexing AS DI ON DI.oldDetailId = OD.detailId AND DI.detail = 'Birthday'",
+    "DROP TABLE OldBirthdays",
+    // Migrate the EmailAddresses table to the new form
+    "ALTER TABLE EmailAddresses RENAME TO OldEmailAddresses",
+    createEmailAddressesTable,
+    "INSERT INTO EmailAddresses("
+            "detailId,"
+            "contactId,"
+            "emailAddress,"
+            "lowerEmailAddress) "
+        "SELECT "
+            "DI.detailId,"
+            "OD.contactId,"
+            "OD.emailAddress,"
+            "OD.lowerEmailAddress "
+        "FROM OldEmailAddresses AS OD "
+        "JOIN DetailsIndexing AS DI ON DI.oldDetailId = OD.detailId AND DI.detail = 'EmailAddress'",
+    "DROP TABLE OldEmailAddresses",
+    // Migrate the GlobalPresences table to the new form
+    "ALTER TABLE GlobalPresences RENAME TO OldGlobalPresences",
+    createGlobalPresencesTable,
+    "INSERT INTO GlobalPresences("
+            "detailId,"
+            "contactId,"
+            "presenceState,"
+            "timestamp,"
+            "nickname,"
+            "customMessage) "
+        "SELECT "
+            "DI.detailId,"
+            "OD.contactId,"
+            "OD.presenceState,"
+            "OD.timestamp,"
+            "OD.nickname,"
+            "OD.customMessage "
+        "FROM OldGlobalPresences AS OD "
+        "JOIN DetailsIndexing AS DI ON DI.oldDetailId = OD.detailId AND DI.detail = 'GlobalPresence'",
+    "DROP TABLE OldGlobalPresences",
+    // Migrate the Guids table to the new form
+    "ALTER TABLE Guids RENAME TO OldGuids",
+    createGuidsTable,
+    "INSERT INTO Guids("
+            "detailId,"
+            "contactId,"
+            "guid) "
+        "SELECT "
+            "DI.detailId,"
+            "OD.contactId,"
+            "OD.guid "
+        "FROM OldGuids AS OD "
+        "JOIN DetailsIndexing AS DI ON DI.oldDetailId = OD.detailId AND DI.detail = 'Guid'",
+    "DROP TABLE OldGuids",
+    // Migrate the Hobbies table to the new form
+    "ALTER TABLE Hobbies RENAME TO OldHobbies",
+    createHobbiesTable,
+    "INSERT INTO Hobbies("
+            "detailId,"
+            "contactId,"
+            "hobby) "
+        "SELECT "
+            "DI.detailId,"
+            "OD.contactId,"
+            "OD.hobby "
+        "FROM OldHobbies AS OD "
+        "JOIN DetailsIndexing AS DI ON DI.oldDetailId = OD.detailId AND DI.detail = 'Hobby'",
+    "DROP TABLE OldHobbies",
+    // Migrate the Nicknames table to the new form
+    "ALTER TABLE Nicknames RENAME TO OldNicknames",
+    createNicknamesTable,
+    "INSERT INTO Nicknames("
+            "detailId,"
+            "contactId,"
+            "nickname,"
+            "lowerNickname) "
+        "SELECT "
+            "DI.detailId,"
+            "OD.contactId,"
+            "OD.nickname,"
+            "OD.lowerNickname "
+        "FROM OldNicknames AS OD "
+        "JOIN DetailsIndexing AS DI ON DI.oldDetailId = OD.detailId AND DI.detail = 'Nickname'",
+    "DROP TABLE OldNicknames",
+    // Migrate the Notes table to the new form
+    "ALTER TABLE Notes RENAME TO OldNotes",
+    createNotesTable,
+    "INSERT INTO Notes("
+            "detailId,"
+            "contactId,"
+            "note) "
+        "SELECT "
+            "DI.detailId,"
+            "OD.contactId,"
+            "OD.note "
+        "FROM OldNotes AS OD "
+        "JOIN DetailsIndexing AS DI ON DI.oldDetailId = OD.detailId AND DI.detail = 'Note'",
+    "DROP TABLE OldNotes",
+    // Migrate the OnlineAccounts table to the new form
+    "ALTER TABLE OnlineAccounts RENAME TO OldOnlineAccounts",
+    createOnlineAccountsTable,
+    "INSERT INTO OnlineAccounts("
+            "detailId,"
+            "contactId,"
+            "accountUri,"
+            "lowerAccountUri,"
+            "protocol,"
+            "serviceProvider,"
+            "capabilities,"
+            "subTypes,"
+            "accountPath,"
+            "accountIconPath,"
+            "enabled,"
+            "accountDisplayName,"
+            "serviceProviderDisplayName) "
+        "SELECT "
+            "DI.detailId,"
+            "OD.contactId,"
+            "OD.accountUri,"
+            "OD.lowerAccountUri,"
+            "OD.protocol,"
+            "OD.serviceProvider,"
+            "OD.capabilities,"
+            "OD.subTypes,"
+            "OD.accountPath,"
+            "OD.accountIconPath,"
+            "OD.enabled,"
+            "OD.accountDisplayName,"
+            "OD.serviceProviderDisplayName "
+        "FROM OldOnlineAccounts AS OD "
+        "JOIN DetailsIndexing AS DI ON DI.oldDetailId = OD.detailId AND DI.detail = 'OnlineAccount'",
+    "DROP TABLE OldOnlineAccounts",
+    // Migrate the Organizations table to the new form
+    "ALTER TABLE Organizations RENAME TO OldOrganizations",
+    createOrganizationsTable,
+    "INSERT INTO Organizations("
+            "detailId,"
+            "contactId,"
+            "name,"
+            "role,"
+            "title,"
+            "location,"
+            "department,"
+            "logoUrl) "
+        "SELECT "
+            "DI.detailId,"
+            "OD.contactId,"
+            "OD.name,"
+            "OD.role,"
+            "OD.title,"
+            "OD.location,"
+            "OD.department,"
+            "OD.logoUrl "
+        "FROM OldOrganizations AS OD "
+        "JOIN DetailsIndexing AS DI ON DI.oldDetailId = OD.detailId AND DI.detail = 'Organization'",
+    "DROP TABLE OldOrganizations",
+    // Migrate the PhoneNumbers table to the new form
+    "ALTER TABLE PhoneNumbers RENAME TO OldPhoneNumbers",
+    createPhoneNumbersTable,
+    "INSERT INTO PhoneNumbers("
+            "detailId,"
+            "contactId,"
+            "phoneNumber,"
+            "subTypes,"
+            "normalizedNumber) "
+        "SELECT "
+            "DI.detailId,"
+            "OD.contactId,"
+            "OD.phoneNumber,"
+            "OD.subTypes,"
+            "OD.normalizedNumber "
+        "FROM OldPhoneNumbers AS OD "
+        "JOIN DetailsIndexing AS DI ON DI.oldDetailId = OD.detailId AND DI.detail = 'PhoneNumber'",
+    "DROP TABLE OldPhoneNumbers",
+    // Migrate the Presences table to the new form
+    "ALTER TABLE Presences RENAME TO OldPresences",
+    createPresencesTable,
+    "INSERT INTO Presences("
+            "detailId,"
+            "contactId,"
+            "presenceState,"
+            "timestamp,"
+            "nickname,"
+            "customMessage) "
+        "SELECT "
+            "DI.detailId,"
+            "OD.contactId,"
+            "OD.presenceState,"
+            "OD.timestamp,"
+            "OD.nickname,"
+            "OD.customMessage "
+        "FROM OldPresences AS OD "
+        "JOIN DetailsIndexing AS DI ON DI.oldDetailId = OD.detailId AND DI.detail = 'Presence'",
+    "DROP TABLE OldPresences",
+    // Migrate the Ringtones table to the new form
+    "ALTER TABLE Ringtones RENAME TO OldRingtones",
+    createRingtonesTable,
+    "INSERT INTO Ringtones("
+            "detailId,"
+            "contactId,"
+            "audioRingtone,"
+            "videoRingtone) "
+        "SELECT "
+            "DI.detailId,"
+            "OD.contactId,"
+            "OD.audioRingtone,"
+            "OD.videoRingtone "
+        "FROM OldRingtones AS OD "
+        "JOIN DetailsIndexing AS DI ON DI.oldDetailId = OD.detailId AND DI.detail = 'Ringtone'",
+    "DROP TABLE OldRingtones",
+    // Migrate the Tags table to the new form
+    "ALTER TABLE Tags RENAME TO OldTags",
+    createTagsTable,
+    "INSERT INTO Tags("
+            "detailId,"
+            "contactId,"
+            "tag) "
+        "SELECT "
+            "DI.detailId,"
+            "OD.contactId,"
+            "OD.tag "
+        "FROM OldTags AS OD "
+        "JOIN DetailsIndexing AS DI ON DI.oldDetailId = OD.detailId AND DI.detail = 'Tag'",
+    "DROP TABLE OldTags",
+    // Migrate the Urls table to the new form
+    "ALTER TABLE Urls RENAME TO OldUrls",
+    createUrlsTable,
+    "INSERT INTO Urls("
+            "detailId,"
+            "contactId,"
+            "url,"
+            "subTypes) "
+        "SELECT "
+            "DI.detailId,"
+            "OD.contactId,"
+            "OD.url,"
+            "OD.subTypes "
+        "FROM OldUrls AS OD "
+        "JOIN DetailsIndexing AS DI ON DI.oldDetailId = OD.detailId AND DI.detail = 'Url'",
+    "DROP TABLE OldUrls",
+    // Migrate the TpMetadata table to the new form (and rename it to the correct name)
+    createOriginMetadataTable,
+    "INSERT INTO OriginMetadata("
+            "detailId,"
+            "contactId,"
+            "id,"
+            "groupId,"
+            "enabled) "
+        "SELECT "
+            "DI.detailId,"
+            "OD.contactId,"
+            "OD.telepathyId,"
+            "OD.accountId,"
+            "OD.accountEnabled "
+        "FROM TpMetadata AS OD "
+        "JOIN DetailsIndexing AS DI ON DI.oldDetailId = OD.detailId AND DI.detail = 'OriginMetadata'",
+    "DROP TABLE TpMetadata",
+    // Migrate the ExtendedDetails table to the new form
+    "ALTER TABLE ExtendedDetails RENAME TO OldExtendedDetails",
+    createExtendedDetailsTable,
+    "INSERT INTO ExtendedDetails("
+            "detailId,"
+            "contactId,"
+            "name,"
+            "data) "
+        "SELECT "
+            "DI.detailId,"
+            "OD.contactId,"
+            "OD.name,"
+            "OD.data "
+        "FROM OldExtendedDetails AS OD "
+        "JOIN DetailsIndexing AS DI ON DI.oldDetailId = OD.detailId AND DI.detail = 'ExtendedDetail'",
+    "DROP TABLE OldExtendedDetails",
+    // Drop the indexing table
+    "DROP INDEX DetailsIndexingOldDetailIdIndex",
+    "DROP INDEX DetailsIndexingDetailIndex",
+    "DROP TABLE DetailsIndexing",
+    // Rebuild the indexes we dropped
+    createDetailsRemoveIndex,
+    createAddressesDetailsContactIdIndex,
+    createAnniversariesDetailsContactIdIndex,
+    createAvatarsDetailsContactIdIndex,
+    createBirthdaysDetailsContactIdIndex,
+    createEmailAddressesDetailsContactIdIndex,
+    createGlobalPresencesDetailsContactIdIndex,
+    createGuidsDetailsContactIdIndex,
+    createHobbiesDetailsContactIdIndex,
+    createNicknamesDetailsContactIdIndex,
+    createNotesDetailsContactIdIndex,
+    createOnlineAccountsDetailsContactIdIndex,
+    createOrganizationsDetailsContactIdIndex,
+    createPhoneNumbersDetailsContactIdIndex,
+    createPresencesDetailsContactIdIndex,
+    createRingtonesDetailsContactIdIndex,
+    createTagsDetailsContactIdIndex,
+    createUrlsDetailsContactIdIndex,
+    createOriginMetadataDetailsContactIdIndex,
+    createExtendedDetailsContactIdIndex,
+    createPhoneNumbersIndex,
+    createEmailAddressesIndex,
+    createOnlineAccountsIndex,
+    createNicknamesIndex,
+    createOriginMetadataIdIndex,
+    createOriginMetadataGroupIdIndex,
+    // Recreate the remove trigger
+    createRemoveTrigger,
+    // Finished
+    "PRAGMA user_version=11",
     0 // NULL-terminated
 };
 
@@ -723,9 +1211,10 @@ static UpgradeOperation upgradeVersions[] = {
     { updateNormalizedNumbers,  upgradeVersion7 },
     { 0,                        upgradeVersion8 },
     { 0,                        upgradeVersion9 },
+    { 0,                        upgradeVersion10 },
 };
 
-static const int currentSchemaVersion = 10;
+static const int currentSchemaVersion = 11;
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {

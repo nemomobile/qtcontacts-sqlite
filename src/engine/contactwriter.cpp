@@ -1534,7 +1534,7 @@ template<> struct RemoveStatement<QContactUrl> { static const QString statement;
 const QString RemoveStatement<QContactUrl>::statement(QStringLiteral("DELETE FROM Urls WHERE contactId = :contactId"));
 
 template<> struct RemoveStatement<QContactOriginMetadata> { static const QString statement; };
-const QString RemoveStatement<QContactOriginMetadata>::statement(QStringLiteral("DELETE FROM TpMetadata WHERE contactId = :contactId"));
+const QString RemoveStatement<QContactOriginMetadata>::statement(QStringLiteral("DELETE FROM OriginMetadata WHERE contactId = :contactId"));
 
 template<> struct RemoveStatement<QContactExtendedDetail> { static const QString statement; };
 const QString RemoveStatement<QContactExtendedDetail>::statement(QStringLiteral("DELETE FROM ExtendedDetails WHERE contactId = :contactId"));
@@ -5405,18 +5405,18 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
 ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactOriginMetadata &detail)
 {
     const QString statement(QStringLiteral(
-        " INSERT INTO TpMetadata ("
+        " INSERT INTO OriginMetadata ("
         "  detailId,"
         "  contactId,"
-        "  telepathyId,"
-        "  accountId,"
-        "  accountEnabled)"
+        "  id,"
+        "  groupId,"
+        "  enabled)"
         " VALUES ("
         "  :detailId,"
         "  :contactId,"
-        "  :telepathyId,"
-        "  :accountId,"
-        "  :accountEnabled)"
+        "  :id,"
+        "  :groupId,"
+        "  :enabled)"
     ));
 
     ContactsDatabase::Query query(db.prepare(statement));

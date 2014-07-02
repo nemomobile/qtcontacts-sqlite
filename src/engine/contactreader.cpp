@@ -462,11 +462,11 @@ static void setValues(QContactUrl *detail, QSqlQuery *query, const int offset)
     setValue(detail, T::FieldSubType, QVariant::fromValue<int>(Url::subType(query->value(offset + 1).toString())));
 }
 
-static const FieldInfo tpMetadataFields[] =
+static const FieldInfo originMetadataFields[] =
 {
-    { QContactOriginMetadata::FieldId, "telepathyId", StringField },
-    { QContactOriginMetadata::FieldGroupId, "accountId", StringField },
-    { QContactOriginMetadata::FieldEnabled, "accountEnabled", BooleanField }
+    { QContactOriginMetadata::FieldId, "id", StringField },
+    { QContactOriginMetadata::FieldGroupId, "groupId", StringField },
+    { QContactOriginMetadata::FieldEnabled, "enabled", BooleanField }
 };
 
 static void setValues(QContactOriginMetadata *detail, QSqlQuery *query, const int offset)
@@ -662,7 +662,7 @@ static const DetailInfo detailInfo[] =
     DEFINE_DETAIL(QContactRingtone      , Ringtones      , ringtoneFields      , false),
     DEFINE_DETAIL(QContactTag           , Tags           , tagFields           , false),
     DEFINE_DETAIL(QContactUrl           , Urls           , urlFields           , false),
-    DEFINE_DETAIL(QContactOriginMetadata, TpMetadata     , tpMetadataFields    , true),
+    DEFINE_DETAIL(QContactOriginMetadata, OriginMetadata , originMetadataFields, true),
     DEFINE_DETAIL(QContactGlobalPresence, GlobalPresences, presenceFields      , true),
     DEFINE_DETAIL(QContactExtendedDetail, ExtendedDetails, extendedDetailFields, false),
 };
