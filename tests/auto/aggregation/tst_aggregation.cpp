@@ -2725,74 +2725,15 @@ void tst_Aggregation::aggregationHeuristic_data()
     QTest::newRow("match name, different p/e/a") << true /* identical name match is enough to match the contact */
         << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
         << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "999118222773" << "freddy@test.net" << "fgumboots@coolsocial";
+    QTest::newRow("match name insentive, different p/e/a") << true
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "frederick" << "william preston" << "Gumboots" << "Freddy" << "unspecified" << "999118222773" << "freddy@test.net" << "fgumboots@coolsocial";
     QTest::newRow("match hyphenated name, different p/e/a") << true
         << "Frederick-Albert" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
         << "Frederick-Albert" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "999118222773" << "freddy@test.net" << "fgumboots@coolsocial";
-
-    // fragment name, overlapping contactable
-    QTest::newRow("initial fragment fname, identical p/e/a") << true
-        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
-        << "Fred" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount";
-    QTest::newRow("final fragment fname, identical p/e/a") << true
-        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
-        << "Rick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount";
-    QTest::newRow("internal fragment fname, identical p/e/a") << true
-        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
-        << "Deric" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount";
-    QTest::newRow("initial fragment hyphenated fname, identical p/e/a") << false
+    QTest::newRow("match hyphenated name insensitive, different p/e/a") << true
         << "Frederick-Albert" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
-        << "Fred" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount";
-    QTest::newRow("final fragment hyphenated fname, identical p/e/a") << false
-        << "Frederick-Albert" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
-        << "Bert" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount";
-    QTest::newRow("fragment mname, identical p/e/a") << true
-        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
-        << "Frederick" << "" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount";
-    QTest::newRow("fragment f/mname, identical p/e/a") << true
-        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
-        << "Fred" << "" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount";
-    QTest::newRow("fragment fname, identical p, no e/a") << true
-        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "" << ""
-        << "Fred" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "" << "";
-    QTest::newRow("fragment mname, identical p, no e/a") << true
-        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "" << ""
-        << "Frederick" << "" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "" << "";
-    QTest::newRow("fragment f/mname, identical p, no e/a") << true
-        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "" << ""
-        << "Fred" << "" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "" << "";
-    QTest::newRow("fragment fname, identical p, different e/a") << true
-        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
-        << "Fred" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "freddy@test.net" << "fgumboots@coolsocial";
-    QTest::newRow("fragment mname, identical p, different e/a") << true
-        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
-        << "Frederick" << "" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "freddy@test.net" << "fgumboots@coolsocial";
-    QTest::newRow("fragment f/mname, identical p, different e/a") << true
-        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
-        << "Fred" << "" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "freddy@test.net" << "fgumboots@coolsocial";
-    QTest::newRow("fragment fname, identical e, different p/a") << true
-        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
-        << "Fred" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "999118222773" << "gumboots@test.com" << "fgumboots@coolsocial";
-    QTest::newRow("fragment mname, identical e, different p/a") << true
-        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
-        << "Frederick" << "" << "Gumboots" << "Freddy" << "unspecified" << "999118222773" << "gumboots@test.com" << "fgumboots@coolsocial";
-    QTest::newRow("fragment f/mname, identical e, different p/a") << true
-        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
-        << "Fred" << "" << "Gumboots" << "Freddy" << "unspecified" << "999118222773" << "gumboots@test.com" << "fgumboots@coolsocial";
-    QTest::newRow("fragment fname, identical a, different p/e") << true
-        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
-        << "Fred" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "999118222773" << "freddy@test.net" << "freddy00001@socialaccount";
-    QTest::newRow("fragment mname, identical a, different p/e") << true
-        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
-        << "Frederick" << "" << "Gumboots" << "Freddy" << "unspecified" << "999118222773" << "freddy@test.net" << "freddy00001@socialaccount";
-    QTest::newRow("fragment f/mname, identical a, different p/e") << true
-        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
-        << "Fred" << "" << "Gumboots" << "Freddy" << "unspecified" << "999118222773" << "freddy@test.net" << "freddy00001@socialaccount";
-    QTest::newRow("fragment f/mname, identical p, no e/a/nick") << true
-        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "" << ""
-        << "Fred" << "" << "Gumboots" << "" << "unspecified" << "111992888337" << "" << "";
-    QTest::newRow("fragment f/mname, identical p, no e/a/nick, name case") << true
-        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "" << ""
-        << "fred" << "" << "gumboots" << "" << "unspecified" << "111992888337" << "" << "";
+        << "frederick-albert" << "william preston" << "Gumboots" << "Freddy" << "unspecified" << "999118222773" << "freddy@test.net" << "fgumboots@coolsocial";
 
     // identical contacts should be aggregated
     QTest::newRow("identical, complete") << true
@@ -2870,24 +2811,41 @@ void tst_Aggregation::aggregationHeuristic_data()
         << "" << "" << "Gumboots" << "Freddy" << "unspecified" << "" << "" << ""
         << "" << "" << "" << "Freddy" << "unspecified" << "" << "" << "";
 
-    QTest::newRow("partial using phonenumber") << true
-        << "Frederick" << "" << "" << "" << "unspecified" << "111992888337" << "" << ""
-        << "Fred" << "" << "" << "" << "unspecified" << "111992888337" << "" << "";
-    QTest::newRow("partial using multiple phonenumbers") << true
-        << "Frederick" << "" << "" << "" << "unspecified" << "111992888337" << "" << ""
-        << "Fred" << "" << "" << "" << "unspecified" << "111992888338|111992888337" << "" << "";
-    QTest::newRow("partial using email address") << true
-        << "Frederick" << "" << "" << "" << "unspecified" << "" << "gumboots@test.com" << ""
-        << "Fred" << "" << "" << "" << "unspecified" << "" << "gumboots@test.com" << "";
-    QTest::newRow("partial using multiple email addresses") << true
-        << "Frederick" << "" << "" << "" << "unspecified" << "" << "gumboots@test.com" << ""
-        << "Fred" << "" << "" << "" << "unspecified" << "" << "wellingtons@test.com|gumboots@test.com" << "";
-    QTest::newRow("partial using account uri") << true
-        << "Frederick" << "" << "" << "" << "unspecified" << "" << "" << "freddy00001@socialaccount"
-        << "Fred" << "" << "" << "" << "unspecified" << "" << "" << "freddy00001@socialaccount";
-    QTest::newRow("partial using multiple account uris") << true
-        << "Frederick" << "" << "" << "" << "unspecified" << "" << "" << "freddy00001@socialaccount"
-        << "Fred" << "" << "" << "" << "unspecified" << "" << "" << "freddy11111@socialaccount|freddy00001@socialaccount";
+    QTest::newRow("lname without detail match") << false
+        << "" << "" << "Gumboots" << "" << "unspecified" << "" << "" << ""
+        << "" << "" << "Gumboots" << "" << "unspecified" << "" << "" << "";
+    QTest::newRow("lname using phonenumber") << true
+        << "" << "" << "Gumboots" << "" << "unspecified" << "111992888337" << "" << ""
+        << "" << "" << "Gumboots" << "" << "unspecified" << "111992888337" << "" << "";
+    QTest::newRow("lname using multiple phonenumbers") << true
+        << "" << "" << "Gumboots" << "" << "unspecified" << "111992888337" << "" << ""
+        << "" << "" << "Gumboots" << "" << "unspecified" << "111992888338|111992888337" << "" << "";
+    QTest::newRow("lname using email address") << true
+        << "" << "" << "Gumboots" << "" << "unspecified" << "" << "gumboots@test.com" << ""
+        << "" << "" << "Gumboots" << "" << "unspecified" << "" << "gumboots@test.com" << "";
+    QTest::newRow("lname using multiple email addresses") << true
+        << "" << "" << "Gumboots" << "" << "unspecified" << "" << "gumboots@test.com" << ""
+        << "" << "" << "Gumboots" << "" << "unspecified" << "" << "wellingtons@test.com|gumboots@test.com" << "";
+    QTest::newRow("lname using account uri") << true
+        << "" << "" << "Gumboots" << "" << "unspecified" << "" << "" << "freddy00001@socialaccount"
+        << "" << "" << "Gumboots" << "" << "unspecified" << "" << "" << "freddy00001@socialaccount";
+    QTest::newRow("lname using multiple account uris") << true
+        << "" << "" << "Gumboots" << "" << "unspecified" << "" << "" << "freddy00001@socialaccount"
+        << "" << "" << "Gumboots" << "" << "unspecified" << "" << "" << "freddy11111@socialaccount|freddy00001@socialaccount";
+
+    // partial name matches are no longer aggregated
+    QTest::newRow("partial match name, different p/e/a") << false
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "Fred" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "999118222773" << "freddy@test.net" << "fgumboots@coolsocial";
+    QTest::newRow("partial match name insentive, different p/e/a") << false
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "fred" << "william preston" << "Gumboots" << "Freddy" << "unspecified" << "999118222773" << "freddy@test.net" << "fgumboots@coolsocial";
+    QTest::newRow("partial match hyphenated name, different p/e/a") << false
+        << "Frederick-Albert" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "999118222773" << "freddy@test.net" << "fgumboots@coolsocial";
+    QTest::newRow("partial match hyphenated name insensitive, different p/e/a") << false
+        << "Frederick-Albert" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
+        << "frederick" << "william preston" << "Gumboots" << "Freddy" << "unspecified" << "999118222773" << "freddy@test.net" << "fgumboots@coolsocial";
 }
 
 void tst_Aggregation::aggregationHeuristic()
