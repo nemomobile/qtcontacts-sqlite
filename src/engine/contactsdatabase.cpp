@@ -611,7 +611,11 @@ static const char *upgradeVersion3[] = {
     0 // NULL-terminated
 };
 static const char *upgradeVersion4[] = {
-    createOOBTable,
+    // We can't create this in final form anymore, since we're modifying it in version 8->9
+    //createOOBTable,
+    "CREATE TABLE OOB ("
+        "name TEXT PRIMARY KEY,"
+        "value BLOB)",
     "PRAGMA user_version=5",
     0 // NULL-terminated
 };
@@ -633,6 +637,8 @@ static const char *upgradeVersion7[] = {
     0 // NULL-terminated
 };
 static const char *upgradeVersion8[] = {
+    // Alter the OOB table; this alteration requires that the earlier upgrade
+    // creates the obsolete form of the table rather thna the current one
     "ALTER TABLE OOB ADD COLUMN compressed INTEGER DEFAULT 0",
     "PRAGMA user_version=9",
     0 // NULL-terminated
