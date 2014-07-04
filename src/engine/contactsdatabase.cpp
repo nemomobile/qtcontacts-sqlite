@@ -1522,7 +1522,7 @@ static bool dropTransientTables(QSqlDatabase &db, const QString &table)
 
 template<typename ValueContainer>
 bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool filter, const QVariantList &boundIds, 
-                                    const QString &join, const QString &where, const QString &orderBy, const ValueContainer &boundValues)
+                                    const QString &join, const QString &where, const QString &orderBy, const ValueContainer &boundValues, int limit)
 {
     static const QString createStatement(QString::fromLatin1("CREATE TABLE IF NOT EXISTS temp.%1 (contactId INTEGER)"));
     static const QString insertFilterStatement(QString::fromLatin1("INSERT INTO temp.%1 (contactId) SELECT Contacts.contactId FROM Contacts %2 %3"));
@@ -1552,6 +1552,9 @@ bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool
         if (!orderBy.isEmpty()) {
             insertStatement.append(QString::fromLatin1(" ORDER BY ") + orderBy);
         }
+        if (limit > 0) {
+            insertStatement.append(QString::fromLatin1(" LIMIT %1").arg(limit));
+        }
         if (!insertQuery.prepare(insertStatement)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary contact ids: %1\n%2")
                     .arg(insertQuery.lastError().text())
@@ -1576,6 +1579,9 @@ bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool
         // order of input ids.
         if (!boundIds.isEmpty()) {
             QVariantList::const_iterator it = boundIds.constBegin(), end = boundIds.constEnd();
+            if ((limit > 0) && (limit < boundIds.count())) {
+                end = it + limit;
+            }
             while (it != end) {
                 // SQLite allows up to 500 rows per insert
                 quint32 remainder = (end - it);
@@ -2336,22 +2342,22 @@ QString ContactsDatabase::expandQuery(const QSqlQuery &query)
     return expandQuery(query.lastQuery(), query.boundValues());
 }
 
-bool ContactsDatabase::createTemporaryContactIdsTable(const QString &table, const QVariantList &boundIds)
+bool ContactsDatabase::createTemporaryContactIdsTable(const QString &table, const QVariantList &boundIds, int limit)
 {
     QMutexLocker locker(accessMutex());
-    return ::createTemporaryContactIdsTable(m_database, table, false, boundIds, QString(), QString(), QString(), QVariantList());
+    return ::createTemporaryContactIdsTable(m_database, table, false, boundIds, QString(), QString(), QString(), QVariantList(), limit);
 }
 
-bool ContactsDatabase::createTemporaryContactIdsTable(const QString &table, const QString &join, const QString &where, const QString &orderBy, const QVariantList &boundValues)
+bool ContactsDatabase::createTemporaryContactIdsTable(const QString &table, const QString &join, const QString &where, const QString &orderBy, const QVariantList &boundValues, int limit)
 {
     QMutexLocker locker(accessMutex());
-    return ::createTemporaryContactIdsTable(m_database, table, true, QVariantList(), join, where, orderBy, boundValues);
+    return ::createTemporaryContactIdsTable(m_database, table, true, QVariantList(), join, where, orderBy, boundValues, limit);
 }
 
-bool ContactsDatabase::createTemporaryContactIdsTable(const QString &table, const QString &join, const QString &where, const QString &orderBy, const QMap<QString, QVariant> &boundValues)
+bool ContactsDatabase::createTemporaryContactIdsTable(const QString &table, const QString &join, const QString &where, const QString &orderBy, const QMap<QString, QVariant> &boundValues, int limit)
 {
     QMutexLocker locker(accessMutex());
-    return ::createTemporaryContactIdsTable(m_database, table, true, QVariantList(), join, where, orderBy, boundValues);
+    return ::createTemporaryContactIdsTable(m_database, table, true, QVariantList(), join, where, orderBy, boundValues, limit);
 }
 
 void ContactsDatabase::clearTemporaryContactIdsTable(const QString &table)

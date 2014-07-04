@@ -1736,8 +1736,10 @@ QContactManager::Error ContactReader::readContacts(
         }
     }
 
+    const int maximumCount = fetchHint.maxCountHint();
+
     QContactManager::Error error = QContactManager::NoError;
-    if (!m_database.createTemporaryContactIdsTable(table, join, where, orderBy, bindings)) {
+    if (!m_database.createTemporaryContactIdsTable(table, join, where, orderBy, bindings, maximumCount)) {
         error = QContactManager::UnspecifiedError;
     } else {
         error = queryContacts(table, contacts, fetchHint);
@@ -1781,8 +1783,10 @@ QContactManager::Error ContactReader::readContacts(
 
     m_database.clearTemporaryContactIdsTable(table);
 
+    const int maximumCount = fetchHint.maxCountHint();
+
     QContactManager::Error error = QContactManager::NoError;
-    if (!m_database.createTemporaryContactIdsTable(table, boundIds)) {
+    if (!m_database.createTemporaryContactIdsTable(table, boundIds, maximumCount)) {
         error = QContactManager::UnspecifiedError;
     } else {
         error = queryContacts(table, contacts, fetchHint, relaxConstraints);
@@ -1957,7 +1961,6 @@ QContactManager::Error ContactReader::queryContacts(
     }
 
     // Query the contact data in batches
-    // TODO: use as limit on input query
     const int maximumCount = fetchHint.maxCountHint();
     const int batchSize = (maximumCount > 0) ? maximumCount : ReportBatchSize;
 
