@@ -1957,221 +1957,191 @@ QContactManager::Error ContactReader::queryContacts(
     }
 
     // Query the contact data in batches
+    // TODO: use as limit on input query
     const int maximumCount = fetchHint.maxCountHint();
     const int batchSize = (maximumCount > 0) ? maximumCount : ReportBatchSize;
 
-    do {
-        int contactCount = contacts->count();
-        quint32 maxBatchId = 0;
-        QList<bool> syncableContact;
-        QStringList contactSyncTarget;
-        QMap<quint32, int> contactIdIndex;
-        QMap<quint32, QSet<QContactDetail::DetailType> > transientContactDetails;
+    while (query.next()) {
+        quint32 dbId = query.value(0).toUInt();
 
-        for (int i = 0; i < batchSize && query.next(); ++i) {
-            quint32 dbId = query.value(0).toUInt();
-            if (dbId > maxBatchId) {
-                maxBatchId = dbId;
-            }
+        QContact contact;
 
-            QContact contact;
+        QContactId id(ContactId::contactId(ContactId::apiId(dbId)));
+        contact.setId(id);
 
-            QContactId id(ContactId::contactId(ContactId::apiId(dbId)));
-            contact.setId(id);
+        QString persistedDL = query.value(1).toString();
+        if (!persistedDL.isEmpty())
+            ContactsEngine::setContactDisplayLabel(&contact, persistedDL);
 
-            contactIdIndex.insert(dbId, contactCount + i);
+        QContactName name;
+        setValue(&name, QContactName::FieldFirstName  , query.value(2));
+        // ignore lowerFirstName
+        setValue(&name, QContactName::FieldLastName   , query.value(4));
+        // ignore lowerLastName
+        setValue(&name, QContactName::FieldMiddleName , query.value(6));
+        setValue(&name, QContactName::FieldPrefix     , query.value(7));
+        setValue(&name, QContactName::FieldSuffix     , query.value(8));
+        setValue(&name, QContactName__FieldCustomLabel, query.value(9));
+        if (!name.isEmpty())
+            contact.saveDetail(&name);
 
-            QString persistedDL = query.value(1).toString();
-            if (!persistedDL.isEmpty())
-                ContactsEngine::setContactDisplayLabel(&contact, persistedDL);
+        const QString syncTarget(query.value(10).toString());
 
-            QContactName name;
-            setValue(&name, QContactName::FieldFirstName  , query.value(2));
-            // ignore lowerFirstName
-            setValue(&name, QContactName::FieldLastName   , query.value(4));
-            // ignore lowerLastName
-            setValue(&name, QContactName::FieldMiddleName , query.value(6));
-            setValue(&name, QContactName::FieldPrefix     , query.value(7));
-            setValue(&name, QContactName::FieldSuffix     , query.value(8));
-            setValue(&name, QContactName__FieldCustomLabel, query.value(9));
-            if (!name.isEmpty())
-                contact.saveDetail(&name);
+        QContactSyncTarget starget;
+        setValue(&starget, QContactSyncTarget::FieldSyncTarget, syncTarget);
+        if (!starget.isEmpty())
+            contact.saveDetail(&starget);
 
-            const QString syncTarget(query.value(10).toString());
+        QContactTimestamp timestamp;
+        setValue(&timestamp, QContactTimestamp::FieldCreationTimestamp    , ContactsDatabase::fromDateTimeString(query.value(11).toString()));
+        setValue(&timestamp, QContactTimestamp::FieldModificationTimestamp, ContactsDatabase::fromDateTimeString(query.value(12).toString()));
 
-            QContactSyncTarget starget;
-            setValue(&starget, QContactSyncTarget::FieldSyncTarget, syncTarget);
-            if (!starget.isEmpty())
-                contact.saveDetail(&starget);
+        QContactGender gender;
+        // Gender is an enum in qtpim
+        QString genderText = query.value(13).toString();
+        if (genderText.startsWith(QChar::fromLatin1('f'), Qt::CaseInsensitive)) {
+            gender.setGender(QContactGender::GenderFemale);
+        } else if (genderText.startsWith(QChar::fromLatin1('m'), Qt::CaseInsensitive)) {
+            gender.setGender(QContactGender::GenderMale);
+        } else {
+            gender.setGender(QContactGender::GenderUnspecified);
+        }
+        if (!gender.isEmpty())
+            contact.saveDetail(&gender);
 
-            QContactTimestamp timestamp;
-            setValue(&timestamp, QContactTimestamp::FieldCreationTimestamp    , ContactsDatabase::fromDateTimeString(query.value(11).toString()));
-            setValue(&timestamp, QContactTimestamp::FieldModificationTimestamp, ContactsDatabase::fromDateTimeString(query.value(12).toString()));
+        QContactFavorite favorite;
+        setValue(&favorite, QContactFavorite::FieldFavorite, query.value(14).toBool());
+        if (!favorite.isEmpty())
+            contact.saveDetail(&favorite);
 
-            QContactGender gender;
-            // Gender is an enum in qtpim
-            QString genderText = query.value(13).toString();
-            if (genderText.startsWith(QChar::fromLatin1('f'), Qt::CaseInsensitive)) {
-                gender.setGender(QContactGender::GenderFemale);
-            } else if (genderText.startsWith(QChar::fromLatin1('m'), Qt::CaseInsensitive)) {
-                gender.setGender(QContactGender::GenderMale);
-            } else {
-                gender.setGender(QContactGender::GenderUnspecified);
-            }
-            if (!gender.isEmpty())
-                contact.saveDetail(&gender);
+        QContactStatusFlags flags;
+        flags.setFlag(QContactStatusFlags::HasPhoneNumber, query.value(15).toBool());
+        flags.setFlag(QContactStatusFlags::HasEmailAddress, query.value(16).toBool());
+        flags.setFlag(QContactStatusFlags::HasOnlineAccount, query.value(17).toBool());
+        flags.setFlag(QContactStatusFlags::IsOnline, query.value(18).toBool());
+        flags.setFlag(QContactStatusFlags::IsDeactivated, query.value(19).toBool());
+        flags.setFlag(QContactStatusFlags::IsIncidental, query.value(20).toBool());
 
-            QContactFavorite favorite;
-            setValue(&favorite, QContactFavorite::FieldFavorite, query.value(14).toBool());
-            if (!favorite.isEmpty())
-                contact.saveDetail(&favorite);
-
-            QContactStatusFlags flags;
-            flags.setFlag(QContactStatusFlags::HasPhoneNumber, query.value(15).toBool());
-            flags.setFlag(QContactStatusFlags::HasEmailAddress, query.value(16).toBool());
-            flags.setFlag(QContactStatusFlags::HasOnlineAccount, query.value(17).toBool());
-            flags.setFlag(QContactStatusFlags::IsOnline, query.value(18).toBool());
-            flags.setFlag(QContactStatusFlags::IsDeactivated, query.value(19).toBool());
-            flags.setFlag(QContactStatusFlags::IsIncidental, query.value(20).toBool());
-
-            if (flags.testFlag(QContactStatusFlags::IsDeactivated)) {
-                QContactDeactivated deactivated;
-                contact.saveDetail(&deactivated);
-            }
-            if (flags.testFlag(QContactStatusFlags::IsIncidental)) {
-                QContactIncidental incidental;
-                contact.saveDetail(&incidental);
-            }
-
-            int contactType = query.value(21).toInt();
-            QContactType typeDetail = contact.detail<QContactType>();
-            typeDetail.setType(static_cast<QContactType::TypeValues>(contactType));
-            contact.saveDetail(&typeDetail);
-
-            bool syncable = !syncTarget.isEmpty() &&
-                            (syncTarget != aggregateSyncTarget) &&
-                            (syncTarget != localSyncTarget) &&
-                            (syncTarget != wasLocalSyncTarget);
-            syncableContact.append(syncable);
-            contactSyncTarget.append(syncTarget);
-
-            // Find any transient details for this contact
-            if (m_database.hasTransientDetails(dbId)) {
-                QSet<QContactDetail::DetailType> transientTypes;
-
-                const QPair<QDateTime, QList<QContactDetail> > transientDetails(m_database.transientDetails(dbId));
-                if (!transientDetails.first.isNull()) {
-                    // Update the contact timestamp to that of the transient details
-                    setValue(&timestamp, QContactTimestamp::FieldModificationTimestamp, transientDetails.first);
-
-                    QList<QContactDetail>::const_iterator it = transientDetails.second.constBegin(), end = transientDetails.second.constEnd();
-                    for ( ; it != end; ++it) {
-                        // Copy the transient detail into the contact
-                        const QContactDetail &transient(*it);
-
-                        const QContactDetail::DetailType transientType(transient.type());
-
-                        if (transientType == QContactGlobalPresence::Type) {
-                            // If global presence is in the transient details, the IsOnline status flag is out of date
-                            const int presenceState = transient.value<int>(QContactGlobalPresence::FieldPresenceState);
-                            const bool isOnline(presenceState >= QContactPresence::PresenceAvailable &&
-                                                presenceState <= QContactPresence::PresenceExtendedAway);
-                            flags.setFlag(QContactStatusFlags::IsOnline, isOnline);
-                        }
-
-                        // Ignore details that aren't in the requested types
-                        if (!definitionMask.isEmpty() && !definitionMask.contains(transientType)) {
-                            continue;
-                        }
-
-                        QContactDetail detail(transient.type());
-                        if (!relaxConstraints) {
-                            QContactManagerEngine::setDetailAccessConstraints(&detail, transient.accessConstraints());
-                        }
-
-                        const QMap<int, QVariant> values(transient.values());
-                        QMap<int, QVariant>::const_iterator vit = values.constBegin(), vend = values.constEnd();
-                        for ( ; vit != vend; ++vit) {
-                            bool append(true);
-
-                            if (vit.key() == QContactDetail__FieldModifiable) {
-                                append = syncable;
-                            }
-
-                            if (append) {
-                                detail.setValue(vit.key(), vit.value());
-                            }
-                        }
-
-                        contact.saveDetail(&detail);
-
-                        transientTypes.insert(transientType);
-                    }
-                }
-
-                // Mark this contact as not requiring table data for these detailtypes
-                transientContactDetails.insert(dbId, transientTypes);
-            }
-
-            // Add the updated status flags
-            QContactManagerEngine::setDetailAccessConstraints(&flags, QContactDetail::ReadOnly | QContactDetail::Irremovable);
-            contact.saveDetail(&flags);
-
-            // Add the timestamp info
-            if (!timestamp.isEmpty())
-                contact.saveDetail(&timestamp);
-
-            contacts->append(contact);
+        if (flags.testFlag(QContactStatusFlags::IsDeactivated)) {
+            QContactDeactivated deactivated;
+            contact.saveDetail(&deactivated);
+        }
+        if (flags.testFlag(QContactStatusFlags::IsIncidental)) {
+            QContactIncidental incidental;
+            contact.saveDetail(&incidental);
         }
 
+        int contactType = query.value(21).toInt();
+        QContactType typeDetail = contact.detail<QContactType>();
+        typeDetail.setType(static_cast<QContactType::TypeValues>(contactType));
+        contact.saveDetail(&typeDetail);
+
+        bool syncable = !syncTarget.isEmpty() &&
+                        (syncTarget != aggregateSyncTarget) &&
+                        (syncTarget != localSyncTarget) &&
+                        (syncTarget != wasLocalSyncTarget);
+
+        QSet<QContactDetail::DetailType> transientTypes;
+
+        // Find any transient details for this contact
+        if (m_database.hasTransientDetails(dbId)) {
+            const QPair<QDateTime, QList<QContactDetail> > transientDetails(m_database.transientDetails(dbId));
+            if (!transientDetails.first.isNull()) {
+                // Update the contact timestamp to that of the transient details
+                setValue(&timestamp, QContactTimestamp::FieldModificationTimestamp, transientDetails.first);
+
+                QList<QContactDetail>::const_iterator it = transientDetails.second.constBegin(), end = transientDetails.second.constEnd();
+                for ( ; it != end; ++it) {
+                    // Copy the transient detail into the contact
+                    const QContactDetail &transient(*it);
+
+                    const QContactDetail::DetailType transientType(transient.type());
+
+                    if (transientType == QContactGlobalPresence::Type) {
+                        // If global presence is in the transient details, the IsOnline status flag is out of date
+                        const int presenceState = transient.value<int>(QContactGlobalPresence::FieldPresenceState);
+                        const bool isOnline(presenceState >= QContactPresence::PresenceAvailable &&
+                                            presenceState <= QContactPresence::PresenceExtendedAway);
+                        flags.setFlag(QContactStatusFlags::IsOnline, isOnline);
+                    }
+
+                    // Ignore details that aren't in the requested types
+                    if (!definitionMask.isEmpty() && !definitionMask.contains(transientType)) {
+                        continue;
+                    }
+
+                    QContactDetail detail(transient.type());
+                    if (!relaxConstraints) {
+                        QContactManagerEngine::setDetailAccessConstraints(&detail, transient.accessConstraints());
+                    }
+
+                    const QMap<int, QVariant> values(transient.values());
+                    QMap<int, QVariant>::const_iterator vit = values.constBegin(), vend = values.constEnd();
+                    for ( ; vit != vend; ++vit) {
+                        bool append(true);
+
+                        if (vit.key() == QContactDetail__FieldModifiable) {
+                            append = syncable;
+                        }
+
+                        if (append) {
+                            detail.setValue(vit.key(), vit.value());
+                        }
+                    }
+
+                    contact.saveDetail(&detail);
+
+                    transientTypes.insert(transientType);
+                }
+            }
+        }
+
+        // Add the updated status flags
+        QContactManagerEngine::setDetailAccessConstraints(&flags, QContactDetail::ReadOnly | QContactDetail::Irremovable);
+        contact.saveDetail(&flags);
+
+        // Add the timestamp info
+        if (!timestamp.isEmpty())
+            contact.saveDetail(&timestamp);
+
+        // Add the details of this contact from the detail tables
         if (!selectSpec.isEmpty()) {
             if (detailQuery.isValid()) {
                 do {
-                    const quint32 detailId = detailQuery.value(0).toUInt();
                     const quint32 contactId = detailQuery.value(1).toUInt();
-                    const QString detailName = detailQuery.value(2).toString();
-
-                    if (contactId > maxBatchId) {
+                    if (contactId != dbId) {
                         break;
                     }
+
+                    const quint32 detailId = detailQuery.value(0).toUInt();
+                    const QString detailName = detailQuery.value(2).toString();
 
                     // Are we reporting this detail type?
                     const QPair<ReadDetail, int> properties(readProperties[detailName]);
                     if (properties.first && properties.second) {
                         // Are there transient details of this type for this contact?
-                        QMap<quint32, QSet<QContactDetail::DetailType> >::const_iterator tit = transientContactDetails.constFind(contactId);
-                        if (tit != transientContactDetails.constEnd()) {
-                            const QContactDetail::DetailType detailType(detailIdentifier(detailName));
-                            if ((*tit).contains(detailType)) {
-                                // This contact has transient details of this type; skip the extraction
-                                continue;
-                            }
+                        const QContactDetail::DetailType detailType(detailIdentifier(detailName));
+                        if (transientTypes.contains(detailType)) {
+                            // This contact has transient details of this type; skip the extraction
+                            continue;
                         }
 
-                        QMap<quint32, int>::iterator iit = contactIdIndex.find(contactId);
-                        if (iit != contactIdIndex.end()) {
-                            int contactIndex = *iit;
-                            QContact &contact(*(contacts->begin() + contactIndex));
-
-                            bool syncable = *(syncableContact.constBegin() + (contactIndex - contactCount));
-                            const QString &syncTarget = *(contactSyncTarget.constBegin() + (contactIndex - contactCount));
-
-                            // Extract the values from the result row
-                            properties.first(&contact, detailQuery, contactId, detailId, syncable, syncTarget, relaxConstraints, properties.second);
-                        }
+                        // Extract the values from the result row
+                        properties.first(&contact, detailQuery, contactId, detailId, syncable, syncTarget, relaxConstraints, properties.second);
                     }
                 } while (detailQuery.next());
             }
         }
 
         if ((optimizationHints & QContactFetchHint::NoRelationships) == 0) {
+            // Find any relationships for this contact
             if (relationshipQuery.isValid()) {
                 // Find the relationships for the contacts in this batch
-                QMap<quint32, QList<QContactRelationship> > contactRelationships;
+                QList<QContactRelationship> relationships;
 
                 do {
                     const quint32 contactId = relationshipQuery.value(0).toUInt();
-                    if (contactId > maxBatchId) {
+                    if (contactId != dbId) {
                         break;
                     }
 
@@ -2182,35 +2152,33 @@ QContactManager::Error ContactReader::queryContacts(
 
                     if (!firstType.isEmpty()) {
                         QContactRelationship rel(makeRelationship(firstType, contactId, secondId));
-                        contactRelationships[contactId].append(rel);
+                        relationships.append(rel);
                     } else if (!secondType.isEmpty()) {
                         QContactRelationship rel(makeRelationship(secondType, firstId, contactId));
-                        contactRelationships[contactId].append(rel);
+                        relationships.append(rel);
                     }
                 } while (relationshipQuery.next());
 
-                // Set the relationship lists for the contacts in this batch
-                QMap<quint32, QList<QContactRelationship> >::const_iterator rit = contactRelationships.constBegin(), rend = contactRelationships.constEnd();
-                for ( ; rit != rend; ++rit) {
-                    quint32 contactId = rit.key();
-
-                    QMap<quint32, int>::iterator iit = contactIdIndex.find(contactId);
-                    if (iit != contactIdIndex.end()) {
-                        int contactIndex = *iit;
-                        QContact &contact(*(contacts->begin() + contactIndex));
-
-                        // Set the relationships for this contact
-                        QContactManagerEngine::setContactRelationships(&contact, rit.value());
-                    }
-                }
+                QContactManagerEngine::setContactRelationships(&contact, relationships);
             }
         }
 
-        contactsAvailable(*contacts);
+        // Append this contact to the output set
+        contacts->append(contact);
+
+        // Periodically report our retrievals
+        if ((contacts->count() % batchSize) == 0) {
+            contactsAvailable(*contacts);
+        }
     } while (query.isValid() && (maximumCount < 0));
 
     relationshipQuery.finish();
     detailQuery.finish();
+
+    // If any retrievals are not yet reported, do so now
+    if ((contacts->count() % batchSize) != 0) {
+        contactsAvailable(*contacts);
+    }
 
     return QContactManager::NoError;
 }
