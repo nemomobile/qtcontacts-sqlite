@@ -1814,7 +1814,7 @@ QContactManager::Error ContactReader::queryContacts(
     const QString idsQueryStatement(QString::fromLatin1(
         "SELECT Contacts.* "
         "FROM temp.%1 "
-        "JOIN Contacts ON temp.%1.contactId = Contacts.contactId "
+        "CROSS JOIN Contacts ON temp.%1.contactId = Contacts.contactId " // Cross join ensures we scan the temp table first
         "ORDER BY temp.%1.rowId ASC"));
 
     QSqlQuery query(m_database);
@@ -1857,7 +1857,7 @@ QContactManager::Error ContactReader::queryContacts(
             "COALESCE(Details.nonexportable, 0),"
             "%1 "
         "FROM temp.%2 "
-        "JOIN Details ON Details.contactId = temp.%2.contactId "
+        "CROSS JOIN Details ON Details.contactId = temp.%2.contactId " // Cross join ensures we scan the temp table first
         "%3 "
         "ORDER BY temp.%2.rowId ASC"));
 
