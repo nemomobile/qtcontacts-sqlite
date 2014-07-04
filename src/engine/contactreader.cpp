@@ -1819,24 +1819,69 @@ QContactManager::Error ContactReader::queryContacts(
         "SELECT Contacts.* "
         "FROM temp.%1 "
         "CROSS JOIN Contacts ON temp.%1.contactId = Contacts.contactId " // Cross join ensures we scan the temp table first
-        "ORDER BY temp.%1.rowId ASC"));
+        "ORDER BY temp.%1.rowId ASC").arg(tableName));
 
-    QSqlQuery query(m_database);
-    if (!query.prepare(idsQueryStatement.arg(tableName))) {
+    const QString relationshipQueryStatement(QString::fromLatin1(
+        "SELECT "
+            "temp.%1.contactId AS contactId,"
+            "R1.type AS secondType,"
+            "R1.firstId AS firstId,"
+            "R2.type AS firstType,"
+            "R2.secondId AS secondId "
+        "FROM temp.%1 "
+        "LEFT JOIN Relationships AS R1 ON R1.secondId = temp.%1.contactId " // Must join in this order to get correct query plan
+        "LEFT JOIN Relationships AS R2 ON R2.firstId = temp.%1.contactId "
+        "ORDER BY contactId ASC").arg(tableName));
+
+    QSqlQuery contactQuery(m_database);
+    QSqlQuery relationshipQuery(m_database);
+
+    // Prepare the query for the contact properties
+    if (!contactQuery.prepare(idsQueryStatement)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for contact details:\n%1\nQuery:\n%2")
-                .arg(query.lastError().text())
+                .arg(contactQuery.lastError().text())
                 .arg(idsQueryStatement));
         err = QContactManager::UnspecifiedError;
     } else {
-        query.setForwardOnly(true);
-        if (!query.exec()) {
+        contactQuery.setForwardOnly(true);
+        if (!contactQuery.exec()) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to execute query for contact details:\n%1\nQuery:\n%2")
-                    .arg(query.lastError().text())
+                    .arg(contactQuery.lastError().text())
                     .arg(idsQueryStatement));
             err = QContactManager::UnspecifiedError;
         } else {
-            err = queryContacts(tableName, contacts, fetchHint, relaxConstraints, query);
-            query.finish();
+            QContactFetchHint::OptimizationHints optimizationHints(fetchHint.optimizationHints());
+            const bool fetchRelationships((optimizationHints & QContactFetchHint::NoRelationships) == 0);
+
+            if (fetchRelationships) {
+                // Prepare the query for the contact relationships
+                if (!relationshipQuery.prepare(relationshipQueryStatement)) {
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for relationships:\n%1\nQuery:\n%2")
+                            .arg(relationshipQuery.lastError().text())
+                            .arg(relationshipQueryStatement));
+                    err = QContactManager::UnspecifiedError;
+                } else {
+                    relationshipQuery.setForwardOnly(true);
+                    if (!relationshipQuery.exec()) {
+                        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for relationships:\n%1\nQuery:\n%2")
+                                .arg(relationshipQuery.lastError().text())
+                                .arg(relationshipQueryStatement));
+                        err = QContactManager::UnspecifiedError;
+                    } else {
+                        // Move to the first row
+                        relationshipQuery.next();
+                    }
+                }
+            }
+
+            if (err == QContactManager::NoError) {
+                err = queryContacts(tableName, contacts, fetchHint, relaxConstraints, contactQuery, relationshipQuery);
+            }
+
+            contactQuery.finish();
+            if (fetchRelationships) {
+                relationshipQuery.finish();
+            }
         }
     }
 
@@ -1844,7 +1889,7 @@ QContactManager::Error ContactReader::queryContacts(
 }
 
 QContactManager::Error ContactReader::queryContacts(
-        const QString &tableName, QList<QContact> *contacts, const QContactFetchHint &fetchHint, bool relaxConstraints, QSqlQuery &query)
+        const QString &tableName, QList<QContact> *contacts, const QContactFetchHint &fetchHint, bool relaxConstraints, QSqlQuery &contactQuery, QSqlQuery &relationshipQuery)
 {
     // Formulate the query to fetch the contact details
     const QString detailQueryTemplate(QString::fromLatin1(
@@ -1903,92 +1948,63 @@ QContactManager::Error ContactReader::queryContacts(
     detailQueryStatement = detailQueryStatement.arg(tableName);
     detailQueryStatement = detailQueryStatement.arg(joinSpec.join(QChar::fromLatin1(' ')));
 
+    // If selectSpec is empty, all required details are in the Contacts table
     QSqlQuery detailQuery(m_database);
-    if (!detailQuery.prepare(detailQueryStatement)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for joined details:\n%1\nQuery:\n%2")
-                .arg(detailQuery.lastError().text())
-                .arg(detailQueryStatement));
-        return QContactManager::UnspecifiedError;
-    }
-
-    // Read the details for these contacts
-    detailQuery.setForwardOnly(true);
-    if (!detailQuery.exec()) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for joined details:\n%1\nQuery:\n%2")
-                .arg(detailQuery.lastError().text())
-                .arg(detailQueryStatement));
-        return QContactManager::UnspecifiedError;
-    } else {
-        // Move to the first row
-        detailQuery.next();
-    }
-
-    QContactFetchHint::OptimizationHints optimizationHints(fetchHint.optimizationHints());
-
-    // Formulate the relationships query
-    const QString relationshipQueryStatement(QString::fromLatin1(
-        "SELECT "
-            "temp.%1.contactId AS contactId,"
-            "R1.type AS secondType,"
-            "R1.firstId AS firstId,"
-            "R2.type AS firstType,"
-            "R2.secondId AS secondId "
-        "FROM temp.%1 "
-        "LEFT JOIN Relationships AS R1 ON R1.secondId = temp.%1.contactId " // Must join in this order to get correct query plan
-        "LEFT JOIN Relationships AS R2 ON R2.firstId = temp.%1.contactId "
-        "ORDER BY contactId ASC").arg(tableName));
-
-    QSqlQuery relationshipQuery(m_database);
-    if ((optimizationHints & QContactFetchHint::NoRelationships) == 0) {
-        if (!relationshipQuery.prepare(relationshipQueryStatement)) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for relationships:\n%1\nQuery:\n%2")
-                    .arg(relationshipQuery.lastError().text())
-                    .arg(relationshipQueryStatement));
+    if (!selectSpec.isEmpty()) {
+        if (!detailQuery.prepare(detailQueryStatement)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for joined details:\n%1\nQuery:\n%2")
+                    .arg(detailQuery.lastError().text())
+                    .arg(detailQueryStatement));
             return QContactManager::UnspecifiedError;
         }
 
         // Read the details for these contacts
-        relationshipQuery.setForwardOnly(true);
-        if (!relationshipQuery.exec()) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for relationships:\n%1\nQuery:\n%2")
-                    .arg(relationshipQuery.lastError().text())
-                    .arg(relationshipQueryStatement));
+        detailQuery.setForwardOnly(true);
+        if (!detailQuery.exec()) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for joined details:\n%1\nQuery:\n%2")
+                    .arg(detailQuery.lastError().text())
+                    .arg(detailQueryStatement));
             return QContactManager::UnspecifiedError;
         } else {
             // Move to the first row
-            relationshipQuery.next();
+            detailQuery.next();
         }
     }
 
-    // Query the contact data in batches
-    const int maximumCount = fetchHint.maxCountHint();
-    const int batchSize = (maximumCount > 0) ? maximumCount : ReportBatchSize;
+    const bool includeRelationships(relationshipQuery.isValid());
+    const bool includeDetails(detailQuery.isValid());
 
-    while (query.next()) {
-        quint32 dbId = query.value(0).toUInt();
+    // We need to report our retrievals periodically
+    int unreportedCount = 0;
+
+    const int maximumCount = fetchHint.maxCountHint();
+    const int batchSize = (maximumCount > 0) ? 0 : ReportBatchSize; // If count is constrained, don't report periodically
+
+    while (contactQuery.next()) {
+        quint32 dbId = contactQuery.value(0).toUInt();
 
         QContact contact;
 
         QContactId id(ContactId::contactId(ContactId::apiId(dbId)));
         contact.setId(id);
 
-        QString persistedDL = query.value(1).toString();
+        QString persistedDL = contactQuery.value(1).toString();
         if (!persistedDL.isEmpty())
             ContactsEngine::setContactDisplayLabel(&contact, persistedDL);
 
         QContactName name;
-        setValue(&name, QContactName::FieldFirstName  , query.value(2));
+        setValue(&name, QContactName::FieldFirstName  , contactQuery.value(2));
         // ignore lowerFirstName
-        setValue(&name, QContactName::FieldLastName   , query.value(4));
+        setValue(&name, QContactName::FieldLastName   , contactQuery.value(4));
         // ignore lowerLastName
-        setValue(&name, QContactName::FieldMiddleName , query.value(6));
-        setValue(&name, QContactName::FieldPrefix     , query.value(7));
-        setValue(&name, QContactName::FieldSuffix     , query.value(8));
-        setValue(&name, QContactName__FieldCustomLabel, query.value(9));
+        setValue(&name, QContactName::FieldMiddleName , contactQuery.value(6));
+        setValue(&name, QContactName::FieldPrefix     , contactQuery.value(7));
+        setValue(&name, QContactName::FieldSuffix     , contactQuery.value(8));
+        setValue(&name, QContactName__FieldCustomLabel, contactQuery.value(9));
         if (!name.isEmpty())
             contact.saveDetail(&name);
 
-        const QString syncTarget(query.value(10).toString());
+        const QString syncTarget(contactQuery.value(10).toString());
 
         QContactSyncTarget starget;
         setValue(&starget, QContactSyncTarget::FieldSyncTarget, syncTarget);
@@ -1996,12 +2012,12 @@ QContactManager::Error ContactReader::queryContacts(
             contact.saveDetail(&starget);
 
         QContactTimestamp timestamp;
-        setValue(&timestamp, QContactTimestamp::FieldCreationTimestamp    , ContactsDatabase::fromDateTimeString(query.value(11).toString()));
-        setValue(&timestamp, QContactTimestamp::FieldModificationTimestamp, ContactsDatabase::fromDateTimeString(query.value(12).toString()));
+        setValue(&timestamp, QContactTimestamp::FieldCreationTimestamp    , ContactsDatabase::fromDateTimeString(contactQuery.value(11).toString()));
+        setValue(&timestamp, QContactTimestamp::FieldModificationTimestamp, ContactsDatabase::fromDateTimeString(contactQuery.value(12).toString()));
 
         QContactGender gender;
         // Gender is an enum in qtpim
-        QString genderText = query.value(13).toString();
+        QString genderText = contactQuery.value(13).toString();
         if (genderText.startsWith(QChar::fromLatin1('f'), Qt::CaseInsensitive)) {
             gender.setGender(QContactGender::GenderFemale);
         } else if (genderText.startsWith(QChar::fromLatin1('m'), Qt::CaseInsensitive)) {
@@ -2013,17 +2029,17 @@ QContactManager::Error ContactReader::queryContacts(
             contact.saveDetail(&gender);
 
         QContactFavorite favorite;
-        setValue(&favorite, QContactFavorite::FieldFavorite, query.value(14).toBool());
+        setValue(&favorite, QContactFavorite::FieldFavorite, contactQuery.value(14).toBool());
         if (!favorite.isEmpty())
             contact.saveDetail(&favorite);
 
         QContactStatusFlags flags;
-        flags.setFlag(QContactStatusFlags::HasPhoneNumber, query.value(15).toBool());
-        flags.setFlag(QContactStatusFlags::HasEmailAddress, query.value(16).toBool());
-        flags.setFlag(QContactStatusFlags::HasOnlineAccount, query.value(17).toBool());
-        flags.setFlag(QContactStatusFlags::IsOnline, query.value(18).toBool());
-        flags.setFlag(QContactStatusFlags::IsDeactivated, query.value(19).toBool());
-        flags.setFlag(QContactStatusFlags::IsIncidental, query.value(20).toBool());
+        flags.setFlag(QContactStatusFlags::HasPhoneNumber, contactQuery.value(15).toBool());
+        flags.setFlag(QContactStatusFlags::HasEmailAddress, contactQuery.value(16).toBool());
+        flags.setFlag(QContactStatusFlags::HasOnlineAccount, contactQuery.value(17).toBool());
+        flags.setFlag(QContactStatusFlags::IsOnline, contactQuery.value(18).toBool());
+        flags.setFlag(QContactStatusFlags::IsDeactivated, contactQuery.value(19).toBool());
+        flags.setFlag(QContactStatusFlags::IsIncidental, contactQuery.value(20).toBool());
 
         if (flags.testFlag(QContactStatusFlags::IsDeactivated)) {
             QContactDeactivated deactivated;
@@ -2034,7 +2050,7 @@ QContactManager::Error ContactReader::queryContacts(
             contact.saveDetail(&incidental);
         }
 
-        int contactType = query.value(21).toInt();
+        int contactType = contactQuery.value(21).toInt();
         QContactType typeDetail = contact.detail<QContactType>();
         typeDetail.setType(static_cast<QContactType::TypeValues>(contactType));
         contact.saveDetail(&typeDetail);
@@ -2108,7 +2124,7 @@ QContactManager::Error ContactReader::queryContacts(
             contact.saveDetail(&timestamp);
 
         // Add the details of this contact from the detail tables
-        if (!selectSpec.isEmpty()) {
+        if (includeDetails) {
             if (detailQuery.isValid()) {
                 do {
                     const quint32 contactId = detailQuery.value(1).toUInt();
@@ -2136,7 +2152,7 @@ QContactManager::Error ContactReader::queryContacts(
             }
         }
 
-        if ((optimizationHints & QContactFetchHint::NoRelationships) == 0) {
+        if (includeRelationships) {
             // Find any relationships for this contact
             if (relationshipQuery.isValid()) {
                 // Find the relationships for the contacts in this batch
@@ -2170,16 +2186,16 @@ QContactManager::Error ContactReader::queryContacts(
         contacts->append(contact);
 
         // Periodically report our retrievals
-        if ((contacts->count() % batchSize) == 0) {
+        if (++unreportedCount == batchSize) {
+            unreportedCount = 0;
             contactsAvailable(*contacts);
         }
-    } while (query.isValid() && (maximumCount < 0));
+    }
 
-    relationshipQuery.finish();
     detailQuery.finish();
 
     // If any retrievals are not yet reported, do so now
-    if ((contacts->count() % batchSize) != 0) {
+    if (unreportedCount > 0) {
         contactsAvailable(*contacts);
     }
 
