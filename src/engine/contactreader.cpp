@@ -1925,14 +1925,14 @@ QContactManager::Error ContactReader::queryContacts(
     const QString relationshipQueryStatement(QString::fromLatin1(
         "SELECT "
             "temp.%1.contactId AS contactId,"
-            "R1.type AS firstType,"
-            "R1.secondId AS secondId,"
-            "R2.type AS secondType,"
-            "R2.firstId AS firstId "
+            "R1.type AS secondType,"
+            "R1.firstId AS firstId,"
+            "R2.type AS firstType,"
+            "R2.secondId AS secondId "
         "FROM temp.%1 "
-        "LEFT JOIN Relationships AS R1 ON R1.firstId = temp.%1.contactId "
-        "LEFT JOIN Relationships AS R2 ON R2.secondId = temp.%1.contactId "
-        "ORDER BY temp.%1.rowId ASC").arg(tableName));
+        "LEFT JOIN Relationships AS R1 ON R1.secondId = temp.%1.contactId " // Must join in this order to get correct query plan
+        "LEFT JOIN Relationships AS R2 ON R2.firstId = temp.%1.contactId "
+        "ORDER BY contactId ASC").arg(tableName));
 
     QSqlQuery relationshipQuery(m_database);
     if ((optimizationHints & QContactFetchHint::NoRelationships) == 0) {
@@ -2175,10 +2175,10 @@ QContactManager::Error ContactReader::queryContacts(
                         break;
                     }
 
-                    const QString firstType = relationshipQuery.value(1).toString();
-                    const quint32 secondId = relationshipQuery.value(2).toUInt();
-                    const QString secondType = relationshipQuery.value(3).toString();
-                    const quint32 firstId = relationshipQuery.value(4).toUInt();
+                    const QString secondType = relationshipQuery.value(1).toString();
+                    const quint32 firstId = relationshipQuery.value(2).toUInt();
+                    const QString firstType = relationshipQuery.value(3).toString();
+                    const quint32 secondId = relationshipQuery.value(4).toUInt();
 
                     if (!firstType.isEmpty()) {
                         QContactRelationship rel(makeRelationship(firstType, contactId, secondId));
