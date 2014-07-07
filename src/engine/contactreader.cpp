@@ -88,6 +88,7 @@ static const QString wasLocalSyncTarget(QString::fromLatin1("was_local"));
 enum FieldType {
     StringField = 0,
     StringListField,
+    LocalizedField,
     IntegerField,
     DateField,
     BooleanField,
@@ -136,17 +137,17 @@ static QVariant dateValue(const QVariant &columnValue)
 
 static const FieldInfo displayLabelFields[] =
 {
-    { QContactDisplayLabel::FieldLabel, "displayLabel", StringField }
+    { QContactDisplayLabel::FieldLabel, "displayLabel", LocalizedField }
 };
 
 static const FieldInfo nameFields[] =
 {
-    { QContactName::FieldFirstName, "firstName", StringField },
-    { QContactName::FieldLastName, "lastName", StringField },
-    { QContactName::FieldMiddleName, "middleName", StringField },
-    { QContactName::FieldPrefix, "prefix", StringField },
-    { QContactName::FieldSuffix, "suffix", StringField },
-    { QContactName__FieldCustomLabel, "customLabel", StringField }
+    { QContactName::FieldFirstName, "firstName", LocalizedField },
+    { QContactName::FieldLastName, "lastName", LocalizedField },
+    { QContactName::FieldMiddleName, "middleName", LocalizedField },
+    { QContactName::FieldPrefix, "prefix", LocalizedField },
+    { QContactName::FieldSuffix, "suffix", LocalizedField },
+    { QContactName__FieldCustomLabel, "customLabel", LocalizedField }
 };
 
 static const FieldInfo syncTargetFields[] =
@@ -183,12 +184,12 @@ static const FieldInfo typeFields[] =
 
 static const FieldInfo addressFields[] =
 {
-    { QContactAddress::FieldStreet, "street", StringField },
-    { QContactAddress::FieldPostOfficeBox, "postOfficeBox", StringField },
-    { QContactAddress::FieldRegion, "region", StringField },
-    { QContactAddress::FieldLocality, "locality", StringField },
-    { QContactAddress::FieldPostcode, "postCode", StringField },
-    { QContactAddress::FieldCountry, "country", StringField },
+    { QContactAddress::FieldStreet, "street", LocalizedField },
+    { QContactAddress::FieldPostOfficeBox, "postOfficeBox", LocalizedField },
+    { QContactAddress::FieldRegion, "region", LocalizedField },
+    { QContactAddress::FieldLocality, "locality", LocalizedField },
+    { QContactAddress::FieldPostcode, "postCode", LocalizedField },
+    { QContactAddress::FieldCountry, "country", LocalizedField },
     { QContactAddress::FieldSubTypes, "subTypes", StringListField },
     { QContactDetail::FieldContext, "context", StringField }
 
@@ -283,7 +284,7 @@ static void setValues(QContactGuid *detail, QSqlQuery *query, const int offset)
 
 static const FieldInfo hobbyFields[] =
 {
-    { QContactHobby::FieldHobby, "hobby", StringField }
+    { QContactHobby::FieldHobby, "hobby", LocalizedField }
 };
 
 static void setValues(QContactHobby *detail, QSqlQuery *query, const int offset)
@@ -295,7 +296,7 @@ static void setValues(QContactHobby *detail, QSqlQuery *query, const int offset)
 
 static const FieldInfo nicknameFields[] =
 {
-    { QContactNickname::FieldNickname, "nickname", StringField }
+    { QContactNickname::FieldNickname, "nickname", LocalizedField }
 };
 
 static void setValues(QContactNickname *detail, QSqlQuery *query, const int offset)
@@ -308,7 +309,7 @@ static void setValues(QContactNickname *detail, QSqlQuery *query, const int offs
 
 static const FieldInfo noteFields[] =
 {
-    { QContactNote::FieldNote, "note", StringField }
+    { QContactNote::FieldNote, "note", LocalizedField }
 };
 
 static void setValues(QContactNote *detail, QSqlQuery *query, const int offset)
@@ -322,14 +323,14 @@ static const FieldInfo onlineAccountFields[] =
 {
     { QContactOnlineAccount::FieldAccountUri, "accountUri", StringField },
     { QContactOnlineAccount::FieldProtocol, "protocol", StringField },
-    { QContactOnlineAccount::FieldServiceProvider, "serviceProvider", StringField },
+    { QContactOnlineAccount::FieldServiceProvider, "serviceProvider", LocalizedField },
     { QContactOnlineAccount::FieldCapabilities, "capabilities", StringListField },
     { QContactOnlineAccount::FieldSubTypes, "subTypes", StringListField },
     { QContactOnlineAccount__FieldAccountPath, "accountPath", StringField },
     { QContactOnlineAccount__FieldAccountIconPath, "accountIconPath", StringField },
     { QContactOnlineAccount__FieldEnabled, "enabled", BooleanField },
-    { QContactOnlineAccount__FieldAccountDisplayName, "accountDisplayName", StringField },
-    { QContactOnlineAccount__FieldServiceProviderDisplayName, "serviceProviderDisplayName", StringField }
+    { QContactOnlineAccount__FieldAccountDisplayName, "accountDisplayName", LocalizedField },
+    { QContactOnlineAccount__FieldServiceProviderDisplayName, "serviceProviderDisplayName", LocalizedField }
 };
 
 static void setValues(QContactOnlineAccount *detail, QSqlQuery *query, const int offset)
@@ -354,11 +355,11 @@ static void setValues(QContactOnlineAccount *detail, QSqlQuery *query, const int
 
 static const FieldInfo organizationFields[] =
 {
-    { QContactOrganization::FieldName, "name", StringField },
-    { QContactOrganization::FieldRole, "role", StringField },
-    { QContactOrganization::FieldTitle, "title", StringField },
-    { QContactOrganization::FieldLocation, "location", StringField },
-    { QContactOrganization::FieldDepartment, "department", StringField },
+    { QContactOrganization::FieldName, "name", LocalizedField },
+    { QContactOrganization::FieldRole, "role", LocalizedField },
+    { QContactOrganization::FieldTitle, "title", LocalizedField },
+    { QContactOrganization::FieldLocation, "location", LocalizedField },
+    { QContactOrganization::FieldDepartment, "department", LocalizedField },
     { QContactOrganization::FieldLogoUrl, "logoUrl", StringField }
 };
 
@@ -376,7 +377,7 @@ static void setValues(QContactOrganization *detail, QSqlQuery *query, const int 
 
 static const FieldInfo phoneNumberFields[] =
 {
-    { QContactPhoneNumber::FieldNumber, "phoneNumber", StringField },
+    { QContactPhoneNumber::FieldNumber, "phoneNumber", LocalizedField },
     { QContactPhoneNumber::FieldSubTypes, "subTypes", StringListField },
     { QContactPhoneNumber__FieldNormalizedNumber, "normalizedNumber", StringField }
 };
@@ -397,8 +398,8 @@ static const FieldInfo presenceFields[] =
 {
     { QContactPresence::FieldPresenceState, "presenceState", IntegerField },
     { QContactPresence::FieldTimestamp, "timestamp", DateField },
-    { QContactPresence::FieldNickname, "nickname", StringField },
-    { QContactPresence::FieldCustomMessage, "customMessage", StringField }
+    { QContactPresence::FieldNickname, "nickname", LocalizedField },
+    { QContactPresence::FieldCustomMessage, "customMessage", LocalizedField }
 };
 
 static void setValues(QContactPresence *detail, QSqlQuery *query, const int offset)
@@ -437,7 +438,7 @@ static void setValues(QContactRingtone *detail, QSqlQuery *query, const int offs
 
 static const FieldInfo tagFields[] =
 {
-    { QContactTag::FieldTag, "tag", StringField }
+    { QContactTag::FieldTag, "tag", LocalizedField }
 };
 
 static void setValues(QContactTag *detail, QSqlQuery *query, const int offset)
@@ -835,7 +836,7 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
 
             // TODO: We need case handling for StringListField, too
             bool dateField = field.fieldType == DateField;
-            bool stringField = field.fieldType == StringField;
+            bool stringField = field.fieldType == StringField || field.fieldType == LocalizedField;
             bool phoneNumberMatch = filter.matchFlags() & QContactFilter::MatchPhoneNumber;
             bool useNormalizedNumber = false;
             int globValue = filter.matchFlags() & 7;
@@ -983,7 +984,7 @@ static QString buildWhere(const QContactDetailRangeFilter &filter, QVariantList 
 
             QString comparison;
             bool dateField = field.fieldType == DateField;
-            bool stringField = field.fieldType == StringField;
+            bool stringField = field.fieldType == StringField || field.fieldType == LocalizedField;
             bool caseInsensitive = stringField &&
                                    filter.matchFlags() & QContactFilter::MatchFixedString &&
                                    (filter.matchFlags() & QContactFilter::MatchCaseSensitive) == 0;
@@ -1257,7 +1258,7 @@ static QString buildWhere(const QContactFilter &filter, ContactsDatabase &db, co
 
 static int sortField(const QContactSortOrder &sort) { return sort.detailField(); }
 
-static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins, bool *transientModifiedRequired, bool *globalPresenceRequired)
+static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins, bool *transientModifiedRequired, bool *globalPresenceRequired, bool useLocale)
 {
     Q_ASSERT(joins);
     Q_ASSERT(transientModifiedRequired);
@@ -1276,6 +1277,7 @@ static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins, 
             QString sortExpression(QStringLiteral("%1.%2").arg(detail.join ? detail.table : QStringLiteral("Contacts")).arg(field.column));
             bool sortBlanks = true;
             bool collate = true;
+            bool localized = field.fieldType == LocalizedField;
 
             // Special case for accessing transient data
             if (detail.detailType == detailIdentifier<QContactGlobalPresence>() &&
@@ -1320,7 +1322,11 @@ static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins, 
             result.append(sortExpression);
 
             if (collate) {
-                result.append((order.caseSensitivity() == Qt::CaseSensitive) ? QLatin1String(" COLLATE RTRIM") : QLatin1String(" COLLATE NOCASE"));
+                if (localized && useLocale) {
+                    result.append(QLatin1String(" COLLATE localeCollation"));
+                } else {
+                    result.append((order.caseSensitivity() == Qt::CaseSensitive) ? QLatin1String(" COLLATE RTRIM") : QLatin1String(" COLLATE NOCASE"));
+                }
             }
 
             result.append((order.direction() == Qt::AscendingOrder) ? QLatin1String(" ASC") : QLatin1String(" DESC"));
@@ -1346,7 +1352,7 @@ static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins, 
     return QString();
 }
 
-static QString buildOrderBy(const QList<QContactSortOrder> &order, QString *join, bool *transientModifiedRequired, bool *globalPresenceRequired)
+static QString buildOrderBy(const QList<QContactSortOrder> &order, QString *join, bool *transientModifiedRequired, bool *globalPresenceRequired, bool useLocale)
 {
     Q_ASSERT(join);
     Q_ASSERT(transientModifiedRequired);
@@ -1358,7 +1364,7 @@ static QString buildOrderBy(const QList<QContactSortOrder> &order, QString *join
     QStringList joins;
     QStringList fragments;
     foreach (const QContactSortOrder &sort, order) {
-        const QString fragment = buildOrderBy(sort, &joins, transientModifiedRequired, globalPresenceRequired);
+        const QString fragment = buildOrderBy(sort, &joins, transientModifiedRequired, globalPresenceRequired, useLocale);
         if (!fragment.isEmpty()) {
             fragments.append(fragment);
         }
@@ -1689,7 +1695,7 @@ QContactManager::Error ContactReader::readContacts(
     QString join;
     bool transientModifiedRequired = false;
     bool globalPresenceRequired = false;
-    const QString orderBy = buildOrderBy(order, &join, &transientModifiedRequired, &globalPresenceRequired);
+    const QString orderBy = buildOrderBy(order, &join, &transientModifiedRequired, &globalPresenceRequired, m_database.localized());
 
     bool whereFailed = false;
     QVariantList bindings;
@@ -2240,7 +2246,7 @@ QContactManager::Error ContactReader::readContactIds(
     QString join;
     bool transientModifiedRequired = false;
     bool globalPresenceRequired = false;
-    const QString orderBy = buildOrderBy(order, &join, &transientModifiedRequired, &globalPresenceRequired);
+    const QString orderBy = buildOrderBy(order, &join, &transientModifiedRequired, &globalPresenceRequired, m_database.localized());
 
     bool failed = false;
     QVariantList bindings;

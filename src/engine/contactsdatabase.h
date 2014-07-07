@@ -112,6 +112,7 @@ public:
 
     bool nonprivileged() const;
     bool aggregating() const;
+    bool localized() const;
 
     bool beginTransaction();
     bool commitTransaction();
@@ -159,6 +160,7 @@ private:
     QMutex m_mutex;
     mutable QScopedPointer<ProcessMutex> m_processMutex;
     bool m_nonprivileged;
+    QString m_localeName;
     QHash<QString, QSqlQuery> m_preparedQueries;
 };
 

@@ -857,7 +857,7 @@ static bool upgradeDatabase(QSqlDatabase &database)
     return finalizeTransaction(database, success);
 }
 
-static bool configureDatabase(QSqlDatabase &database)
+static bool configureDatabase(QSqlDatabase &database, QString &localeName)
 {
     if (!execute(database, QLatin1String(setupEncoding))
         || !execute(database, QLatin1String(setupTempStore))
@@ -866,6 +866,19 @@ static bool configureDatabase(QSqlDatabase &database)
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to configure contacts database: %1")
                 .arg(database.lastError().text()));
         return false;
+    } else {
+        const QString cLocaleName(QString::fromLatin1("C"));
+        if (localeName != cLocaleName) {
+            // Create a collation for sorting by the current locale
+            const QString statement(QString::fromLatin1("SELECT icu_load_collation('%1', 'localeCollation')"));
+            if (!execute(database, statement.arg(localeName))) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to configure collation for locale %1: %2")
+                        .arg(localeName).arg(database.lastError().text()));
+
+                // Revert to using C locale for sorting
+                localeName = cLocaleName;
+            }
+        }
     }
 
     return true;
@@ -918,9 +931,9 @@ static bool executeSelfContactStatements(QSqlDatabase &database, const bool aggr
     return true;
 }
 
-static bool prepareDatabase(QSqlDatabase &database, const bool aggregating)
+static bool prepareDatabase(QSqlDatabase &database, const bool aggregating, QString &localeName)
 {
-    if (!configureDatabase(database))
+    if (!configureDatabase(database, localeName))
         return false;
 
     if (!beginTransaction(database))
@@ -1507,6 +1520,7 @@ void ContactsDatabase::Query::reportError(const char *text) const
 ContactsDatabase::ContactsDatabase()
     : m_mutex(QMutex::Recursive)
     , m_nonprivileged(false)
+    , m_localeName(QLocale().name())
 {
 }
 
@@ -1585,14 +1599,14 @@ bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, b
         return false;
     }
 
-    if (!databasePreexisting && !prepareDatabase(m_database, aggregating())) {
+    if (!databasePreexisting && !prepareDatabase(m_database, aggregating(), m_localeName)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare contacts database - removing: %1")
                 .arg(m_database.lastError().text()));
 
         m_database.close();
         QFile::remove(databaseFile);
         return false;
-    } else if (databasePreexisting && !configureDatabase(m_database)) {
+    } else if (databasePreexisting && !configureDatabase(m_database, m_localeName)) {
         m_database.close();
         return false;
     }
@@ -1639,7 +1653,7 @@ bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, b
         return false;
     }
 
-    QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Opened contacts database: %1").arg(databaseFile));
+    QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Opened contacts database: %1 Locale: %2").arg(databaseFile).arg(m_localeName));
     return true;
 }
 
@@ -1661,6 +1675,11 @@ QSqlError ContactsDatabase::lastError() const
 bool ContactsDatabase::nonprivileged() const
 {
     return m_nonprivileged;
+}
+
+bool ContactsDatabase::localized() const
+{
+    return (m_localeName != QLatin1String("C"));
 }
 
 bool ContactsDatabase::aggregating() const
