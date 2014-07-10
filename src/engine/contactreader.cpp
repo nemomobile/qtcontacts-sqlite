@@ -1844,7 +1844,7 @@ QContactManager::Error ContactReader::queryContacts(
         err = QContactManager::UnspecifiedError;
     } else {
         contactQuery.setForwardOnly(true);
-        if (!contactQuery.exec()) {
+        if (!ContactsDatabase::execute(contactQuery)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to execute query for contact details:\n%1\nQuery:\n%2")
                     .arg(contactQuery.lastError().text())
                     .arg(idsQueryStatement));
@@ -1862,7 +1862,7 @@ QContactManager::Error ContactReader::queryContacts(
                     err = QContactManager::UnspecifiedError;
                 } else {
                     relationshipQuery.setForwardOnly(true);
-                    if (!relationshipQuery.exec()) {
+                    if (!ContactsDatabase::execute(relationshipQuery)) {
                         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for relationships:\n%1\nQuery:\n%2")
                                 .arg(relationshipQuery.lastError().text())
                                 .arg(relationshipQueryStatement));
@@ -1960,7 +1960,7 @@ QContactManager::Error ContactReader::queryContacts(
 
         // Read the details for these contacts
         detailQuery.setForwardOnly(true);
-        if (!detailQuery.exec()) {
+        if (!ContactsDatabase::execute(detailQuery)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for joined details:\n%1\nQuery:\n%2")
                     .arg(detailQuery.lastError().text())
                     .arg(detailQueryStatement));
@@ -2270,7 +2270,7 @@ QContactManager::Error ContactReader::readDeletedContactIds(
     for (int i = 0; i < bindings.count(); ++i)
         query.bindValue(i, bindings.at(i));
 
-    if (!query.exec()) {
+    if (!ContactsDatabase::execute(query)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to query deleted contacts ids\n%1\nQuery:\n%2")
                 .arg(query.lastError().text())
                 .arg(queryStatement));
@@ -2353,7 +2353,7 @@ QContactManager::Error ContactReader::readContactIds(
     for (int i = 0; i < bindings.count(); ++i)
         query.bindValue(i, bindings.at(i));
 
-    if (!query.exec()) {
+    if (!ContactsDatabase::execute(query)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to query contacts ids\n%1\nQuery:\n%2")
                 .arg(query.lastError().text())
                 .arg(queryString));
@@ -2389,7 +2389,7 @@ QContactManager::Error ContactReader::getIdentity(
 
         ContactsDatabase::Query query(m_database.prepare(identityId));
         query.bindValue(":identity", identity);
-        if (!query.exec()) {
+        if (!ContactsDatabase::execute(query)) {
             query.reportError("Failed to fetch contact identity");
             return QContactManager::UnspecifiedError;
         }
@@ -2451,7 +2451,7 @@ QContactManager::Error ContactReader::readRelationships(
     for (int i = 0; i < bindings.count(); ++i)
         query.bindValue(i, bindings.at(i));
 
-    if (!query.exec()) {
+    if (!ContactsDatabase::execute(query)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to query relationships: %1")
                 .arg(query.lastError().text()));
         return QContactManager::UnspecifiedError;
@@ -2500,7 +2500,7 @@ bool ContactReader::fetchOOB(const QString &scope, const QStringList &keys, QMap
         query.addBindValue(name);
     }
 
-    if (!query.exec()) {
+    if (!ContactsDatabase::execute(query)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to query OOB: %1")
                 .arg(query.lastError().text()));
         return false;
@@ -2545,7 +2545,7 @@ bool ContactReader::fetchOOBKeys(const QString &scope, QStringList *keys)
         return false;
     }
 
-    if (!query.exec()) {
+    if (!ContactsDatabase::execute(query)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to query OOB: %1")
                 .arg(query.lastError().text()));
         return false;
