@@ -226,7 +226,7 @@ QContactManager::Error ContactWriter::setIdentity(ContactsDatabase::Identity ide
         query.bindValue(1, dbId);
     }
 
-    if (query.exec()) {
+    if (ContactsDatabase::execute(query)) {
         // Notify..
         return QContactManager::NoError;
     } else {
@@ -354,7 +354,7 @@ QContactManager::Error ContactWriter::saveRelationships(
         ));
 
         ContactsDatabase::Query query(m_database.prepare(existingRelationships));
-        if (!query.exec()) {
+        if (!ContactsDatabase::execute(query)) {
             query.reportError("Failed to fetch existing relationships for duplicate detection during insert");
             return QContactManager::UnspecifiedError;
         }
@@ -376,7 +376,7 @@ QContactManager::Error ContactWriter::saveRelationships(
         ));
 
         ContactsDatabase::Query query(m_database.prepare(existingContactIds));
-        if (!query.exec()) {
+        if (!ContactsDatabase::execute(query)) {
             query.reportError("Failed to fetch existing contacts for validity detection during insert");
             return QContactManager::UnspecifiedError;
         }
@@ -457,7 +457,7 @@ QContactManager::Error ContactWriter::saveRelationships(
         multiInsertQuery.bindValue(QString(QLatin1String(":type%1")).arg(QString::number(i)), typesToBind.at(i));
     }
 
-    if (realInsertions > 0 && !multiInsertQuery.exec()) {
+    if (realInsertions > 0 && !ContactsDatabase::execute(multiInsertQuery)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to insert relationships:\n%1\nQuery:\n%2")
                 .arg(multiInsertQuery.lastError().text())
                 .arg(queryString));
@@ -518,7 +518,7 @@ QContactManager::Error ContactWriter::removeRelationships(
         ));
 
         ContactsDatabase::Query query(m_database.prepare(existingRelationships));
-        if (!query.exec()) {
+        if (!ContactsDatabase::execute(query)) {
             query.reportError("Failed to fetch existing relationships for duplicate detection during insert");
             return QContactManager::UnspecifiedError;
         }
@@ -568,7 +568,7 @@ QContactManager::Error ContactWriter::removeRelationships(
         query.bindValue(":secondId", currSecond);
         query.bindValue(":type", type);
 
-        if (!query.exec()) {
+        if (!ContactsDatabase::execute(query)) {
             query.reportError("Failed to remove relationship");
             worstError = QContactManager::UnspecifiedError;
             if (errorMap)
@@ -625,7 +625,7 @@ QContactManager::Error ContactWriter::removeContacts(const QVariantList &ids)
 
     ContactsDatabase::Query query(m_database.prepare(removeContact));
     query.bindValue(QLatin1String(":contactId"), ids);
-    if (!query.execBatch()) {
+    if (!ContactsDatabase::executeBatch(query)) {
         query.reportError("Failed to remove contacts");
         return QContactManager::UnspecifiedError;
     }
@@ -663,7 +663,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactId> &contactIds
         ));
 
         ContactsDatabase::Query query(m_database.prepare(findExistingContactIds));
-        if (!query.exec()) {
+        if (!ContactsDatabase::execute(query)) {
             query.reportError("Failed to fetch existing contact ids during remove");
             return QContactManager::UnspecifiedError;
         }
@@ -745,7 +745,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactId> &contactIds
             ));
 
             ContactsDatabase::Query query(m_database.prepare(selectAggregateContactIds));
-            if (!query.exec()) {
+            if (!ContactsDatabase::execute(query)) {
                 query.reportError("Failed to select aggregate contact ids during remove");
                 return QContactManager::UnspecifiedError;
             }
@@ -762,7 +762,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactId> &contactIds
             ));
 
             ContactsDatabase::Query query(m_database.prepare(findAggregateForContactIds));
-            if (!query.exec()) {
+            if (!ContactsDatabase::execute(query)) {
                 query.reportError("Failed to fetch aggregator contact ids during remove");
                 return QContactManager::UnspecifiedError;
             }
@@ -823,7 +823,7 @@ QContactManager::Error ContactWriter::remove(const QList<QContactId> &contactIds
             ));
 
             ContactsDatabase::Query query(m_database.prepare(findConstituentsForAggregateIds));
-            if (!query.exec()) {
+            if (!ContactsDatabase::execute(query)) {
                 query.reportError("Failed to fetch contacts aggregated by removed aggregates");
                 if (!withinTransaction) {
                     // only rollback the transaction if we created it
@@ -1056,7 +1056,7 @@ bool removeCommonDetails(ContactsDatabase &db, quint32 contactId, const QString 
     query.bindValue(0, contactId);
     query.bindValue(1, typeName);
 
-    if (!query.exec()) {
+    if (!ContactsDatabase::execute(query)) {
         query.reportError(QStringLiteral("Failed to remove common detail for %1").arg(typeName));
         *error = QContactManager::UnspecifiedError;
         return false;
@@ -1296,7 +1296,7 @@ bool ContactWriter::storeOOB(const QString &scope, const QMap<QString, QVariant>
         foreach (const QVariant &v, dataValues) {
             query.addBindValue(v);
         }
-        if (!query.exec()) {
+        if (!ContactsDatabase::execute(query)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to insert OOB: %1")
                     .arg(query.lastError().text()));
         } else {
@@ -1351,7 +1351,7 @@ bool ContactWriter::removeOOB(const QString &scope, const QStringList &keys)
             query.addBindValue(name);
         }
 
-        if (!query.exec()) {
+        if (!ContactsDatabase::execute(query)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to query OOB: %1")
                     .arg(query.lastError().text()));
         } else {
@@ -1447,7 +1447,7 @@ quint32 writeCommonDetails(ContactsDatabase &db, quint32 contactId, const QConta
     query.bindValue(":modifiable", modifiable);
     query.bindValue(":nonexportable", nonexportable);
 
-    if (!query.exec()) {
+    if (!ContactsDatabase::execute(query)) {
         query.reportError(QStringLiteral("Failed to write common details for %1\ndetailUri: %2, linkedDetailUris: %3")
                 .arg(typeName)
                 .arg(detailUri.value<QString>())
@@ -1544,7 +1544,7 @@ bool removeSpecificDetails(ContactsDatabase &db, quint32 contactId, const QStrin
     ContactsDatabase::Query query(db.prepare(statement));
     query.bindValue(0, contactId);
 
-    if (!query.exec()) {
+    if (!ContactsDatabase::execute(query)) {
         query.reportError(QStringLiteral("Failed to remove existing details of type %1 for %2").arg(typeName).arg(contactId));
         *error = QContactManager::UnspecifiedError;
         return false;
@@ -1661,7 +1661,7 @@ template <typename T> bool ContactWriter::writeDetails(
         }
 
         ContactsDatabase::Query query = bindDetail(m_database, contactId, detailId, detail);
-        if (!query.exec()) {
+        if (!ContactsDatabase::execute(query)) {
             query.reportError(QStringLiteral("Failed to write details for %1").arg(detailTypeName<T>()));
             *error = QContactManager::UnspecifiedError;
             return false;
@@ -2154,7 +2154,7 @@ QContactManager::Error ContactWriter::updateLocalAndAggregate(QContact *contact,
 
             ContactsDatabase::Query query(m_database.prepare(findLocalForAggregate));
             query.bindValue(":aggregateId", ContactId::databaseId(contact->id()));
-            if (!query.exec()) {
+            if (!ContactsDatabase::execute(query)) {
                 query.reportError("Unable to query local for aggregate during update");
                 return QContactManager::UnspecifiedError;
             }
@@ -2546,7 +2546,7 @@ QContactManager::Error ContactWriter::calculateDelta(QContact *contact, const Co
         ));
 
         ContactsDatabase::Query query(m_database.prepare(modifiableDetails));
-        if (!query.exec()) {
+        if (!ContactsDatabase::execute(query)) {
             query.reportError("Failed to select modifiable details");
         } else {
             while (query.next()) {
@@ -2828,7 +2828,7 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
         query.bindValue(":lastName", lastName);
         query.bindValue(":nickname", nickname);
 
-        if (!query.exec()) {
+        if (!ContactsDatabase::execute(query)) {
             query.reportError("Error finding match for updated local contact");
             return QContactManager::UnspecifiedError;
         }
@@ -2899,7 +2899,7 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
         query.bindValue(":firstId", ContactId::databaseId(matchingAggregate));
         query.bindValue(":secondId", ContactId::databaseId(*contact));
         query.bindValue(":type", relationshipString(QContactRelationship::Aggregates));
-        if (!query.exec()) {
+        if (!ContactsDatabase::execute(query)) {
             query.reportError("Error inserting Aggregates relationship");
             err = QContactManager::UnspecifiedError;
         }
@@ -2968,7 +2968,7 @@ QContactManager::Error ContactWriter::regenerateAggregates(const QList<quint32> 
 
             ContactsDatabase::Query query(m_database.prepare(findConstituentsForAggregate));
             query.bindValue(":aggregateId", aggId);
-            if (!query.exec()) {
+            if (!ContactsDatabase::execute(query)) {
                 query.reportError(QStringLiteral("Failed to find constituent contacts for aggregate %1 during regenerate").arg(aggId));
                 return QContactManager::UnspecifiedError;
             }
@@ -3092,7 +3092,7 @@ QContactManager::Error ContactWriter::removeChildlessAggregates(QList<QContactId
     ));
 
     ContactsDatabase::Query query(m_database.prepare(childlessAggregateIds));
-    if (!query.exec()) {
+    if (!ContactsDatabase::execute(query)) {
         query.reportError("Failed to fetch childless aggregate contact ids during remove");
         return QContactManager::UnspecifiedError;
     }
@@ -3124,7 +3124,7 @@ QContactManager::Error ContactWriter::aggregateOrphanedContacts(bool withinTrans
         ));
 
         ContactsDatabase::Query query(m_database.prepare(orphanContactIds));
-        if (!query.exec()) {
+        if (!ContactsDatabase::execute(query)) {
             query.reportError("Failed to fetch orphan aggregate contact ids during remove");
             return QContactManager::UnspecifiedError;
         }
@@ -3178,7 +3178,7 @@ QContactManager::Error ContactWriter::recordAffectedSyncTargets(const QVariantLi
         ));
 
         ContactsDatabase::Query query(m_database.prepare(affectedSyncTargets));
-        if (!query.exec()) {
+        if (!ContactsDatabase::execute(query)) {
             query.reportError("Failed to fetch affected sync targets");
         } else {
             while (query.next()) {
@@ -3242,7 +3242,7 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
 
                 ContactsDatabase::Query query(m_database.prepare(exportContactIds));
                 query.bindValue(":lastSync", since);
-                if (!query.exec()) {
+                if (!ContactsDatabase::execute(query)) {
                     query.reportError("Failed to fetch export contact ids");
                     return QContactManager::UnspecifiedError;
                 }
@@ -3298,7 +3298,7 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
                     ContactsDatabase::Query query(m_database.prepare(syncContactIds));
                     query.bindValue(":syncTarget", syncTarget);
                     query.bindValue(":lastSync", since);
-                    if (!query.exec()) {
+                    if (!ContactsDatabase::execute(query)) {
                         query.reportError("Failed to fetch sync contact ids");
                         return QContactManager::UnspecifiedError;
                     }
@@ -3333,7 +3333,7 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
 
                     ContactsDatabase::Query query(m_database.prepare(aggregateContactIds));
                     query.bindValue(":lastSync", since);
-                    if (!query.exec()) {
+                    if (!ContactsDatabase::execute(query)) {
                         query.reportError("Failed to fetch aggregate contact ids for sync");
                         return QContactManager::UnspecifiedError;
                     }
@@ -3357,7 +3357,7 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
 
                 ContactsDatabase::Query query(m_database.prepare(addedSyncContactIds));
                 query.bindValue(":lastSync", since);
-                if (!query.exec()) {
+                if (!ContactsDatabase::execute(query)) {
                     query.reportError("Failed to fetch sync contact ids");
                     return QContactManager::UnspecifiedError;
                 }
@@ -3405,7 +3405,7 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
                     ));
 
                     ContactsDatabase::Query query(m_database.prepare(constituentContactDetails));
-                    if (!query.exec()) {
+                    if (!ContactsDatabase::execute(query)) {
                         query.reportError("Failed to fetch constituent contact details");
                         return QContactManager::UnspecifiedError;
                     }
@@ -3570,7 +3570,7 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
 
         ContactsDatabase::Query query(m_database.prepare(deletedSyncContactIds));
         query.bindValue(":lastSync", since);
-        if (!query.exec()) {
+        if (!ContactsDatabase::execute(query)) {
             query.reportError("Failed to fetch sync contact ids");
             return QContactManager::UnspecifiedError;
         }
@@ -3796,7 +3796,7 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
             ));
 
             ContactsDatabase::Query query(m_database.prepare(localConstituentForAggregate));
-            if (!query.exec()) {
+            if (!ContactsDatabase::execute(query)) {
                 query.reportError("Failed to fetch constituent contact details");
                 return QContactManager::UnspecifiedError;
             }
@@ -3878,7 +3878,7 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
 
         ContactsDatabase::Query query(m_database.prepare(syncTargetConstituentIds));
         query.bindValue(":syncTarget", QString::fromLatin1("local"));
-        if (!query.exec()) {
+        if (!ContactsDatabase::execute(query)) {
             query.reportError("Failed to fetch local constituent ids for sync update");
             return QContactManager::UnspecifiedError;
         }
@@ -3921,7 +3921,7 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
             ));
 
             ContactsDatabase::Query query(m_database.prepare(findConstituentsForAggregateIds));
-            if (!query.exec()) {
+            if (!ContactsDatabase::execute(query)) {
                 query.reportError("Failed to fetch contacts aggregated by removed aggregates");
                 return QContactManager::UnspecifiedError;
             }
@@ -3964,7 +3964,7 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
 
             ContactsDatabase::Query query(m_database.prepare(syncTargetConstituentIds));
             query.bindValue(":syncTarget", syncTarget);
-            if (!query.exec()) {
+            if (!ContactsDatabase::execute(query)) {
                 query.reportError("Failed to fetch local constituent ids for sync update");
                 return QContactManager::UnspecifiedError;
             }
@@ -4283,7 +4283,7 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
                     return QContactManager::UnspecifiedError;
                 } else {
                     ContactsDatabase::Query query(m_database.prepare(findAggregateForContactIds));
-                    if (!query.exec()) {
+                    if (!ContactsDatabase::execute(query)) {
                         query.reportError("Failed to fetch aggregator contact ids during sync add");
                         return QContactManager::UnspecifiedError;
                     }
@@ -4323,7 +4323,7 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
                 return QContactManager::UnspecifiedError;
             } else {
                 ContactsDatabase::Query query(m_database.prepare(findAggregateForContactIds));
-                if (!query.exec()) {
+                if (!ContactsDatabase::execute(query)) {
                     query.reportError("Failed to fetch aggregator contact ids during sync remove");
                     return QContactManager::UnspecifiedError;
                 }
@@ -4468,7 +4468,7 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
 
     {
         ContactsDatabase::Query query(bindContactDetails(*contact));
-        if (!query.exec()) {
+        if (!ContactsDatabase::execute(query)) {
             query.reportError("Failed to create contact");
             return QContactManager::UnspecifiedError;
         }
@@ -4498,7 +4498,7 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
 
         ContactsDatabase::Query query(m_database.prepare(removeContact));
         query.bindValue(":contactId", contactId);
-        if (!query.exec()) {
+        if (!ContactsDatabase::execute(query)) {
             query.reportError("Unable to remove stale contact after failed save");
         }
     }
@@ -4521,7 +4521,7 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
 
         ContactsDatabase::Query query(m_database.prepare(checkContactExists));
         query.bindValue(0, contactId);
-        if (!query.exec() || !query.next()) {
+        if (!ContactsDatabase::execute(query) || !query.next()) {
             query.reportError("Failed to check contact existence");
             return QContactManager::UnspecifiedError;
         } else {
@@ -4608,7 +4608,7 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
         // Store updated details to the database
         {
             ContactsDatabase::Query query(bindContactDetails(*contact, definitionMask, contactId));
-            if (!query.exec()) {
+            if (!ContactsDatabase::execute(query)) {
                 query.reportError("Failed to update contact");
                 return QContactManager::UnspecifiedError;
             }
@@ -4629,7 +4629,7 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
 
                 ContactsDatabase::Query query(m_database.prepare(findAggregateForContact));
                 query.bindValue(":localId", contactId);
-                if (!query.exec()) {
+                if (!ContactsDatabase::execute(query)) {
                     query.reportError("Failed to fetch aggregator contact ids during remove");
                     return QContactManager::UnspecifiedError;
                 }
@@ -4673,7 +4673,7 @@ QContactManager::Error ContactWriter::setAggregate(QContact *contact, quint32 co
 
             ContactsDatabase::Query query(m_database.prepare(countLocalConstituents));
             query.bindValue(":aggregateId", aggregateId);
-            if (!query.exec()) {
+            if (!ContactsDatabase::execute(query)) {
                 query.reportError(QStringLiteral("Failed to count local consitutents for aggregate %1 remove").arg(aggregateId));
                 return QContactManager::UnspecifiedError;
             }
@@ -4691,7 +4691,7 @@ QContactManager::Error ContactWriter::setAggregate(QContact *contact, quint32 co
             ContactsDatabase::Query query(m_database.prepare(updateSyncTarget));
             query.bindValue(":contactId", contactId);
             query.bindValue(":syncTarget", wasLocalSyncTarget);
-            if (!query.exec()) {
+            if (!ContactsDatabase::execute(query)) {
                 query.reportError("Failed to update contact syncTarget");
                 return QContactManager::UnspecifiedError;
             }

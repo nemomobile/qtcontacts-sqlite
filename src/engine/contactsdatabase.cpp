@@ -35,6 +35,7 @@
 
 #include <QDesktopServices>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QSqlError>
@@ -1467,7 +1468,7 @@ static bool countTransientTables(QSqlDatabase &db, const QString &table, int *co
     *count = 0;
 
     QSqlQuery query(db);
-    if (!query.exec(sql.arg(table))) {
+    if (!query.prepare(sql.arg(table)) || !ContactsDatabase::execute(query)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to count transient tables for table: %1").arg(table));
         return false;
     } else while (query.next()) {
@@ -1482,7 +1483,7 @@ static bool findTransientTables(QSqlDatabase &db, const QString &table, QStringL
     static const QString sql(QString::fromLatin1("SELECT name FROM sqlite_temp_master WHERE type = 'table' and name LIKE '%1_transient%'"));
 
     QSqlQuery query(db);
-    if (!query.exec(sql.arg(table))) {
+    if (!query.prepare(sql.arg(table)) || !ContactsDatabase::execute(query)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to query transient tables for table: %1").arg(table));
         return false;
     } else while (query.next()) {
@@ -1509,7 +1510,7 @@ static bool dropTransientTables(QSqlDatabase &db, const QString &table)
                     .arg(dropStatement));
             return false;
         }
-        if (!dropTableQuery.exec()) {
+        if (!ContactsDatabase::execute(dropTableQuery)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to drop transient temporary table: %1\n%2")
                     .arg(dropTableQuery.lastError().text())
                     .arg(dropStatement));
@@ -1522,7 +1523,7 @@ static bool dropTransientTables(QSqlDatabase &db, const QString &table)
 
 template<typename ValueContainer>
 bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool filter, const QVariantList &boundIds, 
-                                    const QString &join, const QString &where, const QString &orderBy, const ValueContainer &boundValues)
+                                    const QString &join, const QString &where, const QString &orderBy, const ValueContainer &boundValues, int limit)
 {
     static const QString createStatement(QString::fromLatin1("CREATE TABLE IF NOT EXISTS temp.%1 (contactId INTEGER)"));
     static const QString insertFilterStatement(QString::fromLatin1("INSERT INTO temp.%1 (contactId) SELECT Contacts.contactId FROM Contacts %2 %3"));
@@ -1535,7 +1536,7 @@ bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool
                 .arg(createStatement));
         return false;
     }
-    if (!tableQuery.exec()) {
+    if (!ContactsDatabase::execute(tableQuery)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create temporary table: %1\n%2")
                 .arg(tableQuery.lastError().text())
                 .arg(createStatement));
@@ -1552,6 +1553,9 @@ bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool
         if (!orderBy.isEmpty()) {
             insertStatement.append(QString::fromLatin1(" ORDER BY ") + orderBy);
         }
+        if (limit > 0) {
+            insertStatement.append(QString::fromLatin1(" LIMIT %1").arg(limit));
+        }
         if (!insertQuery.prepare(insertStatement)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary contact ids: %1\n%2")
                     .arg(insertQuery.lastError().text())
@@ -1559,7 +1563,7 @@ bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool
             return false;
         }
         bindValues(insertQuery, boundValues);
-        if (!insertQuery.exec()) {
+        if (!ContactsDatabase::execute(insertQuery)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to insert temporary contact ids: %1\n%2")
                     .arg(insertQuery.lastError().text())
                     .arg(insertStatement));
@@ -1576,6 +1580,9 @@ bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool
         // order of input ids.
         if (!boundIds.isEmpty()) {
             QVariantList::const_iterator it = boundIds.constBegin(), end = boundIds.constEnd();
+            if ((limit > 0) && (limit < boundIds.count())) {
+                end = it + limit;
+            }
             while (it != end) {
                 // SQLite allows up to 500 rows per insert
                 quint32 remainder = (end - it);
@@ -1599,7 +1606,7 @@ bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool
                             .arg(insertStatement));
                     return false;
                 }
-                if (!insertQuery.exec()) {
+                if (!ContactsDatabase::execute(insertQuery)) {
                     QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to insert temporary contact ids: %1\n%2")
                             .arg(insertQuery.lastError().text())
                             .arg(insertStatement));
@@ -1617,7 +1624,7 @@ void dropOrDeleteTable(QSqlDatabase &db, const QString &table)
 {
     QSqlQuery dropTableQuery(db);
     const QString dropTableStatement = QString::fromLatin1("DROP TABLE IF EXISTS temp.%1").arg(table);
-    if (!dropTableQuery.prepare(dropTableStatement) || !dropTableQuery.exec()) {
+    if (!dropTableQuery.prepare(dropTableStatement) || !ContactsDatabase::execute(dropTableQuery)) {
         // couldn't drop the table, just delete all entries instead.
         QSqlQuery deleteRecordsQuery(db);
         const QString deleteRecordsStatement = QString::fromLatin1("DELETE FROM temp.%1").arg(table);
@@ -1626,7 +1633,7 @@ void dropOrDeleteTable(QSqlDatabase &db, const QString &table)
                     .arg(deleteRecordsQuery.lastError().text())
                     .arg(deleteRecordsStatement));
         }
-        if (!deleteRecordsQuery.exec()) {
+        if (!ContactsDatabase::execute(deleteRecordsQuery)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to delete temporary records - the next query may return spurious results: %1\n%2")
                     .arg(deleteRecordsQuery.lastError().text())
                     .arg(deleteRecordsStatement));
@@ -1657,7 +1664,7 @@ bool createTemporaryContactTimestampTable(QSqlDatabase &db, const QString &table
                 .arg(createStatement.arg(table)));
         return false;
     }
-    if (!tableQuery.exec()) {
+    if (!ContactsDatabase::execute(tableQuery)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create temporary timestamp table: %1\n%2")
                 .arg(tableQuery.lastError().text())
                 .arg(createStatement.arg(table)));
@@ -1702,7 +1709,7 @@ bool createTemporaryContactTimestampTable(QSqlDatabase &db, const QString &table
                 insertQuery.addBindValue(QVariant(pair.second));
             }
 
-            if (!insertQuery.exec()) {
+            if (!ContactsDatabase::execute(insertQuery)) {
                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to insert temporary timestamp values: %1\n%2")
                         .arg(insertQuery.lastError().text())
                         .arg(insertStatement));
@@ -1736,7 +1743,7 @@ bool createTemporaryContactPresenceTable(QSqlDatabase &db, const QString &table,
                 .arg(createStatement.arg(table)));
         return false;
     }
-    if (!tableQuery.exec()) {
+    if (!ContactsDatabase::execute(tableQuery)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create temporary presence table: %1\n%2")
                 .arg(tableQuery.lastError().text())
                 .arg(createStatement.arg(table)));
@@ -1784,7 +1791,7 @@ bool createTemporaryContactPresenceTable(QSqlDatabase &db, const QString &table,
                 insertQuery.addBindValue(QVariant(state >= QContactPresence::PresenceAvailable && state <= QContactPresence::PresenceExtendedAway));
             }
 
-            if (!insertQuery.exec()) {
+            if (!ContactsDatabase::execute(insertQuery)) {
                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to insert temporary presence values: %1\n%2")
                         .arg(insertQuery.lastError().text())
                         .arg(insertStatement));
@@ -1814,7 +1821,7 @@ bool createTemporaryValuesTable(QSqlDatabase &db, const QString &table, const QV
                 .arg(createStatement));
         return false;
     }
-    if (!tableQuery.exec()) {
+    if (!ContactsDatabase::execute(tableQuery)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create temporary table: %1\n%2")
                 .arg(tableQuery.lastError().text())
                 .arg(createStatement));
@@ -1854,7 +1861,7 @@ bool createTemporaryValuesTable(QSqlDatabase &db, const QString &table, const QV
                 insertQuery.addBindValue(v);
             }
 
-            if (!insertQuery.exec()) {
+            if (!ContactsDatabase::execute(insertQuery)) {
                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to insert temporary values: %1\n%2")
                         .arg(insertQuery.lastError().text())
                         .arg(insertStatement));
@@ -1891,7 +1898,7 @@ static bool createTransientContactIdsTable(QSqlDatabase &db, const QString &tabl
                 .arg(createStatement));
         return false;
     }
-    if (!tableQuery.exec()) {
+    if (!ContactsDatabase::execute(tableQuery)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create transient table: %1\n%2")
                 .arg(tableQuery.lastError().text())
                 .arg(createStatement));
@@ -1925,7 +1932,7 @@ static bool createTransientContactIdsTable(QSqlDatabase &db, const QString &tabl
                     .arg(insertStatement));
             return false;
         }
-        if (!insertQuery.exec()) {
+        if (!ContactsDatabase::execute(insertQuery)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to insert transient contact ids: %1\n%2")
                     .arg(insertQuery.lastError().text())
                     .arg(insertStatement));
@@ -2275,6 +2282,40 @@ bool ContactsDatabase::removeTransientDetails(const QList<quint32> &contactIds)
     return m_transientStore.remove(contactIds);
 }
 
+bool ContactsDatabase::execute(QSqlQuery &query)
+{
+    static const bool debugSql = !qgetenv("QTCONTACTS_SQLITE_DEBUG_SQL").isEmpty();
+
+    QElapsedTimer t;
+    t.start();
+
+    bool rv = query.exec();
+    if (debugSql && rv) {
+        const int n = query.isSelect() ? query.size() : query.numRowsAffected();
+        const QString s(expandQuery(query));
+        qDebug().nospace() << "Query in " << t.elapsed() << "ms " << n << ": " << qPrintable(s);
+    }
+
+    return rv;
+}
+
+bool ContactsDatabase::executeBatch(QSqlQuery &query, QSqlQuery::BatchExecutionMode mode)
+{
+    static const bool debugSql = !qgetenv("QTCONTACTS_SQLITE_DEBUG_SQL").isEmpty();
+
+    QElapsedTimer t;
+    t.start();
+
+    bool rv = query.execBatch(mode);
+    if (debugSql && rv) {
+        const int n = query.isSelect() ? query.size() : query.numRowsAffected();
+        const QString s(expandQuery(query));
+        qDebug().nospace() << "Batch query in " << t.elapsed() << "ms " << n << ": " << qPrintable(s);
+    }
+
+    return rv;
+}
+
 QString ContactsDatabase::expandQuery(const QString &queryString, const QVariantList &bindings)
 {
     QString query(queryString);
@@ -2336,22 +2377,22 @@ QString ContactsDatabase::expandQuery(const QSqlQuery &query)
     return expandQuery(query.lastQuery(), query.boundValues());
 }
 
-bool ContactsDatabase::createTemporaryContactIdsTable(const QString &table, const QVariantList &boundIds)
+bool ContactsDatabase::createTemporaryContactIdsTable(const QString &table, const QVariantList &boundIds, int limit)
 {
     QMutexLocker locker(accessMutex());
-    return ::createTemporaryContactIdsTable(m_database, table, false, boundIds, QString(), QString(), QString(), QVariantList());
+    return ::createTemporaryContactIdsTable(m_database, table, false, boundIds, QString(), QString(), QString(), QVariantList(), limit);
 }
 
-bool ContactsDatabase::createTemporaryContactIdsTable(const QString &table, const QString &join, const QString &where, const QString &orderBy, const QVariantList &boundValues)
+bool ContactsDatabase::createTemporaryContactIdsTable(const QString &table, const QString &join, const QString &where, const QString &orderBy, const QVariantList &boundValues, int limit)
 {
     QMutexLocker locker(accessMutex());
-    return ::createTemporaryContactIdsTable(m_database, table, true, QVariantList(), join, where, orderBy, boundValues);
+    return ::createTemporaryContactIdsTable(m_database, table, true, QVariantList(), join, where, orderBy, boundValues, limit);
 }
 
-bool ContactsDatabase::createTemporaryContactIdsTable(const QString &table, const QString &join, const QString &where, const QString &orderBy, const QMap<QString, QVariant> &boundValues)
+bool ContactsDatabase::createTemporaryContactIdsTable(const QString &table, const QString &join, const QString &where, const QString &orderBy, const QMap<QString, QVariant> &boundValues, int limit)
 {
     QMutexLocker locker(accessMutex());
-    return ::createTemporaryContactIdsTable(m_database, table, true, QVariantList(), join, where, orderBy, boundValues);
+    return ::createTemporaryContactIdsTable(m_database, table, true, QVariantList(), join, where, orderBy, boundValues, limit);
 }
 
 void ContactsDatabase::clearTemporaryContactIdsTable(const QString &table)

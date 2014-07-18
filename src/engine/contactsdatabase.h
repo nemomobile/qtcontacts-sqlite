@@ -82,10 +82,10 @@ public:
         void bindValue(int pos, const QVariant &value) { m_query.bindValue(pos, value); }
         void addBindValue(const QVariant &value) { m_query.addBindValue(value); }
 
-        bool exec() { return m_query.exec(); }
-        bool execBatch() { return m_query.execBatch(); }
         bool next() { return m_query.next(); }
+        bool isValid() { return m_query.isValid(); }
         void finish() { return m_query.finish(); }
+        void setForwardOnly(bool forwardOnly) { m_query.setForwardOnly(forwardOnly); }
 
         QVariant lastInsertId() const { return m_query.lastInsertId(); }
 
@@ -93,6 +93,9 @@ public:
 
         template<typename T>
         T value(int index) { return m_query.value(index).value<T>(); }
+
+        operator QSqlQuery &() { return m_query; }
+        operator QSqlQuery const &() const { return m_query; }
 
         void reportError(const QString &text) const;
         void reportError(const char *text) const;
@@ -119,9 +122,9 @@ public:
     bool commitTransaction();
     bool rollbackTransaction();
 
-    bool createTemporaryContactIdsTable(const QString &table, const QVariantList &boundIds);
-    bool createTemporaryContactIdsTable(const QString &table, const QString &join, const QString &where, const QString &orderBy, const QVariantList &boundValues);
-    bool createTemporaryContactIdsTable(const QString &table, const QString &join, const QString &where, const QString &orderBy, const QMap<QString, QVariant> &boundValues);
+    bool createTemporaryContactIdsTable(const QString &table, const QVariantList &boundIds, int limit = 0);
+    bool createTemporaryContactIdsTable(const QString &table, const QString &join, const QString &where, const QString &orderBy, const QVariantList &boundValues, int limit = 0);
+    bool createTemporaryContactIdsTable(const QString &table, const QString &join, const QString &where, const QString &orderBy, const QMap<QString, QVariant> &boundValues, int limit = 0);
 
     void clearTemporaryContactIdsTable(const QString &table);
 
@@ -143,6 +146,9 @@ public:
 
     bool removeTransientDetails(quint32 contactId);
     bool removeTransientDetails(const QList<quint32> &contactIds);
+
+    static bool execute(QSqlQuery &query);
+    static bool executeBatch(QSqlQuery &query, QSqlQuery::BatchExecutionMode mode = QSqlQuery::ValuesAsRows);
 
     static QString expandQuery(const QString &queryString, const QVariantList &bindings);
     static QString expandQuery(const QString &queryString, const QMap<QString, QVariant> &bindings);
