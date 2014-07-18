@@ -157,35 +157,15 @@ private:
             bool wasLocal,
             QContactManager::Error *error);
 
-    template <typename T> bool writeCommonDetails(
+    template <typename T> quint32 writeCommonDetails(
             quint32 contactId,
-            const QVariant &detailId,
             const T &detail,
             bool syncable,
             bool wasLocal,
+            bool aggregateContact,
             QContactManager::Error *error);
 
     template <typename T> bool removeCommonDetails(quint32 contactId, QContactManager::Error *error);
-
-    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactAddress &detail);
-    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactAnniversary &detail);
-    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactAvatar &detail);
-    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactBirthday &detail);
-    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactEmailAddress &detail);
-    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactGlobalPresence &detail);
-    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactGuid &detail);
-    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactHobby &detail);
-    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactNickname &detail);
-    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactNote &detail);
-    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactOnlineAccount &detail);
-    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactOrganization &detail);
-    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactPhoneNumber &detail);
-    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactPresence &detail);
-    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactRingtone &detail);
-    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactTag &detail);
-    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactUrl &detail);
-    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactOriginMetadata &detail);
-    ContactsDatabase::Query bindDetail(quint32 contactId, const QContactExtendedDetail &detail);
 
     const ContactsEngine &m_engine;
     ContactsDatabase &m_database;

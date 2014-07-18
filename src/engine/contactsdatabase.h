@@ -80,6 +80,7 @@ public:
 
         void bindValue(const QString &id, const QVariant &value) { m_query.bindValue(id, value); }
         void bindValue(int pos, const QVariant &value) { m_query.bindValue(pos, value); }
+        void addBindValue(const QVariant &value) { m_query.addBindValue(value); }
 
         bool exec() { return m_query.exec(); }
         bool execBatch() { return m_query.execBatch(); }
