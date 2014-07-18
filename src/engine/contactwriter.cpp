@@ -1497,6 +1497,12 @@ const QString RemoveStatement<QContactBirthday>::statement(QStringLiteral("DELET
 template<> struct RemoveStatement<QContactEmailAddress> { static const QString statement; };
 const QString RemoveStatement<QContactEmailAddress>::statement(QStringLiteral("DELETE FROM EmailAddresses WHERE contactId = :contactId"));
 
+template<> struct RemoveStatement<QContactFamily> { static const QString statement; };
+const QString RemoveStatement<QContactFamily>::statement(QStringLiteral("DELETE FROM Families WHERE contactId = :contactId"));
+
+template<> struct RemoveStatement<QContactGeoLocation> { static const QString statement; };
+const QString RemoveStatement<QContactGeoLocation>::statement(QStringLiteral("DELETE FROM GeoLocations WHERE contactId = :contactId"));
+
 template<> struct RemoveStatement<QContactGlobalPresence> { static const QString statement; };
 const QString RemoveStatement<QContactGlobalPresence>::statement(QStringLiteral("DELETE FROM GlobalPresences WHERE contactId = :contactId"));
 
@@ -1740,6 +1746,77 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
     query.addBindValue(contactId);
     query.addBindValue(address);
     query.addBindValue(address.toLower());
+    return query;
+}
+
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactFamily &detail)
+{
+    const QString statement(QStringLiteral(
+        " INSERT INTO Families ("
+        "  detailId,"
+        "  contactId,"
+        "  spouse,"
+        "  children)"
+        " VALUES ("
+        "  :detailId,"
+        "  :contactId,"
+        "  :spouse,"
+        "  :children)"
+    ));
+
+    ContactsDatabase::Query query(db.prepare(statement));
+
+    typedef QContactFamily T;
+    query.addBindValue(detailId);
+    query.addBindValue(contactId);
+    query.addBindValue(detail.value<QString>(T::FieldSpouse).trimmed());
+    query.addBindValue(detail.value<QStringList>(T::FieldChildren).join(QLatin1String(";")));
+    return query;
+}
+
+ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactGeoLocation &detail)
+{
+    const QString statement(QStringLiteral(
+        " INSERT INTO GeoLocations ("
+        "  detailId,"
+        "  contactId,"
+        "  label,"
+        "  latitude,"
+        "  longitude,"
+        "  accuracy,"
+        "  altitude,"
+        "  altitudeAccuracy,"
+        "  heading,"
+        "  speed,"
+        "  timestamp)"
+        " VALUES ("
+        "  :detailId,"
+        "  :contactId,"
+        "  :label,"
+        "  :latitude,"
+        "  :longitude,"
+        "  :accuracy,"
+        "  :altitude,"
+        "  :altitudeAccuracy,"
+        "  :heading,"
+        "  :speed,"
+        "  :timestamp)"
+    ));
+
+    ContactsDatabase::Query query(db.prepare(statement));
+
+    typedef QContactGeoLocation T;
+    query.addBindValue(detailId);
+    query.addBindValue(contactId);
+    query.addBindValue(detail.value<QString>(T::FieldLabel).trimmed());
+    query.addBindValue(detail.value<double>(T::FieldLatitude));
+    query.addBindValue(detail.value<double>(T::FieldLongitude));
+    query.addBindValue(detail.value<double>(T::FieldAccuracy));
+    query.addBindValue(detail.value<double>(T::FieldAltitude));
+    query.addBindValue(detail.value<double>(T::FieldAltitudeAccuracy));
+    query.addBindValue(detail.value<double>(T::FieldHeading));
+    query.addBindValue(detail.value<double>(T::FieldSpeed));
+    query.addBindValue(ContactsDatabase::dateTimeString(detail.value<QDateTime>(T::FieldTimestamp).toUTC()));
     return query;
 }
 
@@ -2404,35 +2481,37 @@ static ContactWriter::DetailList allSupportedDetails()
 {
     ContactWriter::DetailList details;
 
-    appendDetailType<QContactType>(&details);
+    appendDetailType<QContactAddress>(&details);
+    appendDetailType<QContactAnniversary>(&details);
+    appendDetailType<QContactAvatar>(&details);
+    appendDetailType<QContactBirthday>(&details);
+    appendDetailType<QContactDeactivated>(&details);
     appendDetailType<QContactDisplayLabel>(&details);
-    appendDetailType<QContactName>(&details);
-    appendDetailType<QContactSyncTarget>(&details);
-    appendDetailType<QContactGuid>(&details);
-    appendDetailType<QContactNickname>(&details);
+    appendDetailType<QContactEmailAddress>(&details);
+    appendDetailType<QContactExtendedDetail>(&details);
+    appendDetailType<QContactFamily>(&details);
     appendDetailType<QContactFavorite>(&details);
     appendDetailType<QContactGender>(&details);
-    appendDetailType<QContactTimestamp>(&details);
-    appendDetailType<QContactPhoneNumber>(&details);
-    appendDetailType<QContactEmailAddress>(&details);
-    appendDetailType<QContactBirthday>(&details);
-    appendDetailType<QContactAvatar>(&details);
-    appendDetailType<QContactOnlineAccount>(&details);
-    appendDetailType<QContactPresence>(&details);
+    appendDetailType<QContactGeoLocation>(&details);
     appendDetailType<QContactGlobalPresence>(&details);
-    appendDetailType<QContactOriginMetadata>(&details);
-    appendDetailType<QContactAddress>(&details);
-    appendDetailType<QContactTag>(&details);
-    appendDetailType<QContactUrl>(&details);
-    appendDetailType<QContactAnniversary>(&details);
+    appendDetailType<QContactGuid>(&details);
     appendDetailType<QContactHobby>(&details);
+    appendDetailType<QContactIncidental>(&details);
+    appendDetailType<QContactName>(&details);
+    appendDetailType<QContactNickname>(&details);
     appendDetailType<QContactNote>(&details);
+    appendDetailType<QContactOnlineAccount>(&details);
     appendDetailType<QContactOrganization>(&details);
+    appendDetailType<QContactOriginMetadata>(&details);
+    appendDetailType<QContactPhoneNumber>(&details);
+    appendDetailType<QContactPresence>(&details);
     appendDetailType<QContactRingtone>(&details);
     appendDetailType<QContactStatusFlags>(&details);
-    appendDetailType<QContactExtendedDetail>(&details);
-    appendDetailType<QContactDeactivated>(&details);
-    appendDetailType<QContactIncidental>(&details);
+    appendDetailType<QContactSyncTarget>(&details);
+    appendDetailType<QContactTag>(&details);
+    appendDetailType<QContactTimestamp>(&details);
+    appendDetailType<QContactType>(&details);
+    appendDetailType<QContactUrl>(&details);
 
     return details;
 }
@@ -5250,6 +5329,8 @@ QContactManager::Error ContactWriter::write(quint32 contactId, QContact *contact
             && writeDetails<QContactAvatar>(contactId, contact, definitionMask, syncTarget, syncable, wasLocal, &error)
             && writeDetails<QContactBirthday>(contactId, contact, definitionMask, syncTarget, syncable, wasLocal, &error)
             && writeDetails<QContactEmailAddress>(contactId, contact, definitionMask, syncTarget, syncable, wasLocal, &error)
+            && writeDetails<QContactFamily>(contactId, contact, definitionMask, syncTarget, syncable, wasLocal, &error)
+            && writeDetails<QContactGeoLocation>(contactId, contact, definitionMask, syncTarget, syncable, wasLocal, &error)
             && writeDetails<QContactGlobalPresence>(contactId, contact, definitionMask, syncTarget, syncable, wasLocal, &error)
             && writeDetails<QContactGuid>(contactId, contact, definitionMask, syncTarget, syncable, wasLocal, &error)
             && writeDetails<QContactHobby>(contactId, contact, definitionMask, syncTarget, syncable, wasLocal, &error)

@@ -45,8 +45,10 @@
 #include <QContactAvatar>
 #include <QContactBirthday>
 #include <QContactEmailAddress>
+#include <QContactFamily>
 #include <QContactFavorite>
 #include <QContactGender>
+#include <QContactGeoLocation>
 #include <QContactGlobalPresence>
 #include <QContactGuid>
 #include <QContactHobby>
@@ -89,9 +91,11 @@ enum FieldType {
     StringField = 0,
     StringListField,
     LocalizedField,
+    LocalizedListField,
     IntegerField,
     DateField,
     BooleanField,
+    RealField,
     OtherField
 };
 
@@ -273,6 +277,48 @@ static void setValues(QContactEmailAddress *detail, QSqlQuery *query, const int 
 
     setValue(detail, T::FieldEmailAddress, query->value(offset + 0));
     // ignore lowerEmailAddress
+}
+
+static const FieldInfo familyFields[] =
+{
+    { QContactFamily::FieldSpouse, "spouse", LocalizedField },
+    { QContactFamily::FieldChildren, "children", LocalizedListField }
+};
+
+static void setValues(QContactFamily *detail, QSqlQuery *query, const int offset)
+{
+    typedef QContactFamily T;
+
+    setValue(detail, T::FieldSpouse  , query->value(offset + 0));
+    setValue(detail, T::FieldChildren, query->value(offset + 1).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
+}
+
+static const FieldInfo geoLocationFields[] =
+{
+    { QContactGeoLocation::FieldLabel, "label", LocalizedField },
+    { QContactGeoLocation::FieldLatitude, "latitude", RealField },
+    { QContactGeoLocation::FieldLongitude, "longitude", RealField },
+    { QContactGeoLocation::FieldAccuracy, "accuracy", RealField },
+    { QContactGeoLocation::FieldAltitude, "altitude", RealField },
+    { QContactGeoLocation::FieldAltitudeAccuracy, "altitudeAccuracy", RealField },
+    { QContactGeoLocation::FieldHeading, "heading", RealField },
+    { QContactGeoLocation::FieldSpeed, "speed", RealField },
+    { QContactGeoLocation::FieldTimestamp, "timestamp", DateField }
+};
+
+static void setValues(QContactGeoLocation *detail, QSqlQuery *query, const int offset)
+{
+    typedef QContactGeoLocation T;
+
+    setValue(detail, T::FieldLabel           , query->value(offset + 0));
+    setValue(detail, T::FieldLatitude        , query->value(offset + 1).toDouble());
+    setValue(detail, T::FieldLongitude       , query->value(offset + 2).toDouble());
+    setValue(detail, T::FieldAccuracy        , query->value(offset + 3).toDouble());
+    setValue(detail, T::FieldAltitude        , query->value(offset + 4).toDouble());
+    setValue(detail, T::FieldAltitudeAccuracy, query->value(offset + 5).toDouble());
+    setValue(detail, T::FieldHeading         , query->value(offset + 6).toDouble());
+    setValue(detail, T::FieldSpeed           , query->value(offset + 7).toDouble());
+    setValue(detail, T::FieldTimestamp       , ContactsDatabase::fromDateTimeString(query->value(offset + 8).toString()));
 }
 
 static const FieldInfo guidFields[] =
@@ -611,7 +657,7 @@ struct DetailInfo
     const FieldInfo *fields;
     const int fieldCount;
     const bool includesContext;
-    const bool join;
+    const bool joinToSort;
     const ReadDetail read;
 
     QString where() const
@@ -627,13 +673,13 @@ template <typename T, int N> static int lengthOf(const T(&)[N]) { return N; }
 template <typename T> QContactDetail::DetailType detailIdentifier() { return T::Type; }
 
 #define PREFIX_LENGTH 8
-#define DEFINE_DETAIL(Detail, Table, fields, includesContext, join) \
-    { detailIdentifier<Detail>(), #Detail + PREFIX_LENGTH, #Table, fields, lengthOf(fields), includesContext, join, readDetail<Detail> }
+#define DEFINE_DETAIL(Detail, Table, fields, includesContext, joinToSort) \
+    { detailIdentifier<Detail>(), #Detail + PREFIX_LENGTH, #Table, fields, lengthOf(fields), includesContext, joinToSort, readDetail<Detail> }
 
 #define DEFINE_DETAIL_PRIMARY_TABLE(Detail, fields) \
     { detailIdentifier<Detail>(), #Detail + PREFIX_LENGTH, 0, fields, lengthOf(fields), false, false, 0 }
 
-// Note: join should be true only if there can be only a single row for each contact in that table
+// Note: joinToSort should be true only if there can be only a single row for each contact in that table
 static const DetailInfo detailInfo[] =
 {
     DEFINE_DETAIL_PRIMARY_TABLE(QContactDisplayLabel, displayLabelFields),
@@ -649,6 +695,8 @@ static const DetailInfo detailInfo[] =
     DEFINE_DETAIL(QContactAvatar        , Avatars        , avatarFields        , false, false),
     DEFINE_DETAIL(QContactBirthday      , Birthdays      , birthdayFields      , false, true),
     DEFINE_DETAIL(QContactEmailAddress  , EmailAddresses , emailAddressFields  , true , false),
+    DEFINE_DETAIL(QContactFamily        , Families       , familyFields        , false, false),
+    DEFINE_DETAIL(QContactGeoLocation   , GeoLocations   , geoLocationFields   , false, false),
     DEFINE_DETAIL(QContactGuid          , Guids          , guidFields          , false, true),
     DEFINE_DETAIL(QContactHobby         , Hobbies        , hobbyFields         , false, false),
     DEFINE_DETAIL(QContactNickname      , Nicknames      , nicknameFields      , false, false),
@@ -849,12 +897,16 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
                 }
             }
 
-            // TODO: We need case handling for StringListField, too
             bool dateField = field.fieldType == DateField;
-            bool stringField = field.fieldType == StringField || field.fieldType == LocalizedField;
+            bool stringField = field.fieldType == StringField || field.fieldType == StringListField ||
+                               field.fieldType == LocalizedField || field.fieldType == LocalizedListField;
             bool phoneNumberMatch = filter.matchFlags() & QContactFilter::MatchPhoneNumber;
             bool useNormalizedNumber = false;
             int globValue = filter.matchFlags() & 7;
+            if (field.fieldType == StringListField || field.fieldType == LocalizedListField) {
+                // With a string list, the only string match type we can do is 'contains'
+                globValue = QContactFilter::MatchContains;
+            }
 
             // TODO: if MatchFixedString is specified but the field type is numeric, we need to
             // cast the column to text for comparison
@@ -1289,7 +1341,7 @@ static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins, 
             if (sortField(order) != field.field)
                 continue;
 
-            QString sortExpression(QStringLiteral("%1.%2").arg(detail.join ? detail.table : QStringLiteral("Contacts")).arg(field.column));
+            QString sortExpression(QStringLiteral("%1.%2").arg(detail.joinToSort ? detail.table : QStringLiteral("Contacts")).arg(field.column));
             bool sortBlanks = true;
             bool collate = true;
             bool localized = field.fieldType == LocalizedField;
@@ -1346,7 +1398,7 @@ static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins, 
 
             result.append((order.direction() == Qt::AscendingOrder) ? QLatin1String(" ASC") : QLatin1String(" DESC"));
 
-            if (detail.join) {
+            if (detail.joinToSort) {
                 QString join = QString(QLatin1String(
                         "LEFT JOIN %1 ON Contacts.contactId = %1.contactId"))
                         .arg(QLatin1String(detail.table));

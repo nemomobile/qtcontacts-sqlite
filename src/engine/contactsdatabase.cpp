@@ -122,6 +122,27 @@ static const char *createEmailAddressesTable =
         "\n emailAddress TEXT,"
         "\n lowerEmailAddress TEXT);";
 
+static const char *createFamiliesTable =
+        "\n CREATE TABLE Families ("
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
+        "\n contactId INTEGER KEY,"
+        "\n spouse TEXT,"
+        "\n children TEXT);";
+
+static const char *createGeoLocationsTable =
+        "\n CREATE TABLE GeoLocations ("
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
+        "\n contactId INTEGER KEY,"
+        "\n label TEXT,"
+        "\n latitude REAL,"
+        "\n longitude REAL,"
+        "\n accuracy REAL,"
+        "\n altitude REAL,"
+        "\n altitudeAccuracy REAL,"
+        "\n heading REAL,"
+        "\n speed REAL,"
+        "\n timestamp DATETIME);";
+
 static const char *createGlobalPresencesTable =
         "\n CREATE TABLE GlobalPresences ("
         "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
@@ -261,6 +282,10 @@ static const char *createBirthdaysDetailsContactIdIndex =
         "\n CREATE INDEX BirthdaysDetailsContactIdIndex ON Birthdays(contactId);";
 static const char *createEmailAddressesDetailsContactIdIndex =
         "\n CREATE INDEX EmailAddressesDetailsContactIdIndex ON EmailAddresses(contactId);";
+static const char *createFamiliesDetailsContactIdIndex =
+        "\n CREATE INDEX FamiliesDetailsContactIdIndex ON Families(contactId);";
+static const char *createGeoLocationsDetailsContactIdIndex =
+        "\n CREATE INDEX GeoLocationsDetailsContactIdIndex ON GeoLocations(contactId);";
 static const char *createGlobalPresencesDetailsContactIdIndex =
         "\n CREATE INDEX GlobalPresencesDetailsContactIdIndex ON GlobalPresences(contactId);";
 static const char *createGuidsDetailsContactIdIndex =
@@ -325,6 +350,8 @@ static const char *createRemoveTrigger =
         "\n  DELETE FROM Avatars WHERE contactId = old.contactId;"
         "\n  DELETE FROM Birthdays WHERE contactId = old.contactId;"
         "\n  DELETE FROM EmailAddresses WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Families WHERE contactId = old.contactId;"
+        "\n  DELETE FROM GeoLocations WHERE contactId = old.contactId;"
         "\n  DELETE FROM GlobalPresences WHERE contactId = old.contactId;"
         "\n  DELETE FROM Guids WHERE contactId = old.contactId;"
         "\n  DELETE FROM Hobbies WHERE contactId = old.contactId;"
@@ -515,6 +542,8 @@ static const char *createStatements[] =
     createAvatarsTable,
     createBirthdaysTable,
     createEmailAddressesTable,
+    createFamiliesTable,
+    createGeoLocationsTable,
     createGlobalPresencesTable,
     createGuidsTable,
     createHobbiesTable,
@@ -1137,6 +1166,15 @@ static const char *upgradeVersion10[] = {
     "PRAGMA user_version=11",
     0 // NULL-terminated
 };
+static const char *upgradeVersion11[] = {
+    createFamiliesTable,
+    createGeoLocationsTable,
+    // Recreate the remove trigger to include these details
+    "DROP TRIGGER RemoveContactDetails",
+    createRemoveTrigger,
+    "PRAGMA user_version=12",
+    0 // NULL-terminated
+};
 
 typedef bool (*UpgradeFunction)(QSqlDatabase &database);
 
@@ -1213,9 +1251,10 @@ static UpgradeOperation upgradeVersions[] = {
     { 0,                        upgradeVersion8 },
     { 0,                        upgradeVersion9 },
     { 0,                        upgradeVersion10 },
+    { 0,                        upgradeVersion11 },
 };
 
-static const int currentSchemaVersion = 11;
+static const int currentSchemaVersion = 12;
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {

@@ -154,6 +154,8 @@ private slots:
     void detailOrders();
     void relationships();
     void contactType();
+    void familyDetail();
+    void geoLocationDetail();
     void lateDeletion();
     void compareVariant();
     void constituentOfSelf();
@@ -205,6 +207,8 @@ private slots:
     void detailOrders_data() {addManagers();}
     void relationships_data() {addManagers();}
     void contactType_data() {addManagers();}
+    void familyDetail_data() {addManagers();}
+    void geoLocationDetail_data() {addManagers();}
     void lateDeletion_data() {addManagers();}
 };
 
@@ -3697,6 +3701,120 @@ void tst_QContactManager::contactType()
     cm->removeContact(removalId(g1));
     cm->removeContact(removalId(g2));
     cm->removeContact(removalId(c));
+}
+
+void tst_QContactManager::familyDetail()
+{
+    QFETCH(QString, uri);
+    QScopedPointer<QContactManager> cm(QContactManager::fromUri(uri));
+
+    QContact a;
+
+    QContactName n;
+    n.setFirstName("Adam");
+    a.saveDetail(&n);
+
+    QContactFamily f;
+    f.setSpouse("Eve");
+    f.setChildren(QStringList() << "Cain" << "Abel");
+    a.saveDetail(&f);
+
+    QVERIFY(cm->saveContact(&a));
+
+    a = cm->contact(retrievalId(a));
+
+    QCOMPARE(a.details<QContactName>().count(), 1);
+    n = a.details<QContactName>().at(0);
+    QCOMPARE(n.firstName(), QLatin1String("Adam"));
+
+    QCOMPARE(a.details<QContactFamily>().count(), 1);
+    f = a.details<QContactFamily>().at(0);
+    QCOMPARE(f.spouse(), QLatin1String("Eve"));
+    QCOMPARE(f.children().toSet(), QSet<QString>() << "Cain" << "Abel");
+
+    QCOMPARE(a.relatedContacts(QContactRelationship::Aggregates(), QContactRelationship::First).count(), 1);
+
+    QContactId aa(a.relatedContacts(QContactRelationship::Aggregates(), QContactRelationship::First).first().id());
+    QVERIFY(!aa.isNull());
+
+    QContactDetailFilter familyFilter;
+    setFilterDetail<QContactFamily>(familyFilter, -1);
+    QVERIFY(cm->contactIds(familyFilter).contains(aa));
+
+    QContactDetailFilter spouseFilter;
+    setFilterDetail<QContactFamily>(spouseFilter, QContactFamily::FieldSpouse);
+    setFilterValue(spouseFilter, "Eve");
+    QVERIFY(cm->contactIds(spouseFilter).contains(aa));
+
+    QContactDetailFilter childrenFilter;
+    setFilterDetail<QContactFamily>(childrenFilter, QContactFamily::FieldChildren);
+    setFilterValue(childrenFilter, "Abel");
+    QVERIFY(cm->contactIds(childrenFilter).contains(aa));
+
+    setFilterValue(childrenFilter, "Mabel");
+    QCOMPARE(cm->contactIds(childrenFilter).contains(aa), false);
+}
+
+void tst_QContactManager::geoLocationDetail()
+{
+    QFETCH(QString, uri);
+    QScopedPointer<QContactManager> cm(QContactManager::fromUri(uri));
+
+    QContact a;
+
+    QContactName n;
+    n.setFirstName("Cristo Redentor");
+    a.saveDetail(&n);
+
+    const QDateTime ts(QDateTime::currentDateTime());
+
+    QContactGeoLocation l;
+    l.setLabel("Position");
+    l.setLatitude(-22.951994);
+    l.setLongitude(-43.210492);
+    l.setAccuracy(0.000001);
+    l.setTimestamp(ts);
+    a.saveDetail(&l);
+
+    QVERIFY(cm->saveContact(&a));
+
+    a = cm->contact(retrievalId(a));
+
+    QCOMPARE(a.details<QContactName>().count(), 1);
+    n = a.details<QContactName>().at(0);
+    QCOMPARE(n.firstName(), QLatin1String("Cristo Redentor"));
+
+    QCOMPARE(a.details<QContactGeoLocation>().count(), 1);
+    l = a.details<QContactGeoLocation>().at(0);
+    QCOMPARE(l.label(), QLatin1String("Position"));
+    QCOMPARE(l.latitude(), -22.951994);
+    QCOMPARE(l.longitude(), -43.210492);
+    QCOMPARE(l.accuracy(), 0.000001);
+    QCOMPARE(l.timestamp(), ts);
+
+    QCOMPARE(a.relatedContacts(QContactRelationship::Aggregates(), QContactRelationship::First).count(), 1);
+
+    QContactId aa(a.relatedContacts(QContactRelationship::Aggregates(), QContactRelationship::First).first().id());
+    QVERIFY(!aa.isNull());
+
+    QContactDetailFilter geoLocationFilter;
+    setFilterDetail<QContactGeoLocation>(geoLocationFilter, -1);
+    QVERIFY(cm->contactIds(geoLocationFilter).contains(aa));
+
+    QContactDetailFilter labelFilter;
+    setFilterDetail<QContactGeoLocation>(labelFilter, QContactGeoLocation::FieldLabel);
+    setFilterValue(labelFilter, "Position");
+    QVERIFY(cm->contactIds(labelFilter).contains(aa));
+
+    QContactDetailFilter latitudeFilter;
+    setFilterDetail<QContactGeoLocation>(latitudeFilter, QContactGeoLocation::FieldLatitude);
+    setFilterValue(latitudeFilter, -22.951994);
+    QVERIFY(cm->contactIds(latitudeFilter).contains(aa));
+
+    QContactDetailFilter altitudeFilter;
+    setFilterDetail<QContactGeoLocation>(altitudeFilter, QContactGeoLocation::FieldAltitude);
+    setFilterValue(altitudeFilter, 1.0);
+    QCOMPARE(cm->contactIds(altitudeFilter).contains(aa), false);
 }
 
 #if defined(USE_VERSIT_PLZ)
