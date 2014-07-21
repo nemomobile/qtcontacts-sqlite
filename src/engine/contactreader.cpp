@@ -662,9 +662,21 @@ struct DetailInfo
 
     QString where() const
     {
-        return table
-                ? QString(QLatin1String("Contacts.contactId IN (SELECT contactId FROM %1 WHERE %2)")).arg(QLatin1String(table))
-                : QLatin1String("%2");
+        return table ? QString::fromLatin1("Contacts.contactId IN (SELECT contactId FROM %1 WHERE %2)").arg(QLatin1String(table))
+                     : QLatin1String("%2");
+    }
+
+    QString whereExists() const
+    {
+        return table ? QString::fromLatin1("EXISTS (SELECT contactId FROM %1 where contactId = Contacts.contactId)").arg(QLatin1String(table))
+                     : QString::fromLatin1("Contacts.contactId != 0");
+    }
+
+    QString orderByExistence(bool asc) const
+    {
+        return table ? QString::fromLatin1("CASE EXISTS (SELECT contactId FROM %1 where contactId = Contacts.contactId) WHEN 1 THEN %2 ELSE %3 END")
+                       .arg(QLatin1String(table)).arg(asc ? 0 : 1).arg(asc ? 1 : 0)
+                     : QString();
     }
 };
 
@@ -716,6 +728,32 @@ static const DetailInfo detailInfo[] =
 #undef DEFINE_DETAIL_PRIMARY_TABLE
 #undef DEFINE_DETAIL
 #undef PREFIX_LENGTH
+
+const DetailInfo &detailInformation(QContactDetail::DetailType type)
+{
+    for (int i = 0; i < lengthOf(detailInfo); ++i) {
+        const DetailInfo &detail = detailInfo[i];
+        if (type == detail.detailType) {
+            return detail;
+        }
+    }
+
+    static const DetailInfo nullDetail = { QContactDetail::TypeUndefined, "Undefined", "", 0, 0, false, false, 0 };
+    return nullDetail;
+}
+
+const FieldInfo &fieldInformation(const DetailInfo &detail, int field)
+{
+    for (int i = 0; i < detail.fieldCount; ++i) {
+        const FieldInfo &fieldInfo = detail.fields[i];
+        if (field == fieldInfo.field) {
+            return fieldInfo;
+        }
+    }
+
+    static const FieldInfo nullField = { invalidField, "", OtherField };
+    return nullField;
+}
 
 QContactDetail::DetailType detailIdentifier(const QString &name)
 {
@@ -781,9 +819,6 @@ static bool validFilterField(F filter)
     return (filter.detailField() != invalidField);
 }
 
-template<typename F>
-static int filterField(F filter) { return filter.detailField(); }
-
 static QString convertFilterValueToString(const QContactDetailFilter &filter, const QString &defaultValue)
 {
     // Some enum types are stored in textual form
@@ -825,292 +860,301 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
         return QLatin1String("FAILED");
     }
 
-    for (int i = 0; i < lengthOf(detailInfo); ++i) {
-        const DetailInfo &detail = detailInfo[i];
-        if (!matchOnType(filter, detail.detailType))
-            continue;
+    const DetailInfo &detail(detailInformation(filter.detailType()));
+    if (detail.detailType == QContactDetail::TypeUndefined) {
+        *failed = true;
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with unknown detail type: %1").arg(filter.detailType()));
+        return QLatin1String("FAILED");
+    }
 
-        for (int j = 0; j < detail.fieldCount; ++j) {
-            const FieldInfo &field = detail.fields[j];
+    if (filter.detailField() == invalidField) {
+        // If there is no field, we're simply testing for the existence of matching details
+        return detail.whereExists();
+    }
 
-            if (validFilterField(filter) && (filterField(filter) != field.field))
-                continue;
+    const FieldInfo &field(fieldInformation(detail, filter.detailField()));
+    if (field.field == invalidField) {
+        *failed = true;
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with unknown detail field: %1").arg(filter.detailField()));
+        return QLatin1String("FAILED");
+    }
 
-            if (!validFilterField(filter)            // "match if detail exists, don't care about field or value" filter
-                    || !filter.value().isValid()     // "match if detail and field exists, don't care about value" filter
-                    || (filterOnField<QContactSyncTarget>(filter, QContactSyncTarget::FieldSyncTarget) &&
-                        filter.value().toString().isEmpty())) { // match all sync targets if empty sync target filter
-                const QString comparison(QLatin1String("%1 IS NOT NULL"));
-                return detail.where().arg(comparison.arg(field.column));
-            }
+    if (!filter.value().isValid()     // "match if detail and field exists, don't care about value" filter
+        || (filterOnField<QContactSyncTarget>(filter, QContactSyncTarget::FieldSyncTarget) &&
+            filter.value().toString().isEmpty())) { // match all sync targets if empty sync target filter
+        const QString comparison(QLatin1String("%1 IS NOT NULL"));
+        return detail.where().arg(comparison.arg(field.column));
+    }
 
-            if (field.fieldType == OtherField) {
-                if (filterOnField<QContactStatusFlags>(filter, QContactStatusFlags::FieldFlags)) {
-                    static const quint64 flags[] = { QContactStatusFlags::HasPhoneNumber,
-                                                     QContactStatusFlags::HasEmailAddress,
-                                                     QContactStatusFlags::HasOnlineAccount,
-                                                     QContactStatusFlags::IsOnline,
-                                                     QContactStatusFlags::IsDeactivated,
-                                                     QContactStatusFlags::IsIncidental };
-                    static const char *flagColumns[] = { "hasPhoneNumber",
-                                                         "hasEmailAddress",
-                                                         "hasOnlineAccount",
-                                                         "isOnline",
-                                                         "isDeactivated",
-                                                         "isIncidental" };
+    do {
+        // Our match query depends on the value parameter
+        if (field.fieldType == OtherField) {
+            if (filterOnField<QContactStatusFlags>(filter, QContactStatusFlags::FieldFlags)) {
+                static const quint64 flags[] = { QContactStatusFlags::HasPhoneNumber,
+                                                 QContactStatusFlags::HasEmailAddress,
+                                                 QContactStatusFlags::HasOnlineAccount,
+                                                 QContactStatusFlags::IsOnline,
+                                                 QContactStatusFlags::IsDeactivated,
+                                                 QContactStatusFlags::IsIncidental };
+                static const char *flagColumns[] = { "hasPhoneNumber",
+                                                     "hasEmailAddress",
+                                                     "hasOnlineAccount",
+                                                     "isOnline",
+                                                     "isDeactivated",
+                                                     "isIncidental" };
 
-                    quint64 flagsValue = filter.value().value<quint64>();
+                quint64 flagsValue = filter.value().value<quint64>();
 
-                    QStringList clauses;
-                    if (filter.matchFlags() == QContactFilter::MatchExactly) {
-                        *globalPresenceRequired = true;
-                        for (int i  = 0; i < lengthOf(flags); ++i) {
-                            QString comparison;
+                QStringList clauses;
+                if (filter.matchFlags() == QContactFilter::MatchExactly) {
+                    *globalPresenceRequired = true;
+                    for (int i  = 0; i < lengthOf(flags); ++i) {
+                        QString comparison;
+                        if (flags[i] == QContactStatusFlags::IsOnline) {
+                            // Use special case test to include transient presence state
+                            comparison = QStringLiteral("COALESCE(temp.GlobalPresenceStates.isOnline, Contacts.isOnline) = %1");
+                        } else {
+                            comparison = QStringLiteral("%1 = %2").arg(flagColumns[i]);
+                        }
+                        clauses.append(comparison.arg((flagsValue & flags[i]) ? 1 : 0));
+                    }
+                } else if (filter.matchFlags() == QContactFilter::MatchContains) {
+                    for (int i  = 0; i < lengthOf(flags); ++i) {
+                        if (flagsValue & flags[i]) {
                             if (flags[i] == QContactStatusFlags::IsOnline) {
-                                // Use special case test to include transient presence state
-                                comparison = QStringLiteral("COALESCE(temp.GlobalPresenceStates.isOnline, Contacts.isOnline) = %1");
+                                *globalPresenceRequired = true;
+                                clauses.append(QStringLiteral("COALESCE(temp.GlobalPresenceStates.isOnline, Contacts.isOnline) = 1"));
                             } else {
-                                comparison = QStringLiteral("%1 = %2").arg(flagColumns[i]);
-                            }
-                            clauses.append(comparison.arg((flagsValue & flags[i]) ? 1 : 0));
-                        }
-                    } else if (filter.matchFlags() == QContactFilter::MatchContains) {
-                        for (int i  = 0; i < lengthOf(flags); ++i) {
-                            if (flagsValue & flags[i]) {
-                                if (flags[i] == QContactStatusFlags::IsOnline) {
-                                    *globalPresenceRequired = true;
-                                    clauses.append(QStringLiteral("COALESCE(temp.GlobalPresenceStates.isOnline, Contacts.isOnline) = 1"));
-                                } else {
-                                    clauses.append(QString::fromLatin1("%1 = 1").arg(flagColumns[i]));
-                                }
+                                clauses.append(QString::fromLatin1("%1 = 1").arg(flagColumns[i]));
                             }
                         }
-                    } else {
-                        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unsupported flags matching contact status flags"));
-                        continue;
                     }
-
-                    if (!clauses.isEmpty()) {
-                        return detail.where().arg(clauses.join(QString::fromLatin1(" AND ")));
-                    }
-                    continue;
-                }
-            }
-
-            bool dateField = field.fieldType == DateField;
-            bool stringField = field.fieldType == StringField || field.fieldType == StringListField ||
-                               field.fieldType == LocalizedField || field.fieldType == LocalizedListField;
-            bool phoneNumberMatch = filter.matchFlags() & QContactFilter::MatchPhoneNumber;
-            bool useNormalizedNumber = false;
-            int globValue = filter.matchFlags() & 7;
-            if (field.fieldType == StringListField || field.fieldType == LocalizedListField) {
-                // With a string list, the only string match type we can do is 'contains'
-                globValue = QContactFilter::MatchContains;
-            }
-
-            // TODO: if MatchFixedString is specified but the field type is numeric, we need to
-            // cast the column to text for comparison
-
-            // We need to perform case-insensitive matching if MatchFixedString is specified (unless
-            // CaseSensitive is also specified)
-            bool caseInsensitive = stringField &&
-                                   filter.matchFlags() & QContactFilter::MatchFixedString &&
-                                   (filter.matchFlags() & QContactFilter::MatchCaseSensitive) == 0;
-
-            QString clause(detail.where());
-            QString comparison = QLatin1String("%1");
-            QString bindValue;
-            QString column;
-
-            if (caseInsensitive) {
-                column = caseInsensitiveColumnName(detail.table, field.column);
-                if (!column.isEmpty()) {
-                    // We don't need to use lower() on the values in this column
                 } else {
-                    comparison = QLatin1String("lower(%1)");
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unsupported flags matching contact status flags"));
+                    break;
                 }
+
+                if (!clauses.isEmpty()) {
+                    return detail.where().arg(clauses.join(QString::fromLatin1(" AND ")));
+                }
+                break;
             }
+        }
 
-            QString stringValue = filter.value().toString();
+        bool dateField = field.fieldType == DateField;
+        bool stringField = field.fieldType == StringField || field.fieldType == StringListField ||
+                           field.fieldType == LocalizedField || field.fieldType == LocalizedListField;
+        bool phoneNumberMatch = filter.matchFlags() & QContactFilter::MatchPhoneNumber;
+        bool useNormalizedNumber = false;
+        int globValue = filter.matchFlags() & 7;
+        if (field.fieldType == StringListField || field.fieldType == LocalizedListField) {
+            // With a string list, the only string match type we can do is 'contains'
+            globValue = QContactFilter::MatchContains;
+        }
 
-            if (phoneNumberMatch) {
-                // If the phone number match is on the number field of a phoneNumber detail, then
-                // match on the normalized number rather than the unconstrained number (for simple matches)
-                useNormalizedNumber = (filterOnField<QContactPhoneNumber>(filter, QContactPhoneNumber::FieldNumber) &&
-                                       globValue != QContactFilter::MatchStartsWith &&
-                                       globValue != QContactFilter::MatchContains &&
-                                       globValue != QContactFilter::MatchEndsWith);
+        // TODO: if MatchFixedString is specified but the field type is numeric, we need to
+        // cast the column to text for comparison
 
-                if (useNormalizedNumber) {
-                    // Normalize the input for comparison
-                    bindValue = ContactsEngine::normalizedPhoneNumber(stringValue);
-                    if (caseInsensitive) {
-                        bindValue = bindValue.toLower();
-                    }
-                    column = QString::fromLatin1("normalizedNumber");
-                } else {
-                    // remove any non-digit characters from the column value when we do our comparison: +,-, ,#,(,) are removed.
-                    comparison = QLatin1String("replace(replace(replace(replace(replace(replace(%1, '+', ''), '-', ''), '#', ''), '(', ''), ')', ''), ' ', '')");
-                    QString tempValue = caseInsensitive ? stringValue.toLower() : stringValue;
-                    for (int i = 0; i < tempValue.size(); ++i) {
-                        QChar current = tempValue.at(i).toLower();
-                        if (current.isDigit()) {
-                            bindValue.append(current);
-                        }
-                    }
-                }
+        // We need to perform case-insensitive matching if MatchFixedString is specified (unless
+        // CaseSensitive is also specified)
+        bool caseInsensitive = stringField &&
+                               filter.matchFlags() & QContactFilter::MatchFixedString &&
+                               (filter.matchFlags() & QContactFilter::MatchCaseSensitive) == 0;
+
+        QString clause(detail.where());
+        QString comparison = QLatin1String("%1");
+        QString bindValue;
+        QString column;
+
+        if (caseInsensitive) {
+            column = caseInsensitiveColumnName(detail.table, field.column);
+            if (!column.isEmpty()) {
+                // We don't need to use lower() on the values in this column
             } else {
-                const QVariant &v(filter.value());
-                if (dateField) {
-                    bindValue = dateString(detail, v.toDateTime());
+                comparison = QLatin1String("lower(%1)");
+            }
+        }
 
-                    if (filterOnField<QContactTimestamp>(filter, QContactTimestamp::FieldModificationTimestamp)) {
-                        // Special case: we need to include the transient data timestamp in our comparison
-                        column = QStringLiteral("COALESCE(temp.Timestamps.modified, Contacts.modified)");
-                        *transientModifiedRequired = true;
-                    }
-                } else if (!stringField && (v.type() == QVariant::Bool)) {
-                    // Convert to "1"/"0" rather than "true"/"false"
-                    bindValue = QString::number(v.toBool() ? 1 : 0);
-                } else {
-                    stringValue = convertFilterValueToString(filter, stringValue);
-                    bindValue = caseInsensitive ? stringValue.toLower() : stringValue;
+        QString stringValue = filter.value().toString();
 
-                    if (filterOnField<QContactGlobalPresence>(filter, QContactGlobalPresence::FieldPresenceState)) {
-                        // Special case: we need to include the transient data state in our comparison
-                        clause = QLatin1String("Contacts.contactId IN ("
-                                                   "SELECT GlobalPresences.contactId FROM GlobalPresences "
-                                                   "LEFT JOIN temp.GlobalPresenceStates ON temp.GlobalPresenceStates.contactId = GlobalPresences.contactId "
-                                                   "WHERE %1)");
-                        column = QStringLiteral("COALESCE(temp.GlobalPresenceStates.presenceState, GlobalPresences.presenceState)");
-                        *globalPresenceRequired = true;
+        if (phoneNumberMatch) {
+            // If the phone number match is on the number field of a phoneNumber detail, then
+            // match on the normalized number rather than the unconstrained number (for simple matches)
+            useNormalizedNumber = (filterOnField<QContactPhoneNumber>(filter, QContactPhoneNumber::FieldNumber) &&
+                                   globValue != QContactFilter::MatchStartsWith &&
+                                   globValue != QContactFilter::MatchContains &&
+                                   globValue != QContactFilter::MatchEndsWith);
+
+            if (useNormalizedNumber) {
+                // Normalize the input for comparison
+                bindValue = ContactsEngine::normalizedPhoneNumber(stringValue);
+                if (caseInsensitive) {
+                    bindValue = bindValue.toLower();
+                }
+                column = QString::fromLatin1("normalizedNumber");
+            } else {
+                // remove any non-digit characters from the column value when we do our comparison: +,-, ,#,(,) are removed.
+                comparison = QLatin1String("replace(replace(replace(replace(replace(replace(%1, '+', ''), '-', ''), '#', ''), '(', ''), ')', ''), ' ', '')");
+                QString tempValue = caseInsensitive ? stringValue.toLower() : stringValue;
+                for (int i = 0; i < tempValue.size(); ++i) {
+                    QChar current = tempValue.at(i).toLower();
+                    if (current.isDigit()) {
+                        bindValue.append(current);
                     }
                 }
             }
+        } else {
+            const QVariant &v(filter.value());
+            if (dateField) {
+                bindValue = dateString(detail, v.toDateTime());
 
-            if (stringField) {
-                if (globValue == QContactFilter::MatchStartsWith) {
-                    bindValue = bindValue + QLatin1String("*");
-                    comparison += QLatin1String(" GLOB ?");
-                    bindings->append(bindValue);
-                } else if (globValue == QContactFilter::MatchContains) {
-                    bindValue = QLatin1String("*") + bindValue + QLatin1String("*");
-                    comparison += QLatin1String(" GLOB ?");
-                    bindings->append(bindValue);
-                } else if (globValue == QContactFilter::MatchEndsWith) {
-                    bindValue = QLatin1String("*") + bindValue;
-                    comparison += QLatin1String(" GLOB ?");
-                    bindings->append(bindValue);
-                } else {
-                    if (bindValue.isEmpty()) {
-                        // An empty string test should match a NULL column also (no way to specify isNull from qtcontacts)
-                        comparison = QString::fromLatin1("COALESCE(%1,'') = ''").arg(comparison);
-                    } else {
-                        comparison += QLatin1String(" = ?");
-                        bindings->append(bindValue);
-                    }
+                if (filterOnField<QContactTimestamp>(filter, QContactTimestamp::FieldModificationTimestamp)) {
+                    // Special case: we need to include the transient data timestamp in our comparison
+                    column = QStringLiteral("COALESCE(temp.Timestamps.modified, Contacts.modified)");
+                    *transientModifiedRequired = true;
                 }
+            } else if (!stringField && (v.type() == QVariant::Bool)) {
+                // Convert to "1"/"0" rather than "true"/"false"
+                bindValue = QString::number(v.toBool() ? 1 : 0);
             } else {
-                if (phoneNumberMatch && !useNormalizedNumber) {
-                    bindValue = QLatin1String("*") + bindValue;
-                    comparison += QLatin1String(" GLOB ?");
-                    bindings->append(bindValue);
+                stringValue = convertFilterValueToString(filter, stringValue);
+                bindValue = caseInsensitive ? stringValue.toLower() : stringValue;
+
+                if (filterOnField<QContactGlobalPresence>(filter, QContactGlobalPresence::FieldPresenceState)) {
+                    // Special case: we need to include the transient data state in our comparison
+                    clause = QLatin1String("Contacts.contactId IN ("
+                                               "SELECT GlobalPresences.contactId FROM GlobalPresences "
+                                               "LEFT JOIN temp.GlobalPresenceStates ON temp.GlobalPresenceStates.contactId = GlobalPresences.contactId "
+                                               "WHERE %1)");
+                    column = QStringLiteral("COALESCE(temp.GlobalPresenceStates.presenceState, GlobalPresences.presenceState)");
+                    *globalPresenceRequired = true;
+                }
+            }
+        }
+
+        if (stringField) {
+            if (globValue == QContactFilter::MatchStartsWith) {
+                bindValue = bindValue + QLatin1String("*");
+                comparison += QLatin1String(" GLOB ?");
+                bindings->append(bindValue);
+            } else if (globValue == QContactFilter::MatchContains) {
+                bindValue = QLatin1String("*") + bindValue + QLatin1String("*");
+                comparison += QLatin1String(" GLOB ?");
+                bindings->append(bindValue);
+            } else if (globValue == QContactFilter::MatchEndsWith) {
+                bindValue = QLatin1String("*") + bindValue;
+                comparison += QLatin1String(" GLOB ?");
+                bindings->append(bindValue);
+            } else {
+                if (bindValue.isEmpty()) {
+                    // An empty string test should match a NULL column also (no way to specify isNull from qtcontacts)
+                    comparison = QString::fromLatin1("COALESCE(%1,'') = ''").arg(comparison);
                 } else {
                     comparison += QLatin1String(" = ?");
                     bindings->append(bindValue);
                 }
             }
-
-            return clause.arg(comparison.arg(column.isEmpty() ? field.column : column));
+        } else {
+            if (phoneNumberMatch && !useNormalizedNumber) {
+                bindValue = QLatin1String("*") + bindValue;
+                comparison += QLatin1String(" GLOB ?");
+                bindings->append(bindValue);
+            } else {
+                comparison += QLatin1String(" = ?");
+                bindings->append(bindValue);
+            }
         }
-    }
+
+        return clause.arg(comparison.arg(column.isEmpty() ? field.column : column));
+    } while (false);
 
     *failed = true;
-    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with unknown DetailFilter detail: %1").arg(filter.detailType()));
+    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to buildWhere with DetailFilter detail: %1 field: %2").arg(filter.detailType()).arg(filter.detailField()));
     return QLatin1String("FALSE");
 }
 
 static QString buildWhere(const QContactDetailRangeFilter &filter, QVariantList *bindings, bool *failed)
 {
-    for (int i = 0; i < lengthOf(detailInfo); ++i) {
-        const DetailInfo &detail = detailInfo[i];
-        if (!matchOnType(filter, detail.detailType))
-            continue;
+    const DetailInfo &detail(detailInformation(filter.detailType()));
+    if (detail.detailType == QContactDetail::TypeUndefined) {
+        *failed = true;
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with unknown detail type: %1").arg(filter.detailType()));
+        return QLatin1String("FAILED");
+    }
 
-        for (int j = 0; j < detail.fieldCount; ++j) {
-            const FieldInfo &field = detail.fields[j];
+    if (filter.detailField() == invalidField) {
+        // If there is no field, we're simply testing for the existence of matching details
+        return detail.whereExists();
+    }
 
-            if (validFilterField(filter) && (filterField(filter) != field.field))
-                continue;
+    const FieldInfo &field(fieldInformation(detail, filter.detailField()));
+    if (field.field == invalidField) {
+        *failed = true;
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with unknown detail field: %1").arg(filter.detailField()));
+        return QLatin1String("FAILED");
+    }
 
-            if (!validFilterField(filter) || (!filter.minValue().isValid() && !filter.maxValue().isValid())) {
-                // "match if detail exists, don't care about field or value" filter
-                const QString comparison(QLatin1String("%1 IS NOT NULL"));
-                return detail.where().arg(comparison.arg(field.column));
-            }
+    if (!validFilterField(filter) || (!filter.minValue().isValid() && !filter.maxValue().isValid())) {
+        // "match if detail exists, don't care about field or value" filter
+        return detail.where().arg(QString::fromLatin1("%1 IS NOT NULL").arg(field.column));
+    }
 
-            QString comparison;
-            bool dateField = field.fieldType == DateField;
-            bool stringField = field.fieldType == StringField || field.fieldType == LocalizedField;
-            bool caseInsensitive = stringField &&
-                                   filter.matchFlags() & QContactFilter::MatchFixedString &&
-                                   (filter.matchFlags() & QContactFilter::MatchCaseSensitive) == 0;
+    // Our match query depends on the minValue/maxValue parameters
+    QString comparison;
+    bool dateField = field.fieldType == DateField;
+    bool stringField = field.fieldType == StringField || field.fieldType == LocalizedField;
+    bool caseInsensitive = stringField &&
+                           filter.matchFlags() & QContactFilter::MatchFixedString &&
+                           (filter.matchFlags() & QContactFilter::MatchCaseSensitive) == 0;
 
-            bool needsAnd = false;
-            if (filter.minValue().isValid()) {
-                if (dateField) {
-                    bindings->append(dateString(detail, filter.minValue().toDateTime()));
-                } else {
-                    bindings->append(filter.minValue());
-                }
-                if (caseInsensitive) {
-                    comparison = (filter.rangeFlags() & QContactDetailRangeFilter::ExcludeLower)
-                            ? QString(QLatin1String("%1 > lower(?)"))
-                            : QString(QLatin1String("%1 >= lower(?)"));
-                } else {
-                    comparison = (filter.rangeFlags() & QContactDetailRangeFilter::ExcludeLower)
-                            ? QString(QLatin1String("%1 > ?"))
-                            : QString(QLatin1String("%1 >= ?"));
-                }
-                needsAnd = true;
-            }
+    bool needsAnd = false;
+    if (filter.minValue().isValid()) {
+        if (dateField) {
+            bindings->append(dateString(detail, filter.minValue().toDateTime()));
+        } else {
+            bindings->append(filter.minValue());
+        }
+        if (caseInsensitive) {
+            comparison = (filter.rangeFlags() & QContactDetailRangeFilter::ExcludeLower)
+                    ? QString(QLatin1String("%1 > lower(?)"))
+                    : QString(QLatin1String("%1 >= lower(?)"));
+        } else {
+            comparison = (filter.rangeFlags() & QContactDetailRangeFilter::ExcludeLower)
+                    ? QString(QLatin1String("%1 > ?"))
+                    : QString(QLatin1String("%1 >= ?"));
+        }
+        needsAnd = true;
+    }
 
-            if (filter.maxValue().isValid()) {
-                if (needsAnd)
-                    comparison += QLatin1String(" AND ");
-                if (dateField) {
-                    bindings->append(dateString(detail, filter.maxValue().toDateTime()));
-                } else {
-                    bindings->append(filter.maxValue());
-                }
-                if (caseInsensitive) {
-                    comparison += (filter.rangeFlags() & QContactDetailRangeFilter::IncludeUpper)
-                            ? QString(QLatin1String("%1 <= lower(?)"))
-                            : QString(QLatin1String("%1 < lower(?)"));
-                } else {
-                    comparison += (filter.rangeFlags() & QContactDetailRangeFilter::IncludeUpper)
-                            ? QString(QLatin1String("%1 <= ?"))
-                            : QString(QLatin1String("%1 < ?"));
-                }
-                
-            }
-
-            QString comparisonArg = field.column;
-            if (caseInsensitive) {
-                comparisonArg = caseInsensitiveColumnName(detail.table, field.column);
-                if (!comparisonArg.isEmpty()) {
-                    // We don't need to use lower() on the values in this column
-                } else {
-                    comparisonArg = QString::fromLatin1("lower(%1)").arg(field.column);
-                }
-            }
-            return detail.where().arg(comparison.arg(comparisonArg));
+    if (filter.maxValue().isValid()) {
+        if (needsAnd)
+            comparison += QLatin1String(" AND ");
+        if (dateField) {
+            bindings->append(dateString(detail, filter.maxValue().toDateTime()));
+        } else {
+            bindings->append(filter.maxValue());
+        }
+        if (caseInsensitive) {
+            comparison += (filter.rangeFlags() & QContactDetailRangeFilter::IncludeUpper)
+                    ? QString(QLatin1String("%1 <= lower(?)"))
+                    : QString(QLatin1String("%1 < lower(?)"));
+        } else {
+            comparison += (filter.rangeFlags() & QContactDetailRangeFilter::IncludeUpper)
+                    ? QString(QLatin1String("%1 <= ?"))
+                    : QString(QLatin1String("%1 < ?"));
         }
     }
 
-    *failed = true;
-    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with unknown DetailRangeFilter detail: %1").arg(filter.detailType()));
-    return QLatin1String("FALSE");
+    QString comparisonArg = field.column;
+    if (caseInsensitive) {
+        comparisonArg = caseInsensitiveColumnName(detail.table, field.column);
+        if (!comparisonArg.isEmpty()) {
+            // We don't need to use lower() on the values in this column
+        } else {
+            comparisonArg = QString::fromLatin1("lower(%1)").arg(field.column);
+        }
+    }
+    return detail.where().arg(comparison.arg(comparisonArg));
 }
 
 static QString buildWhere(const QContactIdFilter &filter, ContactsDatabase &db, const QString &table, QVariantList *bindings, bool *failed)
@@ -1323,97 +1367,100 @@ static QString buildWhere(const QContactFilter &filter, ContactsDatabase &db, co
     }
 }
 
-static int sortField(const QContactSortOrder &sort) { return sort.detailField(); }
-
 static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins, bool *transientModifiedRequired, bool *globalPresenceRequired, bool useLocale)
 {
     Q_ASSERT(joins);
     Q_ASSERT(transientModifiedRequired);
     Q_ASSERT(globalPresenceRequired);
 
-    for (int i = 0; i < lengthOf(detailInfo); ++i) {
-        const DetailInfo &detail = detailInfo[i];
-        if (!matchOnType(order, detail.detailType))
-            continue;
+    const DetailInfo &detail(detailInformation(order.detailType()));
+    if (detail.detailType == QContactDetail::TypeUndefined) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildOrderBy with unknown detail type: %1").arg(order.detailType()));
+        return QString();
+    }
 
-        for (int j = 0; j < detail.fieldCount; ++j) {
-            const FieldInfo &field = detail.fields[j];
-            if (sortField(order) != field.field)
-                continue;
+    if (order.detailField() == invalidField) {
+        // If there is no field, we're simply sorting by the existence or otherwise of the detail
+        return detail.orderByExistence(order.direction() == Qt::AscendingOrder);
+    }
 
-            QString sortExpression(QStringLiteral("%1.%2").arg(detail.joinToSort ? detail.table : QStringLiteral("Contacts")).arg(field.column));
-            bool sortBlanks = true;
-            bool collate = true;
-            bool localized = field.fieldType == LocalizedField;
+    const FieldInfo &field(fieldInformation(detail, order.detailField()));
+    if (field.field == invalidField) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildOrderBy with unknown detail field: %1").arg(order.detailField()));
+        return QString();
+    }
 
-            // Special case for accessing transient data
-            if (detail.detailType == detailIdentifier<QContactGlobalPresence>() &&
-                field.field == QContactGlobalPresence::FieldPresenceState) {
-                // We need to coalesce the transient values with the table values
-                *globalPresenceRequired = true;
+    QString sortExpression(QStringLiteral("%1.%2").arg(detail.joinToSort ? detail.table : QStringLiteral("Contacts")).arg(field.column));
+    bool sortBlanks = true;
+    bool collate = true;
+    bool localized = field.fieldType == LocalizedField;
 
-                // Look at the temporary state value if present, otherwise use the normal value
-                sortExpression = QStringLiteral("COALESCE(temp.GlobalPresenceStates.presenceState, GlobalPresences.presenceState)");
-                sortBlanks = false;
-                collate = false;
+    // Special case for accessing transient data
+    if (detail.detailType == detailIdentifier<QContactGlobalPresence>() &&
+        field.field == QContactGlobalPresence::FieldPresenceState) {
+        // We need to coalesce the transient values with the table values
+        *globalPresenceRequired = true;
+
+        // Look at the temporary state value if present, otherwise use the normal value
+        sortExpression = QStringLiteral("COALESCE(temp.GlobalPresenceStates.presenceState, GlobalPresences.presenceState)");
+        sortBlanks = false;
+        collate = false;
 
 #ifdef SORT_PRESENCE_BY_AVAILABILITY
-                // The order we want is Available(1),Away(4),ExtendedAway(5),Busy(3),Hidden(2),Offline(6),Unknown(0)
-                sortExpression = QStringLiteral("CASE %1 WHEN 1 THEN 0 "
-                                                        "WHEN 4 THEN 1 "
-                                                        "WHEN 5 THEN 2 "
-                                                        "WHEN 3 THEN 3 "
-                                                        "WHEN 2 THEN 4 "
-                                                        "WHEN 6 THEN 5 "
-                                                               "ELSE 6 END").arg(sortExpression);
+        // The order we want is Available(1),Away(4),ExtendedAway(5),Busy(3),Hidden(2),Offline(6),Unknown(0)
+        sortExpression = QStringLiteral("CASE %1 WHEN 1 THEN 0 "
+                                                "WHEN 4 THEN 1 "
+                                                "WHEN 5 THEN 2 "
+                                                "WHEN 3 THEN 3 "
+                                                "WHEN 2 THEN 4 "
+                                                "WHEN 6 THEN 5 "
+                                                       "ELSE 6 END").arg(sortExpression);
 #endif
-            } else if (detail.detailType == detailIdentifier<QContactTimestamp>() &&
-                       field.field == QContactTimestamp::FieldModificationTimestamp) {
-                *transientModifiedRequired = true;
+    } else if (detail.detailType == detailIdentifier<QContactTimestamp>() &&
+               field.field == QContactTimestamp::FieldModificationTimestamp) {
+        *transientModifiedRequired = true;
 
-                // Look at the temporary modified timestamp if present, otherwise use the normal value
-                sortExpression = QStringLiteral("COALESCE(temp.Timestamps.modified, modified)");
-                sortBlanks = false;
-                collate = false;
-            }
+        // Look at the temporary modified timestamp if present, otherwise use the normal value
+        sortExpression = QStringLiteral("COALESCE(temp.Timestamps.modified, modified)");
+        sortBlanks = false;
+        collate = false;
+    }
 
-            QString result;
+    QString result;
 
-            if (sortBlanks) {
-                QString blanksLocation = (order.blankPolicy() == QContactSortOrder::BlanksLast)
-                        ? QLatin1String("CASE WHEN %1 IS NULL OR %1 = '' THEN 1 ELSE 0 END, ")
-                        : QLatin1String("CASE WHEN %1 IS NULL OR %1 = '' THEN 0 ELSE 1 END, ");
-                result = blanksLocation.arg(sortExpression);
-            }
+    if (sortBlanks) {
+        QString blanksLocation = (order.blankPolicy() == QContactSortOrder::BlanksLast)
+                ? QLatin1String("CASE WHEN COALESCE(%1, '') = '' THEN 1 ELSE 0 END, ")
+                : QLatin1String("CASE WHEN COALESCE(%1, '') = '' THEN 0 ELSE 1 END, ");
+        result = blanksLocation.arg(sortExpression);
+    }
 
-            result.append(sortExpression);
+    result.append(sortExpression);
 
-            if (collate) {
-                if (localized && useLocale) {
-                    result.append(QLatin1String(" COLLATE localeCollation"));
-                } else {
-                    result.append((order.caseSensitivity() == Qt::CaseSensitive) ? QLatin1String(" COLLATE RTRIM") : QLatin1String(" COLLATE NOCASE"));
-                }
-            }
-
-            result.append((order.direction() == Qt::AscendingOrder) ? QLatin1String(" ASC") : QLatin1String(" DESC"));
-
-            if (detail.joinToSort) {
-                QString join = QString(QLatin1String(
-                        "LEFT JOIN %1 ON Contacts.contactId = %1.contactId"))
-                        .arg(QLatin1String(detail.table));
-
-                if (!joins->contains(join))
-                    joins->append(join);
-
-                return result;
-            } else if (!detail.table) {
-                return result;
-            } else {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("UNSUPPORTED SORTING: no join and not primary table for ORDER BY in query with: %1, %2")
-                           .arg(order.detailType()).arg(order.detailField()));
-            }
+    if (collate) {
+        if (localized && useLocale) {
+            result.append(QLatin1String(" COLLATE localeCollation"));
+        } else {
+            result.append((order.caseSensitivity() == Qt::CaseSensitive) ? QLatin1String(" COLLATE RTRIM") : QLatin1String(" COLLATE NOCASE"));
         }
+    }
+
+    result.append((order.direction() == Qt::AscendingOrder) ? QLatin1String(" ASC") : QLatin1String(" DESC"));
+
+    if (detail.joinToSort) {
+        QString join = QString(QLatin1String(
+                "LEFT JOIN %1 ON Contacts.contactId = %1.contactId"))
+                .arg(QLatin1String(detail.table));
+
+        if (!joins->contains(join))
+            joins->append(join);
+
+        return result;
+    } else if (!detail.table) {
+        return result;
+    } else {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("UNSUPPORTED SORTING: no join and not primary table for ORDER BY in query with: %1, %2")
+                   .arg(order.detailType()).arg(order.detailField()));
     }
 
     return QString();
