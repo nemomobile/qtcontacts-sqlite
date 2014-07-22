@@ -2331,11 +2331,6 @@ QContactManager::Error ContactWriter::save(
             QString currSyncTarget = contact.detail<QContactSyncTarget>().syncTarget();
             if (currSyncTarget.isEmpty()) {
                 currSyncTarget = m_database.aggregating() ? localSyncTarget : aggregateSyncTarget;
-            } else if (!m_database.aggregating()) {
-                if (currSyncTarget != aggregateSyncTarget) {
-                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error: sync target cannot be specified for non-aggregating manager"));
-                    return QContactManager::UnspecifiedError;
-                }
             }
 
             // determine whether it's valid

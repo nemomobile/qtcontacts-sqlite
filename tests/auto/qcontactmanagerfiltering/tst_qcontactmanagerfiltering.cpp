@@ -47,6 +47,8 @@
 #include "../../../src/extensions/qcontactdeactivated.h"
 #include "../../../src/extensions/qcontactstatusflags.h"
 
+#include <QLocale>
+
 //TESTED_COMPONENT=src/contacts
 //TESTED_CLASS=
 //TESTED_FILES=
@@ -201,6 +203,8 @@ private slots:
 
 tst_QContactManagerFiltering::tst_QContactManagerFiltering()
 {
+    // In order to make our tests reliable, set the C locale
+    QLocale::setDefault(QLocale::c());
 }
 
 tst_QContactManagerFiltering::~tst_QContactManagerFiltering()
@@ -418,8 +422,8 @@ void tst_QContactManagerFiltering::detailStringFiltering_data()
 #endif
             newMRow("Phone number detail exists", manager) << manager << phonenumber << noField << QVariant("") << 0 << "ab";
             newMRow("Phone number = 5551212", manager) << manager << phonenumber << number << QVariant("5551212") << (int) QContactFilter::MatchExactly << "a";
-            newMRow("Phone number = 34, contains", manager) << manager << phonenumber << number << QVariant("34") << (int) QContactFilter::MatchContains << "b";
-            newMRow("Phone number = 555, starts with", manager) << manager << phonenumber << number << QVariant("555") <<  (int) QContactFilter::MatchStartsWith << "ab";
+            newMRow("Phone number = 555, contains", manager) << manager << phonenumber << number << QVariant("555") << (int) QContactFilter::MatchContains << "ab";
+            newMRow("Phone number = 555, starts with", manager) << manager << phonenumber << number << QVariant("555") <<  (int) QContactFilter::MatchStartsWith << "a";
             newMRow("Phone number = 1212, ends with", manager) << manager << phonenumber << number << QVariant("1212") << (int) QContactFilter::MatchEndsWith << "a";
             newMRow("Phone number = 555-1212, match phone number", manager) << manager << phonenumber << number << QVariant("555-1212") << (int) QContactFilter::MatchPhoneNumber << "a"; // hyphens will be ignored by the match algorithm
 #ifdef DETAIL_DEFINITION_SUPPORTED
@@ -434,9 +438,9 @@ void tst_QContactManagerFiltering::detailStringFiltering_data()
             QTest::newRow("integer == 20, begins with, string") << manager << defAndFieldNames.first << defAndFieldNames.second << QVariant("20") << (int)(QContactFilter::MatchFixedString | QContactFilter::MatchStartsWith) << "b";
             QTest::newRow("integer == 2, begins with, string") << manager << defAndFieldNames.first << defAndFieldNames.second << QVariant("2") << (int)(QContactFilter::MatchFixedString | QContactFilter::MatchStartsWith) << "b";
             QTest::newRow("integer == 20, ends with, string") << manager << defAndFieldNames.first << defAndFieldNames.second << QVariant("20") << (int)(QContactFilter::MatchFixedString | QContactFilter::MatchEndsWith) << "bc";
-            QTest::newRow("integer == 0, ends with, string") << manager << defAndFieldNames.first << defAndFieldNames.second << QVariant("0") << (int)(QContactFilter::MatchFixedString | QContactFilter::MatchEndsWith) << "abc";
+            QTest::newRow("integer == 0, ends with, string") << manager << defAndFieldNames.first << defAndFieldNames.second << QVariant("0") << (int)(QContactFilter::MatchFixedString | QContactFilter::MatchEndsWith) << "bc";
             QTest::newRow("integer == 20, contains, string") << manager << defAndFieldNames.first << defAndFieldNames.second << QVariant("20") << (int)(QContactFilter::MatchFixedString | QContactFilter::MatchContains) << "bc";
-            QTest::newRow("integer == 0, contains, string") << manager << defAndFieldNames.first << defAndFieldNames.second << QVariant("0") << (int)(QContactFilter::MatchFixedString | QContactFilter::MatchContains) << "abc";
+            QTest::newRow("integer == 0, contains, string") << manager << defAndFieldNames.first << defAndFieldNames.second << QVariant("0") << (int)(QContactFilter::MatchFixedString | QContactFilter::MatchContains) << "bc";
         }
 
         /* Detail filter semantics: empty definition or field */
@@ -494,62 +498,66 @@ void tst_QContactManagerFiltering::detailPhoneNumberFiltering_data()
     TypeIdentifier phoneDef = detailType<QContactPhoneNumber>();
     FieldIdentifier phoneField = QContactPhoneNumber::FieldNumber;
 
+    const int mpn = (int)QContactFilter::MatchPhoneNumber;
+    const int msw = (int)QContactFilter::MatchStartsWith;
+
     // purely to test phone number filtering.
     for (int i = 0; i < managers.size(); i++) {
         QContactManager *manager = managers.at(i);
 
         // now do phone number matching - first, aaron's phone number
-        QTest::newRow("a phone hyphen") << manager << phoneDef << phoneField << QVariant(QString("555-1212")) << (int)(QContactFilter::MatchPhoneNumber) << "a";
-        QTest::newRow("a phone plus") << manager << phoneDef << phoneField << QVariant(QString("+5551212")) << (int)(QContactFilter::MatchPhoneNumber) << "a";
-        QTest::newRow("a phone brackets") << manager << phoneDef << phoneField << QVariant(QString("(555)1212")) << (int)(QContactFilter::MatchPhoneNumber) << "a";
-        QTest::newRow("a phone nospaces") << manager << phoneDef << phoneField << QVariant(QString("5551212")) << (int)(QContactFilter::MatchPhoneNumber) << "a";
-        QTest::newRow("a phone single space") << manager << phoneDef << phoneField << QVariant(QString("555 1212")) << (int)(QContactFilter::MatchPhoneNumber) << "a";
-        QTest::newRow("a phone random spaces") << manager << phoneDef << phoneField << QVariant(QString("55 512 12")) << (int)(QContactFilter::MatchPhoneNumber) << "a";
-        QTest::newRow("a phone every space") << manager << phoneDef << phoneField << QVariant(QString("5 5 5 1 2 1 2")) << (int)(QContactFilter::MatchPhoneNumber) << "a";
-        QTest::newRow("a phone plus hyphen") << manager << phoneDef << phoneField << QVariant(QString("+555-1212")) << (int)(QContactFilter::MatchPhoneNumber) << "a";
-        QTest::newRow("a phone plus brackets") << manager << phoneDef << phoneField << QVariant(QString("+5(55)1212")) << (int)(QContactFilter::MatchPhoneNumber) << "a";
-        QTest::newRow("a phone plus brackets hyphen") << manager << phoneDef << phoneField << QVariant(QString("+5(55)1-212")) << (int)(QContactFilter::MatchPhoneNumber) << "a";
-        QTest::newRow("a phone plus brackets hyphen spaces") << manager << phoneDef << phoneField << QVariant(QString("+5 (55) 1-212")) << (int)(QContactFilter::MatchPhoneNumber) << "a";
+        QTest::newRow("a phone hyphen") << manager << phoneDef << phoneField << QVariant(QString("555-1212")) << mpn << "a";
+        // An initial-plus variant is not the same number, so this test is not valid:
+        //QTest::newRow("a phone plus") << manager << phoneDef << phoneField << QVariant(QString("+5551212")) << mpn << "a";
+        QTest::newRow("a phone brackets") << manager << phoneDef << phoneField << QVariant(QString("(555)1212")) << mpn << "a";
+        QTest::newRow("a phone nospaces") << manager << phoneDef << phoneField << QVariant(QString("5551212")) << mpn << "a";
+        QTest::newRow("a phone single space") << manager << phoneDef << phoneField << QVariant(QString("555 1212")) << mpn << "a";
+        QTest::newRow("a phone random spaces") << manager << phoneDef << phoneField << QVariant(QString("55 512 12")) << mpn << "a";
+        QTest::newRow("a phone every space") << manager << phoneDef << phoneField << QVariant(QString("5 5 5 1 2 1 2")) << mpn << "a";
+        QTest::newRow("a phone hyphen") << manager << phoneDef << phoneField << QVariant(QString("555-1212")) << mpn << "a";
+        QTest::newRow("a phone brackets") << manager << phoneDef << phoneField << QVariant(QString("5(55)1212")) << mpn << "a";
+        QTest::newRow("a phone brackets hyphen") << manager << phoneDef << phoneField << QVariant(QString("5(55)1-212")) << mpn << "a";
+        QTest::newRow("a phone brackets hyphen spaces") << manager << phoneDef << phoneField << QVariant(QString("5 (55) 1-212")) << mpn << "a";
 
         // XXX TODO: should we test for character to number conversions (eg, dial 1800-PESTCONTROL) etc ?
-        //QTest::newRow("a phone characters") << manager << phoneDef << phoneField << QVariant(QString("jjj1a1a")) << (int)(QContactFilter::MatchPhoneNumber) << "a"; // 5551212
-        //QTest::newRow("a phone characters") << manager << phoneDef << phoneField << QVariant(QString("jkl1b1a")) << (int)(QContactFilter::MatchPhoneNumber) << "a"; // 5551212
+        //QTest::newRow("a phone characters") << manager << phoneDef << phoneField << QVariant(QString("jjj1a1a")) << mpn << "a"; // 5551212
+        //QTest::newRow("a phone characters") << manager << phoneDef << phoneField << QVariant(QString("jkl1b1a")) << mpn << "a"; // 5551212
 
-        // then matches bob's phone number
-        QTest::newRow("b phone hyphen") << manager << phoneDef << phoneField << QVariant(QString("555-3456")) << (int)(QContactFilter::MatchPhoneNumber) << "b";
-        QTest::newRow("b phone plus") << manager << phoneDef << phoneField << QVariant(QString("+5553456")) << (int)(QContactFilter::MatchPhoneNumber) << "b";
-        QTest::newRow("b phone brackets") << manager << phoneDef << phoneField << QVariant(QString("(555)3456")) << (int)(QContactFilter::MatchPhoneNumber) << "b";
-        QTest::newRow("b phone nospaces") << manager << phoneDef << phoneField << QVariant(QString("5553456")) << (int)(QContactFilter::MatchPhoneNumber) << "b";
-        QTest::newRow("b phone single space") << manager << phoneDef << phoneField << QVariant(QString("555 3456")) << (int)(QContactFilter::MatchPhoneNumber) << "b";
-        QTest::newRow("b phone random spaces") << manager << phoneDef << phoneField << QVariant(QString("55 534 56")) << (int)(QContactFilter::MatchPhoneNumber) << "b";
-        QTest::newRow("b phone every space") << manager << phoneDef << phoneField << QVariant(QString("5 5 5 3 4 5 6")) << (int)(QContactFilter::MatchPhoneNumber) << "b";
-        QTest::newRow("b phone plus hyphen") << manager << phoneDef << phoneField << QVariant(QString("+555-3456")) << (int)(QContactFilter::MatchPhoneNumber) << "b";
-        QTest::newRow("b phone plus brackets") << manager << phoneDef << phoneField << QVariant(QString("+5(55)3456")) << (int)(QContactFilter::MatchPhoneNumber) << "b";
-        QTest::newRow("b phone plus brackets hyphen") << manager << phoneDef << phoneField << QVariant(QString("+5(55)3-456")) << (int)(QContactFilter::MatchPhoneNumber) << "b";
-        QTest::newRow("b phone plus brackets hyphen spaces") << manager << phoneDef << phoneField << QVariant(QString("+5 (55) 3-456")) << (int)(QContactFilter::MatchPhoneNumber) << "b";
+        // then matches bob's phone number (which has the initial-plus)
+        QTest::newRow("b phone hyphen") << manager << phoneDef << phoneField << QVariant(QString("5555-3456")) << mpn << "b";
+        QTest::newRow("b phone plus") << manager << phoneDef << phoneField << QVariant(QString("+55553456")) << mpn << "b";
+        QTest::newRow("b phone brackets") << manager << phoneDef << phoneField << QVariant(QString("(5555)3456")) << mpn << "b";
+        QTest::newRow("b phone nospaces") << manager << phoneDef << phoneField << QVariant(QString("55553456")) << mpn << "b";
+        QTest::newRow("b phone single space") << manager << phoneDef << phoneField << QVariant(QString("5555 3456")) << mpn << "b";
+        QTest::newRow("b phone random spaces") << manager << phoneDef << phoneField << QVariant(QString("555 534 56")) << mpn << "b";
+        QTest::newRow("b phone every space") << manager << phoneDef << phoneField << QVariant(QString("5 5 5 5 3 4 5 6")) << mpn << "b";
+        QTest::newRow("b phone plus hyphen") << manager << phoneDef << phoneField << QVariant(QString("+5555-3456")) << mpn << "b";
+        QTest::newRow("b phone plus brackets") << manager << phoneDef << phoneField << QVariant(QString("+5(555)3456")) << mpn << "b";
+        QTest::newRow("b phone plus brackets hyphen") << manager << phoneDef << phoneField << QVariant(QString("+5(555)3-456")) << mpn << "b";
+        QTest::newRow("b phone plus brackets hyphen spaces") << manager << phoneDef << phoneField << QVariant(QString("+55 (55) 3-456")) << mpn << "b";
 
         // then match no phone numbers (negative testing) -- 555-9999 matches nobody in our test set.
-        QTest::newRow("no phone hyphen") << manager << phoneDef << phoneField << QVariant(QString("555-9999")) << (int)(QContactFilter::MatchPhoneNumber) << "";
-        QTest::newRow("no phone plus") << manager << phoneDef << phoneField << QVariant(QString("+5559999")) << (int)(QContactFilter::MatchPhoneNumber) << "";
-        QTest::newRow("no phone brackets") << manager << phoneDef << phoneField << QVariant(QString("(555)9999")) << (int)(QContactFilter::MatchPhoneNumber) << "";
-        QTest::newRow("no phone nospaces") << manager << phoneDef << phoneField << QVariant(QString("5559999")) << (int)(QContactFilter::MatchPhoneNumber) << "";
-        QTest::newRow("no phone single space") << manager << phoneDef << phoneField << QVariant(QString("555 9999")) << (int)(QContactFilter::MatchPhoneNumber) << "";
-        QTest::newRow("no phone random spaces") << manager << phoneDef << phoneField << QVariant(QString("55 599 99")) << (int)(QContactFilter::MatchPhoneNumber) << "";
-        QTest::newRow("no phone every space") << manager << phoneDef << phoneField << QVariant(QString("5 5 5 9 9 9 9")) << (int)(QContactFilter::MatchPhoneNumber) << "";
-        QTest::newRow("no phone plus hyphen") << manager << phoneDef << phoneField << QVariant(QString("+555-9999")) << (int)(QContactFilter::MatchPhoneNumber) << "";
-        QTest::newRow("no phone plus brackets") << manager << phoneDef << phoneField << QVariant(QString("+5(55)9999")) << (int)(QContactFilter::MatchPhoneNumber) << "";
-        QTest::newRow("no phone plus brackets hyphen") << manager << phoneDef << phoneField << QVariant(QString("+5(55)9-999")) << (int)(QContactFilter::MatchPhoneNumber) << "";
-        QTest::newRow("no phone plus brackets hyphen spaces") << manager << phoneDef << phoneField << QVariant(QString("+5 (55) 9-999")) << (int)(QContactFilter::MatchPhoneNumber) << "";
+        QTest::newRow("no phone hyphen") << manager << phoneDef << phoneField << QVariant(QString("555-9999")) << mpn << "";
+        QTest::newRow("no phone plus") << manager << phoneDef << phoneField << QVariant(QString("+5559999")) << mpn << "";
+        QTest::newRow("no phone brackets") << manager << phoneDef << phoneField << QVariant(QString("(555)9999")) << mpn << "";
+        QTest::newRow("no phone nospaces") << manager << phoneDef << phoneField << QVariant(QString("5559999")) << mpn << "";
+        QTest::newRow("no phone single space") << manager << phoneDef << phoneField << QVariant(QString("555 9999")) << mpn << "";
+        QTest::newRow("no phone random spaces") << manager << phoneDef << phoneField << QVariant(QString("55 599 99")) << mpn << "";
+        QTest::newRow("no phone every space") << manager << phoneDef << phoneField << QVariant(QString("5 5 5 9 9 9 9")) << mpn << "";
+        QTest::newRow("no phone plus hyphen") << manager << phoneDef << phoneField << QVariant(QString("+555-9999")) << mpn << "";
+        QTest::newRow("no phone plus brackets") << manager << phoneDef << phoneField << QVariant(QString("+5(55)9999")) << mpn << "";
+        QTest::newRow("no phone plus brackets hyphen") << manager << phoneDef << phoneField << QVariant(QString("+5(55)9-999")) << mpn << "";
+        QTest::newRow("no phone plus brackets hyphen spaces") << manager << phoneDef << phoneField << QVariant(QString("+5 (55) 9-999")) << mpn << "";
 
         // then match both aaron and bob via starts with
-        QTest::newRow("ab phone starts nospace") << manager << phoneDef << phoneField << QVariant(QString("555")) << (int)(QContactFilter::MatchPhoneNumber | QContactFilter::MatchStartsWith) << "ab";
-        QTest::newRow("ab phone starts hyphen") << manager << phoneDef << phoneField << QVariant(QString("555-")) << (int)(QContactFilter::MatchPhoneNumber | QContactFilter::MatchStartsWith) << "ab";
-        QTest::newRow("ab phone starts space") << manager << phoneDef << phoneField << QVariant(QString("55 5")) << (int)(QContactFilter::MatchPhoneNumber | QContactFilter::MatchStartsWith) << "ab";
-        QTest::newRow("ab phone starts brackets") << manager << phoneDef << phoneField << QVariant(QString("(555)")) << (int)(QContactFilter::MatchPhoneNumber | QContactFilter::MatchStartsWith) << "ab";
-        QTest::newRow("ab phone starts plus") << manager << phoneDef << phoneField << QVariant(QString("+555")) << (int)(QContactFilter::MatchPhoneNumber | QContactFilter::MatchStartsWith) << "ab";
-        QTest::newRow("ab phone starts hyphen space") << manager << phoneDef << phoneField << QVariant(QString("5 55-")) << (int)(QContactFilter::MatchPhoneNumber | QContactFilter::MatchStartsWith) << "ab";
-        QTest::newRow("ab phone starts hyphen space brackets") << manager << phoneDef << phoneField << QVariant(QString("5 (55)-")) << (int)(QContactFilter::MatchPhoneNumber | QContactFilter::MatchStartsWith) << "ab";
-        QTest::newRow("ab phone starts hyphen space brackets plus") << manager << phoneDef << phoneField << QVariant(QString("+5 (55)-")) << (int)(QContactFilter::MatchPhoneNumber | QContactFilter::MatchStartsWith) << "ab";
+        QTest::newRow("ab phone starts nospace") << manager << phoneDef << phoneField << QVariant(QString("555")) << (mpn | msw) << "ab";
+        QTest::newRow("ab phone starts hyphen") << manager << phoneDef << phoneField << QVariant(QString("555-")) << (mpn | msw) << "ab";
+        QTest::newRow("ab phone starts space") << manager << phoneDef << phoneField << QVariant(QString("55 5")) << (mpn | msw) << "ab";
+        QTest::newRow("ab phone starts brackets") << manager << phoneDef << phoneField << QVariant(QString("(555)")) << (mpn | msw) << "ab";
+        QTest::newRow("ab phone starts plus") << manager << phoneDef << phoneField << QVariant(QString("+555")) << (mpn | msw) << "ab";
+        QTest::newRow("ab phone starts hyphen space") << manager << phoneDef << phoneField << QVariant(QString("5 55-")) << (mpn | msw) << "ab";
+        QTest::newRow("ab phone starts hyphen space brackets") << manager << phoneDef << phoneField << QVariant(QString("5 (55)-")) << (mpn | msw) << "ab";
+        QTest::newRow("ab phone starts hyphen space brackets plus") << manager << phoneDef << phoneField << QVariant(QString("+5 (55)-")) << (mpn | msw) << "ab";
     }
 }
 
@@ -776,7 +784,7 @@ void tst_QContactManagerFiltering::detailVariantFiltering_data()
 
         /*
          * Integers
-         * A has 10
+         * A has 3
          * B has 20
          * C has -20
          */
@@ -788,8 +796,8 @@ void tst_QContactManagerFiltering::detailVariantFiltering_data()
             QTest::newRow("integer value (no match)") << manager << defAndFieldNames.first << defAndFieldNames.second << true << QVariant(50) << es;
             QTest::newRow("integer value (wrong type)") << manager << defAndFieldNames.first << defAndFieldNames.second << true << QVariant(3.5) << es;
             QTest::newRow("integer value (wrong field, no match)") << manager << defAndFieldNames.first << invalidField << true << QVariant(50) << es;
-            newMRow("integer value", manager) << manager << defAndFieldNames.first << defAndFieldNames.second << true << QVariant(10) << "a";
-            QTest::newRow("integer value (wrong field)") << manager << defAndFieldNames.first << invalidField << true << QVariant(10) << es;
+            newMRow("integer value", manager) << manager << defAndFieldNames.first << defAndFieldNames.second << true << QVariant(3) << "a";
+            QTest::newRow("integer value (wrong field)") << manager << defAndFieldNames.first << invalidField << true << QVariant(3) << es;
             QTest::newRow("integer value 2") << manager << defAndFieldNames.first << defAndFieldNames.second << true << QVariant(-20) << "c";
             QTest::newRow("integer value 2 (wrong field)") << manager << defAndFieldNames.first << invalidField << true << QVariant(-20) << es;
         }
@@ -805,8 +813,8 @@ void tst_QContactManagerFiltering::detailVariantFiltering_data()
 
         defAndFieldNames = defAndFieldNamesForTypePerManager.value(manager).value("DateTime");
         if (validDetailInfo(defAndFieldNames)) {
-            newMRow("datetime presence", manager) << manager << defAndFieldNames.first << noField << false << ev << "ac";
-            QTest::newRow("datetime presence (inc field)") << manager << defAndFieldNames.first << defAndFieldNames.second << false << ev << "ac";
+            newMRow("datetime presence", manager) << manager << defAndFieldNames.first << noField << false << ev << "abcdefghijk"; // all contacts have a Timestamp detail
+            QTest::newRow("datetime presence (inc field)") << manager << defAndFieldNames.first << defAndFieldNames.second << false << ev << "abcdefghijk";
             QTest::newRow("datetime presence (wrong field)") << manager << defAndFieldNames.first << invalidField << false << ev << es;
             QTest::newRow("datetime value (no match)") << manager << defAndFieldNames.first << defAndFieldNames.second << true << QVariant(QDateTime(QDate(2100,5,13), QTime(5,5,5))) << es;
             QTest::newRow("datetime value (wrong type)") << manager << defAndFieldNames.first << defAndFieldNames.second << true << QVariant(3.5) << es;
@@ -1759,6 +1767,9 @@ void tst_QContactManagerFiltering::relationshipFiltering()
     // 1. Create contacts to be used in relationship testing
     QContact contactA;
     if (relationshipType == relationshipString(QContactRelationship::HasMember)) {
+        if (!cm->supportedContactTypes().contains(QContactType::TypeGroup))
+            QSKIP("Manager does not support groups; skipping relationship filtering");
+
         // Change contact type to group as this is required at least by symbian backend
         // TODO: should it be possible to query this constraint from the backend?
         contactA = createContact(cm, QContactType::TypeGroup, "ContactA");
@@ -1859,11 +1870,13 @@ void tst_QContactManagerFiltering::sorting_data()
     int desc = Qt::DescendingOrder;
     int cs = Qt::CaseSensitive;
     int ci = Qt::CaseInsensitive;
+    int bll = QContactSortOrder::BlanksLast;
+    int blf = QContactSortOrder::BlanksFirst;
 
     for (int i = 0; i < managers.size(); i++) {
         QContactManager *manager = managers.at(i);
 
-#if 0 // the nemo sqlite backend has different sorting semantics to what is expected, as it doesn't do any locale-aware collation.
+#if 0 // the nemo sqlite backend has different sorting semantics to what is expected
 
         FieldSelector integerDefAndFieldNames = defAndFieldNamesForTypePerManager.value(manager).value("Integer");
         FieldSelector stringDefAndFieldNames = defAndFieldNamesForTypePerManager.value(manager).value("String");
@@ -1872,24 +1885,23 @@ void tst_QContactManagerFiltering::sorting_data()
         newMRow("first descending", manager) << manager << namedef << firstname << desc << false << 0 << cs << "kijhefgdcba" << "efg";// efg have the same first name
         newMRow("last ascending", manager) << manager << namedef << lastname << asc << false << 0 << cs << "bacdefghijk" << "hijk";       // all have a well defined, sortable last name except hijk
         newMRow("last descending", manager) << manager << namedef << lastname << desc << false << 0 << cs << "gfedcabhijk" << "hijk";     // all have a well defined, sortable last name except hijk
-        if (!integerDefAndFieldNames.first.isEmpty() && !integerDefAndFieldNames.second.isEmpty()) {
+        if (validDetailInfo(integerDefAndFieldNames)) {
             newMRow("integer ascending, blanks last", manager) << manager << integerDefAndFieldNames.first << integerDefAndFieldNames.second << asc << true << bll << cs << "cabgfedhijk" << "gfedhijk"; // gfedhijk have no integer
             newMRow("integer descending, blanks last", manager) << manager << integerDefAndFieldNames.first << integerDefAndFieldNames.second << desc << true << bll << cs << "bacgfedhijk" << "gfedhijk"; // gfedhijk have no integer
             newMRow("integer ascending, blanks first", manager) << manager << integerDefAndFieldNames.first << integerDefAndFieldNames.second << asc << true << blf << cs << "hijkdefgcab" << "gfedhijk"; // gfedhijk have no integer
             newMRow("integer descending, blanks first", manager) << manager << integerDefAndFieldNames.first << integerDefAndFieldNames.second << desc << true << blf << cs << "hijkdefgbac" << "gfedhijk"; // gfedhijk have no integer
         }
-        if (!stringDefAndFieldNames.first.isEmpty() && !stringDefAndFieldNames.second.isEmpty()) {
-            int bll = QContactSortOrder::BlanksLast;
-            int blf = QContactSortOrder::BlanksFirst;
+        if (validDetailInfo(stringDefAndFieldNames)) {
             QTest::newRow("string ascending (null value), blanks first") << manager << stringDefAndFieldNames.first << stringDefAndFieldNames.second << asc << true << blf << cs << "feabcdg" << "fehijk"; // f and e have blank string
             QTest::newRow("string ascending (null value), blanks last") << manager << stringDefAndFieldNames.first << stringDefAndFieldNames.second << asc << true << bll << cs << "abcdgef" << "efhijk";   // f and e have blank string
         }
 
         newMRow("display label insensitive", manager) << manager << dldef << dlfld << asc << false << 0 << ci << "abcdefghjik" << "efghji";
         newMRow("display label sensitive", manager) << manager << dldef << dlfld << asc << false << 0 << cs << "abcdefghjik" << "efg";
-
 #else
         Q_UNUSED(ci)
+        Q_UNUSED(bll)
+        Q_UNUSED(blf)
         Q_UNUSED(dldef)
         Q_UNUSED(dlfld)
 #endif // nemo sqlite collation - instead we ensure the correctness of our ordering code with the following tests:
@@ -2032,6 +2044,7 @@ void tst_QContactManagerFiltering::multiSorting_data()
     QTest::addColumn<int>("ssdirectioni");
 
     QTest::addColumn<QString>("expected");
+    QTest::addColumn<bool>("efunstable");
     QTest::addColumn<bool>("efgunstable");
 
 
@@ -2056,34 +2069,34 @@ void tst_QContactManagerFiltering::multiSorting_data()
         QTest::newRow("1") << manager
                            << true << namedef << firstname << asc
                            << true << namedef << lastname << asc
-                           << "abcdefg" << false;
+                           << "abcdefg" << false << false;
         QTest::newRow("2") << manager
                            << true << namedef << firstname << asc
                            << true << namedef << lastname << desc
-                           << "abcdgfe" << false;
+                           << "abcdgfe" << false << false;
         QTest::newRow("3") << manager
                            << true << namedef << firstname << desc
                            << true << namedef << lastname << asc
-                           << "efgdcba" << false;
+                           << "efgdcba" << false << false;
         QTest::newRow("4") << manager
                            << true << namedef << firstname << desc
                            << true << namedef << lastname << desc
-                           << "gfedcba" << false;
+                           << "gfedcba" << false << false;
 
         QTest::newRow("5") << manager
                            << true << namedef << firstname << asc
                            << false << namedef << lastname << asc
-                           << "abcdefg" << true;
+                           << "abcdefg" << true << true;
 
         QTest::newRow("5b") << manager
                            << true << namedef << firstname << asc
                            << true << noType << noField << asc
-                           << "abcdefg" << true;
+                           << "abcdefg" << true << true;
 
         QTest::newRow("6") << manager
                            << false << namedef << firstname << asc
                            << true << namedef << lastname << asc
-                           << "bacdefg" << false;
+                           << "bacdefg" << false << false;
 
         // This test is completely unstable; no sort criteria means dependent upon internal sort order of manager.
         //QTest::newRow("7") << manager
@@ -2101,10 +2114,7 @@ void tst_QContactManagerFiltering::multiSorting_data()
                                << stringDefAndFieldNames.first
                                << stringDefAndFieldNames.second
                                << desc
-#if 0
-                               << "abcdgef" << false; // default policy = blanks last, and ef have no value (e is empty, f is null)
-#endif
-                               << "abcdgfe" << false; // nemo sqlite's blank policy returns null before empty
+                               << "abcdgef" << true << false; // default policy = blanks last, and ef have no value (e is empty, f is null)
 
             QTest::newRow("8b") << manager
                                << true
@@ -2112,10 +2122,7 @@ void tst_QContactManagerFiltering::multiSorting_data()
                                << stringDefAndFieldNames.second
                                << asc
                                << false << noType << noField << desc
-#if 0
-                               << "abcdgef" << false; // default policy = blanks last, and ef have no value (e is empty, f is null)
-#endif
-                               << "abcdgfe" << false; // nemo sqlite's blank policy returns null before empty
+                               << "abcdgef" << true << false; // default policy = blanks last, and ef have no value (e is empty, f is null)
         }
 
 #if 0
@@ -2132,7 +2139,7 @@ void tst_QContactManagerFiltering::multiSorting_data()
         QTest::newRow("10") << manager
                             << true << namedef << firstname << asc
                             << true << namedef << firstname << desc
-                            << "abcdefg" << true;
+                            << "abcdefg" << true << true;
 
     }
 }
@@ -2149,6 +2156,7 @@ void tst_QContactManagerFiltering::multiSorting()
     QFETCH(FieldIdentifier, ssfieldname);
     QFETCH(int, ssdirectioni);
     QFETCH(QString, expected);
+    QFETCH(bool, efunstable);
     QFETCH(bool, efgunstable);
 
     Qt::SortOrder fsdirection = (Qt::SortOrder)fsdirectioni;
@@ -2180,14 +2188,19 @@ void tst_QContactManagerFiltering::multiSorting()
 
     // Just like the single sort test, we might get some contacts back in indeterminate order
     // (but their relative position with other contacts should not change)
-    if (efgunstable) {
+    if (efunstable || efgunstable) {
         QVERIFY(output.count('e') == 1);
         QVERIFY(output.count('f') == 1);
-        QVERIFY(output.count('g') == 1);
+        if (efgunstable) {
+            QVERIFY(output.count('g') == 1);
+        }
+
         output.remove('f');
-        output.remove('g');
         expected.remove('f');
-        expected.remove('g');
+        if (efgunstable) {
+            output.remove('g');
+            expected.remove('g');
+        }
     }
 
     QCOMPARE(output, expected);
@@ -3039,7 +3052,7 @@ QList<QContactId> tst_QContactManagerFiltering::prepareModel(QContactManager *cm
     name.setFirstName("Bob");
     name.setLastName("Aaronsen");
     nick.setNickname("Sir Bob");
-    number.setNumber("5553456");
+    number.setNumber("+55553456");
     string.setValue(definitionDetails.value("String").second, "Bob Aaronsen");
     integer.setValue(definitionDetails.value("Integer").second, 20);
     dubble.setValue(definitionDetails.value("Double").second, 4.0);
