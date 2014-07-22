@@ -813,8 +813,8 @@ void tst_QContactManagerFiltering::detailVariantFiltering_data()
 
         defAndFieldNames = defAndFieldNamesForTypePerManager.value(manager).value("DateTime");
         if (validDetailInfo(defAndFieldNames)) {
-            newMRow("datetime presence", manager) << manager << defAndFieldNames.first << noField << false << ev << "ac";
-            QTest::newRow("datetime presence (inc field)") << manager << defAndFieldNames.first << defAndFieldNames.second << false << ev << "ac";
+            newMRow("datetime presence", manager) << manager << defAndFieldNames.first << noField << false << ev << "abcdefghijk"; // all contacts have a Timestamp detail
+            QTest::newRow("datetime presence (inc field)") << manager << defAndFieldNames.first << defAndFieldNames.second << false << ev << "abcdefghijk";
             QTest::newRow("datetime presence (wrong field)") << manager << defAndFieldNames.first << invalidField << false << ev << es;
             QTest::newRow("datetime value (no match)") << manager << defAndFieldNames.first << defAndFieldNames.second << true << QVariant(QDateTime(QDate(2100,5,13), QTime(5,5,5))) << es;
             QTest::newRow("datetime value (wrong type)") << manager << defAndFieldNames.first << defAndFieldNames.second << true << QVariant(3.5) << es;
