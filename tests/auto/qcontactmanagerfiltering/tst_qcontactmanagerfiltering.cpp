@@ -1870,6 +1870,8 @@ void tst_QContactManagerFiltering::sorting_data()
     int desc = Qt::DescendingOrder;
     int cs = Qt::CaseSensitive;
     int ci = Qt::CaseInsensitive;
+    int bll = QContactSortOrder::BlanksLast;
+    int blf = QContactSortOrder::BlanksFirst;
 
     for (int i = 0; i < managers.size(); i++) {
         QContactManager *manager = managers.at(i);
@@ -1883,24 +1885,23 @@ void tst_QContactManagerFiltering::sorting_data()
         newMRow("first descending", manager) << manager << namedef << firstname << desc << false << 0 << cs << "kijhefgdcba" << "efg";// efg have the same first name
         newMRow("last ascending", manager) << manager << namedef << lastname << asc << false << 0 << cs << "bacdefghijk" << "hijk";       // all have a well defined, sortable last name except hijk
         newMRow("last descending", manager) << manager << namedef << lastname << desc << false << 0 << cs << "gfedcabhijk" << "hijk";     // all have a well defined, sortable last name except hijk
-        if (!integerDefAndFieldNames.first.isEmpty() && !integerDefAndFieldNames.second.isEmpty()) {
+        if (validDetailInfo(integerDefAndFieldNames)) {
             newMRow("integer ascending, blanks last", manager) << manager << integerDefAndFieldNames.first << integerDefAndFieldNames.second << asc << true << bll << cs << "cabgfedhijk" << "gfedhijk"; // gfedhijk have no integer
             newMRow("integer descending, blanks last", manager) << manager << integerDefAndFieldNames.first << integerDefAndFieldNames.second << desc << true << bll << cs << "bacgfedhijk" << "gfedhijk"; // gfedhijk have no integer
             newMRow("integer ascending, blanks first", manager) << manager << integerDefAndFieldNames.first << integerDefAndFieldNames.second << asc << true << blf << cs << "hijkdefgcab" << "gfedhijk"; // gfedhijk have no integer
             newMRow("integer descending, blanks first", manager) << manager << integerDefAndFieldNames.first << integerDefAndFieldNames.second << desc << true << blf << cs << "hijkdefgbac" << "gfedhijk"; // gfedhijk have no integer
         }
-        if (!stringDefAndFieldNames.first.isEmpty() && !stringDefAndFieldNames.second.isEmpty()) {
-            int bll = QContactSortOrder::BlanksLast;
-            int blf = QContactSortOrder::BlanksFirst;
+        if (validDetailInfo(stringDefAndFieldNames)) {
             QTest::newRow("string ascending (null value), blanks first") << manager << stringDefAndFieldNames.first << stringDefAndFieldNames.second << asc << true << blf << cs << "feabcdg" << "fehijk"; // f and e have blank string
             QTest::newRow("string ascending (null value), blanks last") << manager << stringDefAndFieldNames.first << stringDefAndFieldNames.second << asc << true << bll << cs << "abcdgef" << "efhijk";   // f and e have blank string
         }
 
         newMRow("display label insensitive", manager) << manager << dldef << dlfld << asc << false << 0 << ci << "abcdefghjik" << "efghji";
         newMRow("display label sensitive", manager) << manager << dldef << dlfld << asc << false << 0 << cs << "abcdefghjik" << "efg";
-
 #else
         Q_UNUSED(ci)
+        Q_UNUSED(bll)
+        Q_UNUSED(blf)
         Q_UNUSED(dldef)
         Q_UNUSED(dlfld)
 #endif // nemo sqlite collation - instead we ensure the correctness of our ordering code with the following tests:
@@ -2043,6 +2044,7 @@ void tst_QContactManagerFiltering::multiSorting_data()
     QTest::addColumn<int>("ssdirectioni");
 
     QTest::addColumn<QString>("expected");
+    QTest::addColumn<bool>("efunstable");
     QTest::addColumn<bool>("efgunstable");
 
 
@@ -2067,34 +2069,34 @@ void tst_QContactManagerFiltering::multiSorting_data()
         QTest::newRow("1") << manager
                            << true << namedef << firstname << asc
                            << true << namedef << lastname << asc
-                           << "abcdefg" << false;
+                           << "abcdefg" << false << false;
         QTest::newRow("2") << manager
                            << true << namedef << firstname << asc
                            << true << namedef << lastname << desc
-                           << "abcdgfe" << false;
+                           << "abcdgfe" << false << false;
         QTest::newRow("3") << manager
                            << true << namedef << firstname << desc
                            << true << namedef << lastname << asc
-                           << "efgdcba" << false;
+                           << "efgdcba" << false << false;
         QTest::newRow("4") << manager
                            << true << namedef << firstname << desc
                            << true << namedef << lastname << desc
-                           << "gfedcba" << false;
+                           << "gfedcba" << false << false;
 
         QTest::newRow("5") << manager
                            << true << namedef << firstname << asc
                            << false << namedef << lastname << asc
-                           << "abcdefg" << true;
+                           << "abcdefg" << true << true;
 
         QTest::newRow("5b") << manager
                            << true << namedef << firstname << asc
                            << true << noType << noField << asc
-                           << "abcdefg" << true;
+                           << "abcdefg" << true << true;
 
         QTest::newRow("6") << manager
                            << false << namedef << firstname << asc
                            << true << namedef << lastname << asc
-                           << "bacdefg" << false;
+                           << "bacdefg" << false << false;
 
         // This test is completely unstable; no sort criteria means dependent upon internal sort order of manager.
         //QTest::newRow("7") << manager
@@ -2112,10 +2114,7 @@ void tst_QContactManagerFiltering::multiSorting_data()
                                << stringDefAndFieldNames.first
                                << stringDefAndFieldNames.second
                                << desc
-#if 0
-                               << "abcdgef" << false; // default policy = blanks last, and ef have no value (e is empty, f is null)
-#endif
-                               << "abcdgfe" << false; // nemo sqlite's blank policy returns null before empty
+                               << "abcdgef" << true << false; // default policy = blanks last, and ef have no value (e is empty, f is null)
 
             QTest::newRow("8b") << manager
                                << true
@@ -2123,10 +2122,7 @@ void tst_QContactManagerFiltering::multiSorting_data()
                                << stringDefAndFieldNames.second
                                << asc
                                << false << noType << noField << desc
-#if 0
-                               << "abcdgef" << false; // default policy = blanks last, and ef have no value (e is empty, f is null)
-#endif
-                               << "abcdgfe" << false; // nemo sqlite's blank policy returns null before empty
+                               << "abcdgef" << true << false; // default policy = blanks last, and ef have no value (e is empty, f is null)
         }
 
 #if 0
@@ -2143,7 +2139,7 @@ void tst_QContactManagerFiltering::multiSorting_data()
         QTest::newRow("10") << manager
                             << true << namedef << firstname << asc
                             << true << namedef << firstname << desc
-                            << "abcdefg" << true;
+                            << "abcdefg" << true << true;
 
     }
 }
@@ -2160,6 +2156,7 @@ void tst_QContactManagerFiltering::multiSorting()
     QFETCH(FieldIdentifier, ssfieldname);
     QFETCH(int, ssdirectioni);
     QFETCH(QString, expected);
+    QFETCH(bool, efunstable);
     QFETCH(bool, efgunstable);
 
     Qt::SortOrder fsdirection = (Qt::SortOrder)fsdirectioni;
@@ -2191,14 +2188,19 @@ void tst_QContactManagerFiltering::multiSorting()
 
     // Just like the single sort test, we might get some contacts back in indeterminate order
     // (but their relative position with other contacts should not change)
-    if (efgunstable) {
+    if (efunstable || efgunstable) {
         QVERIFY(output.count('e') == 1);
         QVERIFY(output.count('f') == 1);
-        QVERIFY(output.count('g') == 1);
+        if (efgunstable) {
+            QVERIFY(output.count('g') == 1);
+        }
+
         output.remove('f');
-        output.remove('g');
         expected.remove('f');
-        expected.remove('g');
+        if (efgunstable) {
+            output.remove('g');
+            expected.remove('g');
+        }
     }
 
     QCOMPARE(output, expected);
