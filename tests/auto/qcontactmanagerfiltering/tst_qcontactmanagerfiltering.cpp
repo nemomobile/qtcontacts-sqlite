@@ -422,8 +422,8 @@ void tst_QContactManagerFiltering::detailStringFiltering_data()
 #endif
             newMRow("Phone number detail exists", manager) << manager << phonenumber << noField << QVariant("") << 0 << "ab";
             newMRow("Phone number = 5551212", manager) << manager << phonenumber << number << QVariant("5551212") << (int) QContactFilter::MatchExactly << "a";
-            newMRow("Phone number = 34, contains", manager) << manager << phonenumber << number << QVariant("34") << (int) QContactFilter::MatchContains << "b";
-            newMRow("Phone number = 555, starts with", manager) << manager << phonenumber << number << QVariant("555") <<  (int) QContactFilter::MatchStartsWith << "ab";
+            newMRow("Phone number = 555, contains", manager) << manager << phonenumber << number << QVariant("555") << (int) QContactFilter::MatchContains << "ab";
+            newMRow("Phone number = 555, starts with", manager) << manager << phonenumber << number << QVariant("555") <<  (int) QContactFilter::MatchStartsWith << "a";
             newMRow("Phone number = 1212, ends with", manager) << manager << phonenumber << number << QVariant("1212") << (int) QContactFilter::MatchEndsWith << "a";
             newMRow("Phone number = 555-1212, match phone number", manager) << manager << phonenumber << number << QVariant("555-1212") << (int) QContactFilter::MatchPhoneNumber << "a"; // hyphens will be ignored by the match algorithm
 #ifdef DETAIL_DEFINITION_SUPPORTED
@@ -498,62 +498,66 @@ void tst_QContactManagerFiltering::detailPhoneNumberFiltering_data()
     TypeIdentifier phoneDef = detailType<QContactPhoneNumber>();
     FieldIdentifier phoneField = QContactPhoneNumber::FieldNumber;
 
+    const int mpn = (int)QContactFilter::MatchPhoneNumber;
+    const int msw = (int)QContactFilter::MatchStartsWith;
+
     // purely to test phone number filtering.
     for (int i = 0; i < managers.size(); i++) {
         QContactManager *manager = managers.at(i);
 
         // now do phone number matching - first, aaron's phone number
-        QTest::newRow("a phone hyphen") << manager << phoneDef << phoneField << QVariant(QString("555-1212")) << (int)(QContactFilter::MatchPhoneNumber) << "a";
-        QTest::newRow("a phone plus") << manager << phoneDef << phoneField << QVariant(QString("+5551212")) << (int)(QContactFilter::MatchPhoneNumber) << "a";
-        QTest::newRow("a phone brackets") << manager << phoneDef << phoneField << QVariant(QString("(555)1212")) << (int)(QContactFilter::MatchPhoneNumber) << "a";
-        QTest::newRow("a phone nospaces") << manager << phoneDef << phoneField << QVariant(QString("5551212")) << (int)(QContactFilter::MatchPhoneNumber) << "a";
-        QTest::newRow("a phone single space") << manager << phoneDef << phoneField << QVariant(QString("555 1212")) << (int)(QContactFilter::MatchPhoneNumber) << "a";
-        QTest::newRow("a phone random spaces") << manager << phoneDef << phoneField << QVariant(QString("55 512 12")) << (int)(QContactFilter::MatchPhoneNumber) << "a";
-        QTest::newRow("a phone every space") << manager << phoneDef << phoneField << QVariant(QString("5 5 5 1 2 1 2")) << (int)(QContactFilter::MatchPhoneNumber) << "a";
-        QTest::newRow("a phone plus hyphen") << manager << phoneDef << phoneField << QVariant(QString("+555-1212")) << (int)(QContactFilter::MatchPhoneNumber) << "a";
-        QTest::newRow("a phone plus brackets") << manager << phoneDef << phoneField << QVariant(QString("+5(55)1212")) << (int)(QContactFilter::MatchPhoneNumber) << "a";
-        QTest::newRow("a phone plus brackets hyphen") << manager << phoneDef << phoneField << QVariant(QString("+5(55)1-212")) << (int)(QContactFilter::MatchPhoneNumber) << "a";
-        QTest::newRow("a phone plus brackets hyphen spaces") << manager << phoneDef << phoneField << QVariant(QString("+5 (55) 1-212")) << (int)(QContactFilter::MatchPhoneNumber) << "a";
+        QTest::newRow("a phone hyphen") << manager << phoneDef << phoneField << QVariant(QString("555-1212")) << mpn << "a";
+        // An initial-plus variant is not the same number, so this test is not valid:
+        //QTest::newRow("a phone plus") << manager << phoneDef << phoneField << QVariant(QString("+5551212")) << mpn << "a";
+        QTest::newRow("a phone brackets") << manager << phoneDef << phoneField << QVariant(QString("(555)1212")) << mpn << "a";
+        QTest::newRow("a phone nospaces") << manager << phoneDef << phoneField << QVariant(QString("5551212")) << mpn << "a";
+        QTest::newRow("a phone single space") << manager << phoneDef << phoneField << QVariant(QString("555 1212")) << mpn << "a";
+        QTest::newRow("a phone random spaces") << manager << phoneDef << phoneField << QVariant(QString("55 512 12")) << mpn << "a";
+        QTest::newRow("a phone every space") << manager << phoneDef << phoneField << QVariant(QString("5 5 5 1 2 1 2")) << mpn << "a";
+        QTest::newRow("a phone hyphen") << manager << phoneDef << phoneField << QVariant(QString("555-1212")) << mpn << "a";
+        QTest::newRow("a phone brackets") << manager << phoneDef << phoneField << QVariant(QString("5(55)1212")) << mpn << "a";
+        QTest::newRow("a phone brackets hyphen") << manager << phoneDef << phoneField << QVariant(QString("5(55)1-212")) << mpn << "a";
+        QTest::newRow("a phone brackets hyphen spaces") << manager << phoneDef << phoneField << QVariant(QString("5 (55) 1-212")) << mpn << "a";
 
         // XXX TODO: should we test for character to number conversions (eg, dial 1800-PESTCONTROL) etc ?
-        //QTest::newRow("a phone characters") << manager << phoneDef << phoneField << QVariant(QString("jjj1a1a")) << (int)(QContactFilter::MatchPhoneNumber) << "a"; // 5551212
-        //QTest::newRow("a phone characters") << manager << phoneDef << phoneField << QVariant(QString("jkl1b1a")) << (int)(QContactFilter::MatchPhoneNumber) << "a"; // 5551212
+        //QTest::newRow("a phone characters") << manager << phoneDef << phoneField << QVariant(QString("jjj1a1a")) << mpn << "a"; // 5551212
+        //QTest::newRow("a phone characters") << manager << phoneDef << phoneField << QVariant(QString("jkl1b1a")) << mpn << "a"; // 5551212
 
-        // then matches bob's phone number
-        QTest::newRow("b phone hyphen") << manager << phoneDef << phoneField << QVariant(QString("555-3456")) << (int)(QContactFilter::MatchPhoneNumber) << "b";
-        QTest::newRow("b phone plus") << manager << phoneDef << phoneField << QVariant(QString("+5553456")) << (int)(QContactFilter::MatchPhoneNumber) << "b";
-        QTest::newRow("b phone brackets") << manager << phoneDef << phoneField << QVariant(QString("(555)3456")) << (int)(QContactFilter::MatchPhoneNumber) << "b";
-        QTest::newRow("b phone nospaces") << manager << phoneDef << phoneField << QVariant(QString("5553456")) << (int)(QContactFilter::MatchPhoneNumber) << "b";
-        QTest::newRow("b phone single space") << manager << phoneDef << phoneField << QVariant(QString("555 3456")) << (int)(QContactFilter::MatchPhoneNumber) << "b";
-        QTest::newRow("b phone random spaces") << manager << phoneDef << phoneField << QVariant(QString("55 534 56")) << (int)(QContactFilter::MatchPhoneNumber) << "b";
-        QTest::newRow("b phone every space") << manager << phoneDef << phoneField << QVariant(QString("5 5 5 3 4 5 6")) << (int)(QContactFilter::MatchPhoneNumber) << "b";
-        QTest::newRow("b phone plus hyphen") << manager << phoneDef << phoneField << QVariant(QString("+555-3456")) << (int)(QContactFilter::MatchPhoneNumber) << "b";
-        QTest::newRow("b phone plus brackets") << manager << phoneDef << phoneField << QVariant(QString("+5(55)3456")) << (int)(QContactFilter::MatchPhoneNumber) << "b";
-        QTest::newRow("b phone plus brackets hyphen") << manager << phoneDef << phoneField << QVariant(QString("+5(55)3-456")) << (int)(QContactFilter::MatchPhoneNumber) << "b";
-        QTest::newRow("b phone plus brackets hyphen spaces") << manager << phoneDef << phoneField << QVariant(QString("+5 (55) 3-456")) << (int)(QContactFilter::MatchPhoneNumber) << "b";
+        // then matches bob's phone number (which has the initial-plus)
+        QTest::newRow("b phone hyphen") << manager << phoneDef << phoneField << QVariant(QString("5555-3456")) << mpn << "b";
+        QTest::newRow("b phone plus") << manager << phoneDef << phoneField << QVariant(QString("+55553456")) << mpn << "b";
+        QTest::newRow("b phone brackets") << manager << phoneDef << phoneField << QVariant(QString("(5555)3456")) << mpn << "b";
+        QTest::newRow("b phone nospaces") << manager << phoneDef << phoneField << QVariant(QString("55553456")) << mpn << "b";
+        QTest::newRow("b phone single space") << manager << phoneDef << phoneField << QVariant(QString("5555 3456")) << mpn << "b";
+        QTest::newRow("b phone random spaces") << manager << phoneDef << phoneField << QVariant(QString("555 534 56")) << mpn << "b";
+        QTest::newRow("b phone every space") << manager << phoneDef << phoneField << QVariant(QString("5 5 5 5 3 4 5 6")) << mpn << "b";
+        QTest::newRow("b phone plus hyphen") << manager << phoneDef << phoneField << QVariant(QString("+5555-3456")) << mpn << "b";
+        QTest::newRow("b phone plus brackets") << manager << phoneDef << phoneField << QVariant(QString("+5(555)3456")) << mpn << "b";
+        QTest::newRow("b phone plus brackets hyphen") << manager << phoneDef << phoneField << QVariant(QString("+5(555)3-456")) << mpn << "b";
+        QTest::newRow("b phone plus brackets hyphen spaces") << manager << phoneDef << phoneField << QVariant(QString("+55 (55) 3-456")) << mpn << "b";
 
         // then match no phone numbers (negative testing) -- 555-9999 matches nobody in our test set.
-        QTest::newRow("no phone hyphen") << manager << phoneDef << phoneField << QVariant(QString("555-9999")) << (int)(QContactFilter::MatchPhoneNumber) << "";
-        QTest::newRow("no phone plus") << manager << phoneDef << phoneField << QVariant(QString("+5559999")) << (int)(QContactFilter::MatchPhoneNumber) << "";
-        QTest::newRow("no phone brackets") << manager << phoneDef << phoneField << QVariant(QString("(555)9999")) << (int)(QContactFilter::MatchPhoneNumber) << "";
-        QTest::newRow("no phone nospaces") << manager << phoneDef << phoneField << QVariant(QString("5559999")) << (int)(QContactFilter::MatchPhoneNumber) << "";
-        QTest::newRow("no phone single space") << manager << phoneDef << phoneField << QVariant(QString("555 9999")) << (int)(QContactFilter::MatchPhoneNumber) << "";
-        QTest::newRow("no phone random spaces") << manager << phoneDef << phoneField << QVariant(QString("55 599 99")) << (int)(QContactFilter::MatchPhoneNumber) << "";
-        QTest::newRow("no phone every space") << manager << phoneDef << phoneField << QVariant(QString("5 5 5 9 9 9 9")) << (int)(QContactFilter::MatchPhoneNumber) << "";
-        QTest::newRow("no phone plus hyphen") << manager << phoneDef << phoneField << QVariant(QString("+555-9999")) << (int)(QContactFilter::MatchPhoneNumber) << "";
-        QTest::newRow("no phone plus brackets") << manager << phoneDef << phoneField << QVariant(QString("+5(55)9999")) << (int)(QContactFilter::MatchPhoneNumber) << "";
-        QTest::newRow("no phone plus brackets hyphen") << manager << phoneDef << phoneField << QVariant(QString("+5(55)9-999")) << (int)(QContactFilter::MatchPhoneNumber) << "";
-        QTest::newRow("no phone plus brackets hyphen spaces") << manager << phoneDef << phoneField << QVariant(QString("+5 (55) 9-999")) << (int)(QContactFilter::MatchPhoneNumber) << "";
+        QTest::newRow("no phone hyphen") << manager << phoneDef << phoneField << QVariant(QString("555-9999")) << mpn << "";
+        QTest::newRow("no phone plus") << manager << phoneDef << phoneField << QVariant(QString("+5559999")) << mpn << "";
+        QTest::newRow("no phone brackets") << manager << phoneDef << phoneField << QVariant(QString("(555)9999")) << mpn << "";
+        QTest::newRow("no phone nospaces") << manager << phoneDef << phoneField << QVariant(QString("5559999")) << mpn << "";
+        QTest::newRow("no phone single space") << manager << phoneDef << phoneField << QVariant(QString("555 9999")) << mpn << "";
+        QTest::newRow("no phone random spaces") << manager << phoneDef << phoneField << QVariant(QString("55 599 99")) << mpn << "";
+        QTest::newRow("no phone every space") << manager << phoneDef << phoneField << QVariant(QString("5 5 5 9 9 9 9")) << mpn << "";
+        QTest::newRow("no phone plus hyphen") << manager << phoneDef << phoneField << QVariant(QString("+555-9999")) << mpn << "";
+        QTest::newRow("no phone plus brackets") << manager << phoneDef << phoneField << QVariant(QString("+5(55)9999")) << mpn << "";
+        QTest::newRow("no phone plus brackets hyphen") << manager << phoneDef << phoneField << QVariant(QString("+5(55)9-999")) << mpn << "";
+        QTest::newRow("no phone plus brackets hyphen spaces") << manager << phoneDef << phoneField << QVariant(QString("+5 (55) 9-999")) << mpn << "";
 
         // then match both aaron and bob via starts with
-        QTest::newRow("ab phone starts nospace") << manager << phoneDef << phoneField << QVariant(QString("555")) << (int)(QContactFilter::MatchPhoneNumber | QContactFilter::MatchStartsWith) << "ab";
-        QTest::newRow("ab phone starts hyphen") << manager << phoneDef << phoneField << QVariant(QString("555-")) << (int)(QContactFilter::MatchPhoneNumber | QContactFilter::MatchStartsWith) << "ab";
-        QTest::newRow("ab phone starts space") << manager << phoneDef << phoneField << QVariant(QString("55 5")) << (int)(QContactFilter::MatchPhoneNumber | QContactFilter::MatchStartsWith) << "ab";
-        QTest::newRow("ab phone starts brackets") << manager << phoneDef << phoneField << QVariant(QString("(555)")) << (int)(QContactFilter::MatchPhoneNumber | QContactFilter::MatchStartsWith) << "ab";
-        QTest::newRow("ab phone starts plus") << manager << phoneDef << phoneField << QVariant(QString("+555")) << (int)(QContactFilter::MatchPhoneNumber | QContactFilter::MatchStartsWith) << "ab";
-        QTest::newRow("ab phone starts hyphen space") << manager << phoneDef << phoneField << QVariant(QString("5 55-")) << (int)(QContactFilter::MatchPhoneNumber | QContactFilter::MatchStartsWith) << "ab";
-        QTest::newRow("ab phone starts hyphen space brackets") << manager << phoneDef << phoneField << QVariant(QString("5 (55)-")) << (int)(QContactFilter::MatchPhoneNumber | QContactFilter::MatchStartsWith) << "ab";
-        QTest::newRow("ab phone starts hyphen space brackets plus") << manager << phoneDef << phoneField << QVariant(QString("+5 (55)-")) << (int)(QContactFilter::MatchPhoneNumber | QContactFilter::MatchStartsWith) << "ab";
+        QTest::newRow("ab phone starts nospace") << manager << phoneDef << phoneField << QVariant(QString("555")) << (mpn | msw) << "ab";
+        QTest::newRow("ab phone starts hyphen") << manager << phoneDef << phoneField << QVariant(QString("555-")) << (mpn | msw) << "ab";
+        QTest::newRow("ab phone starts space") << manager << phoneDef << phoneField << QVariant(QString("55 5")) << (mpn | msw) << "ab";
+        QTest::newRow("ab phone starts brackets") << manager << phoneDef << phoneField << QVariant(QString("(555)")) << (mpn | msw) << "ab";
+        QTest::newRow("ab phone starts plus") << manager << phoneDef << phoneField << QVariant(QString("+555")) << (mpn | msw) << "ab";
+        QTest::newRow("ab phone starts hyphen space") << manager << phoneDef << phoneField << QVariant(QString("5 55-")) << (mpn | msw) << "ab";
+        QTest::newRow("ab phone starts hyphen space brackets") << manager << phoneDef << phoneField << QVariant(QString("5 (55)-")) << (mpn | msw) << "ab";
+        QTest::newRow("ab phone starts hyphen space brackets plus") << manager << phoneDef << phoneField << QVariant(QString("+5 (55)-")) << (mpn | msw) << "ab";
     }
 }
 
@@ -3043,7 +3047,7 @@ QList<QContactId> tst_QContactManagerFiltering::prepareModel(QContactManager *cm
     name.setFirstName("Bob");
     name.setLastName("Aaronsen");
     nick.setNickname("Sir Bob");
-    number.setNumber("5553456");
+    number.setNumber("+55553456");
     string.setValue(definitionDetails.value("String").second, "Bob Aaronsen");
     integer.setValue(definitionDetails.value("Integer").second, 20);
     dubble.setValue(definitionDetails.value("Double").second, 4.0);
