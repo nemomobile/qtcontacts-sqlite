@@ -945,6 +945,7 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
         bool stringField = field.fieldType == StringField || field.fieldType == StringListField ||
                            field.fieldType == LocalizedField || field.fieldType == LocalizedListField;
         bool phoneNumberMatch = filter.matchFlags() & QContactFilter::MatchPhoneNumber;
+        bool fixedString = filter.matchFlags() & QContactFilter::MatchFixedString;
         bool useNormalizedNumber = false;
         int globValue = filter.matchFlags() & 7;
         if (field.fieldType == StringListField || field.fieldType == LocalizedListField) {
@@ -952,14 +953,9 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
             globValue = QContactFilter::MatchContains;
         }
 
-        // TODO: if MatchFixedString is specified but the field type is numeric, we need to
-        // cast the column to text for comparison
-
         // We need to perform case-insensitive matching if MatchFixedString is specified (unless
         // CaseSensitive is also specified)
-        bool caseInsensitive = stringField &&
-                               filter.matchFlags() & QContactFilter::MatchFixedString &&
-                               (filter.matchFlags() & QContactFilter::MatchCaseSensitive) == 0;
+        bool caseInsensitive = stringField && fixedString && ((filter.matchFlags() & QContactFilter::MatchCaseSensitive) == 0);
 
         QString clause(detail.where());
         QString comparison = QLatin1String("%1");
@@ -1032,7 +1028,7 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
             }
         }
 
-        if (stringField) {
+        if (stringField || fixedString) {
             if (globValue == QContactFilter::MatchStartsWith) {
                 bindValue = bindValue + QLatin1String("*");
                 comparison += QLatin1String(" GLOB ?");
