@@ -793,8 +793,8 @@ static QString dateString(const DetailInfo &detail, const QDateTime &qdt)
 {
     if (detail.detailType == QContactBirthday::Type
             || detail.detailType == QContactAnniversary::Type) {
-        // just interested in the date, not the whole date time
-        return ContactsDatabase::dateString(qdt.toUTC());
+        // just interested in the date, not the whole date time (local time)
+        return ContactsDatabase::dateString(qdt);
     }
 
     return ContactsDatabase::dateTimeString(qdt.toUTC());
