@@ -1767,6 +1767,9 @@ void tst_QContactManagerFiltering::relationshipFiltering()
     // 1. Create contacts to be used in relationship testing
     QContact contactA;
     if (relationshipType == relationshipString(QContactRelationship::HasMember)) {
+        if (!cm->supportedContactTypes().contains(QContactType::TypeGroup))
+            QSKIP("Manager does not support groups; skipping relationship filtering");
+
         // Change contact type to group as this is required at least by symbian backend
         // TODO: should it be possible to query this constraint from the backend?
         contactA = createContact(cm, QContactType::TypeGroup, "ContactA");
