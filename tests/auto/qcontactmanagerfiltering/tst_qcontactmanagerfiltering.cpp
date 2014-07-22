@@ -47,6 +47,8 @@
 #include "../../../src/extensions/qcontactdeactivated.h"
 #include "../../../src/extensions/qcontactstatusflags.h"
 
+#include <QLocale>
+
 //TESTED_COMPONENT=src/contacts
 //TESTED_CLASS=
 //TESTED_FILES=
@@ -201,6 +203,8 @@ private slots:
 
 tst_QContactManagerFiltering::tst_QContactManagerFiltering()
 {
+    // In order to make our tests reliable, set the C locale
+    QLocale::setDefault(QLocale::c());
 }
 
 tst_QContactManagerFiltering::~tst_QContactManagerFiltering()
@@ -1863,7 +1867,7 @@ void tst_QContactManagerFiltering::sorting_data()
     for (int i = 0; i < managers.size(); i++) {
         QContactManager *manager = managers.at(i);
 
-#if 0 // the nemo sqlite backend has different sorting semantics to what is expected, as it doesn't do any locale-aware collation.
+#if 0 // the nemo sqlite backend has different sorting semantics to what is expected
 
         FieldSelector integerDefAndFieldNames = defAndFieldNamesForTypePerManager.value(manager).value("Integer");
         FieldSelector stringDefAndFieldNames = defAndFieldNamesForTypePerManager.value(manager).value("String");
