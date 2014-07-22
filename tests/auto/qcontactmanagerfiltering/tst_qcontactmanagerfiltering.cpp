@@ -438,9 +438,9 @@ void tst_QContactManagerFiltering::detailStringFiltering_data()
             QTest::newRow("integer == 20, begins with, string") << manager << defAndFieldNames.first << defAndFieldNames.second << QVariant("20") << (int)(QContactFilter::MatchFixedString | QContactFilter::MatchStartsWith) << "b";
             QTest::newRow("integer == 2, begins with, string") << manager << defAndFieldNames.first << defAndFieldNames.second << QVariant("2") << (int)(QContactFilter::MatchFixedString | QContactFilter::MatchStartsWith) << "b";
             QTest::newRow("integer == 20, ends with, string") << manager << defAndFieldNames.first << defAndFieldNames.second << QVariant("20") << (int)(QContactFilter::MatchFixedString | QContactFilter::MatchEndsWith) << "bc";
-            QTest::newRow("integer == 0, ends with, string") << manager << defAndFieldNames.first << defAndFieldNames.second << QVariant("0") << (int)(QContactFilter::MatchFixedString | QContactFilter::MatchEndsWith) << "abc";
+            QTest::newRow("integer == 0, ends with, string") << manager << defAndFieldNames.first << defAndFieldNames.second << QVariant("0") << (int)(QContactFilter::MatchFixedString | QContactFilter::MatchEndsWith) << "bc";
             QTest::newRow("integer == 20, contains, string") << manager << defAndFieldNames.first << defAndFieldNames.second << QVariant("20") << (int)(QContactFilter::MatchFixedString | QContactFilter::MatchContains) << "bc";
-            QTest::newRow("integer == 0, contains, string") << manager << defAndFieldNames.first << defAndFieldNames.second << QVariant("0") << (int)(QContactFilter::MatchFixedString | QContactFilter::MatchContains) << "abc";
+            QTest::newRow("integer == 0, contains, string") << manager << defAndFieldNames.first << defAndFieldNames.second << QVariant("0") << (int)(QContactFilter::MatchFixedString | QContactFilter::MatchContains) << "bc";
         }
 
         /* Detail filter semantics: empty definition or field */
@@ -784,7 +784,7 @@ void tst_QContactManagerFiltering::detailVariantFiltering_data()
 
         /*
          * Integers
-         * A has 10
+         * A has 3
          * B has 20
          * C has -20
          */
@@ -796,8 +796,8 @@ void tst_QContactManagerFiltering::detailVariantFiltering_data()
             QTest::newRow("integer value (no match)") << manager << defAndFieldNames.first << defAndFieldNames.second << true << QVariant(50) << es;
             QTest::newRow("integer value (wrong type)") << manager << defAndFieldNames.first << defAndFieldNames.second << true << QVariant(3.5) << es;
             QTest::newRow("integer value (wrong field, no match)") << manager << defAndFieldNames.first << invalidField << true << QVariant(50) << es;
-            newMRow("integer value", manager) << manager << defAndFieldNames.first << defAndFieldNames.second << true << QVariant(10) << "a";
-            QTest::newRow("integer value (wrong field)") << manager << defAndFieldNames.first << invalidField << true << QVariant(10) << es;
+            newMRow("integer value", manager) << manager << defAndFieldNames.first << defAndFieldNames.second << true << QVariant(3) << "a";
+            QTest::newRow("integer value (wrong field)") << manager << defAndFieldNames.first << invalidField << true << QVariant(3) << es;
             QTest::newRow("integer value 2") << manager << defAndFieldNames.first << defAndFieldNames.second << true << QVariant(-20) << "c";
             QTest::newRow("integer value 2 (wrong field)") << manager << defAndFieldNames.first << invalidField << true << QVariant(-20) << es;
         }
