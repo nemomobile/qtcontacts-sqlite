@@ -565,6 +565,8 @@ static const char *createStatements[] =
     createAvatarsDetailsContactIdIndex,
     createBirthdaysDetailsContactIdIndex,
     createEmailAddressesDetailsContactIdIndex,
+    createFamiliesDetailsContactIdIndex,
+    createGeoLocationsDetailsContactIdIndex,
     createGlobalPresencesDetailsContactIdIndex,
     createGuidsDetailsContactIdIndex,
     createHobbiesDetailsContactIdIndex,
