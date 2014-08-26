@@ -261,7 +261,7 @@ static const char *createDetailsTable =
         "\n detailId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
         "\n contactId INTEGER REFERENCES Contacts (contactId),"
         "\n detail TEXT,"
-        "\n detailUri TEXT UNIQUE,"
+        "\n detailUri TEXT,"
         "\n linkedDetailUris TEXT,"
         "\n contexts TEXT,"
         "\n accessConstraints INTEGER,"
@@ -1177,6 +1177,37 @@ static const char *upgradeVersion11[] = {
     "PRAGMA user_version=12",
     0 // NULL-terminated
 };
+static const char *upgradeVersion12[] = {
+    // Preserve the existing state of the Details table
+    "ALTER TABLE Details RENAME TO OldDetails",
+    createDetailsTable,
+    "INSERT INTO Details("
+        "detailId,"
+        "contactId,"
+        "detail,"
+        "detailUri,"
+        "linkedDetailUris,"
+        "contexts,"
+        "accessConstraints,"
+        "provenance,"
+        "modifiable,"
+        "nonexportable)"
+    "SELECT "
+        "detailId,"
+        "contactId,"
+        "detail,"
+        "detailUri,"
+        "linkedDetailUris,"
+        "contexts,"
+        "accessConstraints,"
+        "provenance,"
+        "modifiable,"
+        "nonexportable "
+    "FROM OldDetails",
+    "DROP TABLE OldDetails",
+    "PRAGMA user_version=13",
+    0 // NULL-terminated
+};
 
 typedef bool (*UpgradeFunction)(QSqlDatabase &database);
 
@@ -1254,9 +1285,10 @@ static UpgradeOperation upgradeVersions[] = {
     { 0,                        upgradeVersion9 },
     { 0,                        upgradeVersion10 },
     { 0,                        upgradeVersion11 },
+    { 0,                        upgradeVersion12 },
 };
 
-static const int currentSchemaVersion = 12;
+static const int currentSchemaVersion = 13;
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {
