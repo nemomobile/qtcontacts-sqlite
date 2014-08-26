@@ -2537,6 +2537,8 @@ static QContactManager::Error enforceDetailConstraints(QContact *contact)
 
     QHash<ContactWriter::DetailList::value_type, int> detailCounts;
 
+    QSet<QString> detailUris;
+
     // look for unsupported detail data.
     foreach (const QContactDetail &det, contact->details()) {
         if (!detailListContains(supported, det)) {
@@ -2544,6 +2546,18 @@ static QContactManager::Error enforceDetailConstraints(QContact *contact)
             return QContactManager::InvalidDetailError;
         } else {
             ++detailCounts[detailType(det)];
+
+            // Verify that detail URIs are unique within the contact
+            const QString detailUri(det.detailUri());
+            if (!detailUri.isEmpty()) {
+                if (detailUris.contains(detailUri)) {
+                    // This URI conflicts with one already present in the contact
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Detail URI confict on: %1 %2 %3").arg(detailUri).arg(detailTypeName(det)).arg(det.type()));
+                    return QContactManager::InvalidDetailError;
+                }
+
+                detailUris.insert(detailUri);
+            }
         }
     }
 

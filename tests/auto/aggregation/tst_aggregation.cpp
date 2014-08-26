@@ -2163,6 +2163,15 @@ void tst_Aggregation::alterRelationships()
     aliceST.setSyncTarget("test-one");
     alice.saveDetail(&aliceST);
 
+    // Add a detail with non-empty detail URI - during the alteration, a duplicate
+    // of the linked detail URI will exist in each aggregate, until the obsolete
+    // aggregate is removed
+    QContactPhoneNumber ap;
+    ap.setNumber("1234567");
+    ap.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypeMobile);
+    ap.setDetailUri("alice-alterRelationships-phone");
+    alice.saveDetail(&ap);
+
     QContact bob;
 
     QContactName bn;
@@ -2173,6 +2182,12 @@ void tst_Aggregation::alterRelationships()
     QContactSyncTarget bobST;
     bobST.setSyncTarget("test-two");
     bob.saveDetail(&bobST);
+
+    QContactPhoneNumber bp;
+    bp.setNumber("2345678");
+    bp.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypeMobile);
+    bp.setDetailUri("bob-alterRelationships-phone");
+    bob.saveDetail(&bp);
 
     m_addAccumulatedIds.clear();
     QVERIFY(m_cm->saveContact(&alice));
@@ -3196,8 +3211,6 @@ void tst_Aggregation::detailUris()
     QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
     QContact localAlice;
     QContact aggregateAlice;
-    bool foundLocalAlice = false;
-    bool foundAggregateAlice = false;
     foreach (const QContact &curr, allContacts) {
         QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactEmailAddress currEm = curr.detail<QContactEmailAddress>();
@@ -3210,17 +3223,15 @@ void tst_Aggregation::detailUris()
                 && currEm.emailAddress() == QLatin1String("alice9@test.com")) {
             if (currSt.syncTarget() == QLatin1String("local")) {
                 localAlice = curr;
-                foundLocalAlice = true;
             } else {
                 QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
                 aggregateAlice = curr;
-                foundAggregateAlice = true;
             }
         }
     }
 
-    QVERIFY(foundLocalAlice);
-    QVERIFY(foundAggregateAlice);
+    QVERIFY(!localAlice.id().isNull());
+    QVERIFY(!aggregateAlice.id().isNull());
 
     // now check to ensure that the detail uris and links were updated correctly
     // in the aggregate.  Those uris need to be unique in the database.
@@ -3232,6 +3243,15 @@ void tst_Aggregation::detailUris()
     QVERIFY(aggregateAlice.detail<QContactEmailAddress>().linkedDetailUris().at(0).startsWith(QLatin1String("aggregate:")));
     QVERIFY(aggregateAlice.detail<QContactEmailAddress>().linkedDetailUris().at(0).endsWith(QLatin1String(":alice9PhoneNumberDetailUri")));
 
+    // try to add another detail with a conflicting detail URI
+    QContact failAlice(alice);
+
+    QContactTag at;
+    at.setTag("fail");
+    at.setDetailUri("alice9PhoneNumberDetailUri");
+    failAlice.saveDetail(&at);
+    QCOMPARE(m_cm->saveContact(&failAlice), false);
+
     // now perform an update of the local contact.  This should also trigger regeneration of the aggregate.
     QContactHobby ah;
     ah.setHobby("tennis");
@@ -3241,8 +3261,8 @@ void tst_Aggregation::detailUris()
 
     // reload them both
     allContacts = m_cm->contacts(allSyncTargets);
-    foundLocalAlice = false;
-    foundAggregateAlice = false;
+    localAlice = QContact();
+    aggregateAlice = QContact();
     foreach (const QContact &curr, allContacts) {
         QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactEmailAddress currEm = curr.detail<QContactEmailAddress>();
@@ -3255,17 +3275,15 @@ void tst_Aggregation::detailUris()
                 && currEm.emailAddress() == QLatin1String("alice9@test.com")) {
             if (currSt.syncTarget() == QLatin1String("local")) {
                 localAlice = curr;
-                foundLocalAlice = true;
             } else {
                 QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
                 aggregateAlice = curr;
-                foundAggregateAlice = true;
             }
         }
     }
 
-    QVERIFY(foundLocalAlice);
-    QVERIFY(foundAggregateAlice);
+    QVERIFY(!localAlice.id().isNull());
+    QVERIFY(!aggregateAlice.id().isNull());
 
     // now check to ensure that the detail uris and links were updated correctly
     // in the aggregate.  Those uris need to be unique in the database.
