@@ -1208,6 +1208,13 @@ static const char *upgradeVersion12[] = {
     "PRAGMA user_version=13",
     0 // NULL-terminated
 };
+static const char *upgradeVersion13[] = {
+    // upgradeVersion12 forgot to recreate this index.
+    // use IF NOT EXISTS for people who worked around by adding it manually
+    "CREATE INDEX IF NOT EXISTS DetailsRemoveIndex ON Details(contactId, detail)",
+    "PRAGMA user_version=14",
+    0 // NULL-terminated
+};
 
 typedef bool (*UpgradeFunction)(QSqlDatabase &database);
 
@@ -1286,9 +1293,10 @@ static UpgradeOperation upgradeVersions[] = {
     { 0,                        upgradeVersion10 },
     { 0,                        upgradeVersion11 },
     { 0,                        upgradeVersion12 },
+    { 0,                        upgradeVersion13 },
 };
 
-static const int currentSchemaVersion = 13;
+static const int currentSchemaVersion = 14;
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {
