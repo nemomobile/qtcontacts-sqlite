@@ -39,7 +39,8 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QSqlError>
-#include <QSqlQuery>
+#include "sqlproxy.hpp"
+// #include <QSqlQuery>
 
 #include <QtDebug>
 
@@ -1222,7 +1223,7 @@ static bool updateNormalizedNumbers(QSqlDatabase &database)
 
     QString statement(QStringLiteral("SELECT detailId, phoneNumber, normalizedNumber FROM PhoneNumbers"));
     QSqlQuery query(database);
-    if (!query.exec(statement)) {
+    if (!qexec(query, statement)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Query failed: %1\n%2")
                 .arg(query.lastError().text())
                 .arg(statement));
@@ -1244,7 +1245,7 @@ static bool updateNormalizedNumbers(QSqlDatabase &database)
     if (!updates.isEmpty()) {
         query = QSqlQuery(database);
         statement = QStringLiteral("UPDATE PhoneNumbers SET normalizedNumber = :normalizedNumber WHERE detailId = :detailId");
-        if (!query.prepare(statement)) {
+        if (!qprepare(query, statement)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare data upgrade query: %1\n%2")
                     .arg(query.lastError().text())
                     .arg(statement));
@@ -1254,7 +1255,7 @@ static bool updateNormalizedNumbers(QSqlDatabase &database)
         foreach (const UpdatePhoneNormalization &update, updates) {
             query.bindValue(":normalizedNumber", update.normalizedNumber);
             query.bindValue(":detailId", update.detailId);
-            if (!query.exec()) {
+            if (!qexec(query)) {
                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to upgrade data: %1\n%2")
                         .arg(query.lastError().text())
                         .arg(statement));
@@ -1293,7 +1294,7 @@ static const int currentSchemaVersion = 13;
 static bool execute(QSqlDatabase &database, const QString &statement)
 {
     QSqlQuery query(database);
-    if (!query.exec(statement)) {
+    if (!qexec(query, statement)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Query failed: %1\n%2")
                 .arg(query.lastError().text())
                 .arg(statement));
@@ -1342,8 +1343,8 @@ static bool executeUpgradeStatements(QSqlDatabase &database)
     }
 
     QSqlQuery versionQuery(database);
-    versionQuery.prepare("PRAGMA user_version");
-    if (!versionQuery.exec() || !versionQuery.next()) {
+    qprepare(versionQuery, "PRAGMA user_version");
+    if (!qexec(versionQuery) || !versionQuery.next()) {
         qWarning() << "User version query failed:" << versionQuery.lastError();
         return false;
     }
@@ -1367,7 +1368,7 @@ static bool executeUpgradeStatements(QSqlDatabase &database)
             }
         }
 
-        if (!versionQuery.exec() || !versionQuery.next()) {
+        if (!qexec(versionQuery) || !versionQuery.next()) {
             qWarning() << "User version query failed:" << versionQuery.lastError();
             return false;
         }
@@ -1396,7 +1397,7 @@ static bool executeUpgradeStatements(QSqlDatabase &database)
 static bool checkDatabase(QSqlDatabase &database)
 {
     QSqlQuery query(database);
-    if (query.exec(QLatin1String("PRAGMA quick_check"))) {
+    if (qexec(query, QLatin1String("PRAGMA quick_check"))) {
         while (query.next()) {
             const QString result(query.value(0).toString());
             if (result == QLatin1String("ok")) {
@@ -1451,7 +1452,7 @@ static bool executeCreationStatements(QSqlDatabase &database)
     for (int i = 0; i < lengthOf(createStatements); ++i) {
         QSqlQuery query(database);
 
-        if (!query.exec(QLatin1String(createStatements[i]))) {
+        if (!qexec(query, QLatin1String(createStatements[i]))) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Database creation failed: %1\n%2")
                     .arg(query.lastError().text())
                     .arg(createStatements[i]));
@@ -1482,7 +1483,7 @@ static bool executeSelfContactStatements(QSqlDatabase &database, const bool aggr
     const char **statement = (aggregating ? aggregatingCreateStatements : createStatements);
     for ( ; *statement != 0; ++statement) {
         QSqlQuery query(database);
-        if (!query.exec(QString::fromLatin1(*statement))) {
+        if (!qexec(query, QString::fromLatin1(*statement))) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Database creation failed: %1\n%2")
                     .arg(query.lastError().text())
                     .arg(*statement));
@@ -1541,7 +1542,7 @@ static bool countTransientTables(QSqlDatabase &db, const QString &table, int *co
     *count = 0;
 
     QSqlQuery query(db);
-    if (!query.prepare(sql.arg(table)) || !ContactsDatabase::execute(query)) {
+    if (!qprepare(query, sql.arg(table)) || !ContactsDatabase::execute(query)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to count transient tables for table: %1").arg(table));
         return false;
     } else while (query.next()) {
@@ -1556,7 +1557,7 @@ static bool findTransientTables(QSqlDatabase &db, const QString &table, QStringL
     static const QString sql(QString::fromLatin1("SELECT name FROM sqlite_temp_master WHERE type = 'table' and name LIKE '%1_transient%'"));
 
     QSqlQuery query(db);
-    if (!query.prepare(sql.arg(table)) || !ContactsDatabase::execute(query)) {
+    if (!qprepare(query, sql.arg(table)) || !ContactsDatabase::execute(query)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to query transient tables for table: %1").arg(table));
         return false;
     } else while (query.next()) {
@@ -1577,7 +1578,7 @@ static bool dropTransientTables(QSqlDatabase &db, const QString &table)
     foreach (const QString tableName, tableNames) {
         QSqlQuery dropTableQuery(db);
         const QString dropStatement(dropTableStatement.arg(tableName));
-        if (!dropTableQuery.prepare(dropStatement)) {
+        if (!qprepare(dropTableQuery, dropStatement)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare drop transient table query: %1\n%2")
                     .arg(dropTableQuery.lastError().text())
                     .arg(dropStatement));
@@ -1603,7 +1604,7 @@ bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool
 
     // Create the temporary table (if we haven't already).
     QSqlQuery tableQuery(db);
-    if (!tableQuery.prepare(createStatement.arg(table))) {
+    if (!qprepare(tableQuery, createStatement.arg(table))) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary table query: %1\n%2")
                 .arg(tableQuery.lastError().text())
                 .arg(createStatement));
@@ -1629,7 +1630,7 @@ bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool
         if (limit > 0) {
             insertStatement.append(QString::fromLatin1(" LIMIT %1").arg(limit));
         }
-        if (!insertQuery.prepare(insertStatement)) {
+        if (!qprepare(insertQuery, insertStatement)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary contact ids: %1\n%2")
                     .arg(insertQuery.lastError().text())
                     .arg(insertStatement));
@@ -1673,7 +1674,7 @@ bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool
                     }
                 }
 
-                if (!insertQuery.prepare(insertStatement)) {
+                if (!qprepare(insertQuery, insertStatement)) {
                     QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary contact ids: %1\n%2")
                             .arg(insertQuery.lastError().text())
                             .arg(insertStatement));
@@ -1697,11 +1698,11 @@ void dropOrDeleteTable(QSqlDatabase &db, const QString &table)
 {
     QSqlQuery dropTableQuery(db);
     const QString dropTableStatement = QString::fromLatin1("DROP TABLE IF EXISTS temp.%1").arg(table);
-    if (!dropTableQuery.prepare(dropTableStatement) || !ContactsDatabase::execute(dropTableQuery)) {
+    if (!qprepare(dropTableQuery, dropTableStatement) || !ContactsDatabase::execute(dropTableQuery)) {
         // couldn't drop the table, just delete all entries instead.
         QSqlQuery deleteRecordsQuery(db);
         const QString deleteRecordsStatement = QString::fromLatin1("DELETE FROM temp.%1").arg(table);
-        if (!deleteRecordsQuery.prepare(deleteRecordsStatement)) {
+        if (!qprepare(deleteRecordsQuery, deleteRecordsStatement)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare delete records query - the next query may return spurious results: %1\n%2")
                     .arg(deleteRecordsQuery.lastError().text())
                     .arg(deleteRecordsStatement));
@@ -1731,7 +1732,7 @@ bool createTemporaryContactTimestampTable(QSqlDatabase &db, const QString &table
 
     // Create the temporary table (if we haven't already).
     QSqlQuery tableQuery(db);
-    if (!tableQuery.prepare(createStatement.arg(table))) {
+    if (!qprepare(tableQuery, createStatement.arg(table))) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary timestamp table query: %1\n%2")
                 .arg(tableQuery.lastError().text())
                 .arg(createStatement.arg(table)));
@@ -1766,7 +1767,7 @@ bool createTemporaryContactTimestampTable(QSqlDatabase &db, const QString &table
                 }
             }
 
-            if (!insertQuery.prepare(insertStatement)) {
+            if (!qprepare(insertQuery, insertStatement)) {
                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary timestamp values: %1\n%2")
                         .arg(insertQuery.lastError().text())
                         .arg(insertStatement));
@@ -1778,8 +1779,8 @@ bool createTemporaryContactTimestampTable(QSqlDatabase &db, const QString &table
                 const QPair<quint32, QString> &pair(*vit);
                 ++vit;
 
-                insertQuery.addBindValue(QVariant(pair.first));
-                insertQuery.addBindValue(QVariant(pair.second));
+                qaddbind(insertQuery, QVariant(pair.first));
+                qaddbind(insertQuery, QVariant(pair.second));
             }
 
             if (!ContactsDatabase::execute(insertQuery)) {
@@ -1810,7 +1811,7 @@ bool createTemporaryContactPresenceTable(QSqlDatabase &db, const QString &table,
 
     // Create the temporary table (if we haven't already).
     QSqlQuery tableQuery(db);
-    if (!tableQuery.prepare(createStatement.arg(table))) {
+    if (!qprepare(tableQuery, createStatement.arg(table))) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary presence table query: %1\n%2")
                 .arg(tableQuery.lastError().text())
                 .arg(createStatement.arg(table)));
@@ -1845,7 +1846,7 @@ bool createTemporaryContactPresenceTable(QSqlDatabase &db, const QString &table,
                 }
             }
 
-            if (!insertQuery.prepare(insertStatement)) {
+            if (!qprepare(insertQuery, insertStatement)) {
                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary presence values: %1\n%2")
                         .arg(insertQuery.lastError().text())
                         .arg(insertStatement));
@@ -1857,11 +1858,11 @@ bool createTemporaryContactPresenceTable(QSqlDatabase &db, const QString &table,
                 const QPair<quint32, qint64> &pair(*vit);
                 ++vit;
 
-                insertQuery.addBindValue(QVariant(pair.first));
+                qaddbind(insertQuery, QVariant(pair.first));
 
                 const int state(pair.second);
-                insertQuery.addBindValue(QVariant(state));
-                insertQuery.addBindValue(QVariant(state >= QContactPresence::PresenceAvailable && state <= QContactPresence::PresenceExtendedAway));
+                qaddbind(insertQuery, QVariant(state));
+                qaddbind(insertQuery, QVariant(state >= QContactPresence::PresenceAvailable && state <= QContactPresence::PresenceExtendedAway));
             }
 
             if (!ContactsDatabase::execute(insertQuery)) {
@@ -1888,7 +1889,7 @@ bool createTemporaryValuesTable(QSqlDatabase &db, const QString &table, const QV
 
     // Create the temporary table (if we haven't already).
     QSqlQuery tableQuery(db);
-    if (!tableQuery.prepare(createStatement.arg(table))) {
+    if (!qprepare(tableQuery, createStatement.arg(table))) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary table query: %1\n%2")
                 .arg(tableQuery.lastError().text())
                 .arg(createStatement));
@@ -1923,7 +1924,7 @@ bool createTemporaryValuesTable(QSqlDatabase &db, const QString &table, const QV
                 }
             }
 
-            if (!insertQuery.prepare(insertStatement)) {
+            if (!qprepare(insertQuery, insertStatement)) {
                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary values: %1\n%2")
                         .arg(insertQuery.lastError().text())
                         .arg(insertStatement));
@@ -1931,7 +1932,7 @@ bool createTemporaryValuesTable(QSqlDatabase &db, const QString &table, const QV
             }
 
             foreach (const QVariant &v, values.mid(first, count)) {
-                insertQuery.addBindValue(v);
+                qaddbind(insertQuery, v);
             }
 
             if (!ContactsDatabase::execute(insertQuery)) {
@@ -1965,7 +1966,7 @@ static bool createTransientContactIdsTable(QSqlDatabase &db, const QString &tabl
 
     QSqlQuery tableQuery(db);
     const QString createStatement(createTableStatement.arg(tableName));
-    if (!tableQuery.prepare(createStatement)) {
+    if (!qprepare(tableQuery, createStatement)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare transient table query: %1\n%2")
                 .arg(tableQuery.lastError().text())
                 .arg(createStatement));
@@ -1999,7 +2000,7 @@ static bool createTransientContactIdsTable(QSqlDatabase &db, const QString &tabl
             }
         }
 
-        if (!insertQuery.prepare(insertStatement)) {
+        if (!qprepare(insertQuery, insertStatement)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare transient contact ids: %1\n%2")
                     .arg(insertQuery.lastError().text())
                     .arg(insertStatement));
@@ -2160,6 +2161,7 @@ bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, b
 
     m_database = QSqlDatabase::addDatabase(QString::fromLatin1("QSQLITE"), connectionName);
     m_database.setDatabaseName(databaseFile);
+    qWarning() << "DB:OPEN" << ::getpid() << connectionName;
 
     if (!m_database.open()) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to open contacts database: %1")
@@ -2318,7 +2320,7 @@ ContactsDatabase::Query ContactsDatabase::prepare(const QString &statement)
     if (it == m_preparedQueries.constEnd()) {
         QSqlQuery query(m_database);
         query.setForwardOnly(true);
-        if (!query.prepare(statement)) {
+        if (!qprepare(query, statement)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query: %1\n%2")
                     .arg(query.lastError().text())
                     .arg(statement));
@@ -2362,7 +2364,7 @@ bool ContactsDatabase::execute(QSqlQuery &query)
     QElapsedTimer t;
     t.start();
 
-    bool rv = query.exec();
+    bool rv = qexec(query);
     if (debugSql && rv) {
         const int n = query.isSelect() ? query.size() : query.numRowsAffected();
         const QString s(expandQuery(query));

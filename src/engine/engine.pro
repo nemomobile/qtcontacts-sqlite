@@ -46,7 +46,8 @@ SOURCES += \
         contactsplugin.cpp \
         contactnotifier.cpp \
         contactreader.cpp \
-        contactwriter.cpp
+        contactwriter.cpp \
+        sqlproxy.cpp
 
 target.path = $$[QT_INSTALL_PLUGINS]/contacts
 INSTALLS += target
