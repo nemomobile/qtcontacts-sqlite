@@ -2570,9 +2570,36 @@ QString ContactsDatabase::dateString(const QDateTime &qdt)
 
 QDateTime ContactsDatabase::fromDateTimeString(const QString &s)
 {
-    QDateTime rv(QDateTime::fromString(s, QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz")));
-    rv.setTimeSpec(Qt::UTC);
-    return rv;
+    // Sorry for the handparsing, but QDateTime::fromString was really slow.
+    // Replacing that call with this loop made contacts loading 30% faster.
+    // (benchmarking this function in isolation showed a 60x speedup)
+    static const int p_len = strlen("yyyy-MM-ddThh:mm:ss.zzz");
+    static const char pattern[] = "0000-00-00T00:00:00.000";
+    int values[7] = { 0, };
+    int v = 0;
+    int s_len = s.length();
+    // allow length with or without microseconds
+    if (Q_UNLIKELY(s_len != p_len && s_len != p_len - 4))
+        return QDateTime();
+    for (int i = 0; i < s_len; i++) {
+        ushort c = s[i].unicode();
+        if (pattern[i] == '0') {
+            if (Q_UNLIKELY(c < '0' || c > '9'))
+                return QDateTime();
+            values[v] = values[v] * 10 + (c - '0');
+        } else {
+            v++;
+            if (Q_UNLIKELY(c != pattern[i]))
+                return QDateTime();
+        }
+    }
+    // year, month, day
+    QDate datepart(values[0], values[1], values[2]);
+    // hour, minute, second, msec
+    QTime timepart(values[3], values[4], values[5], values[6]) ;
+    if (Q_UNLIKELY(!datepart.isValid() || !timepart.isValid()))
+        return QDateTime();
+    return QDateTime(datepart, timepart, Qt::UTC);
 }
 
 #include "../extensions/qcontactdeactivated_impl.h"
