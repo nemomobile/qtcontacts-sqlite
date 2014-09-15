@@ -10,6 +10,10 @@
            <case manual="false" name="contactmanager">
                <step>/opt/tests/qtcontacts-sqlite-qt5/tst_qcontactmanager</step>
            </case>
+           <case manual="false" name="database">
+               <step>/opt/tests/qtcontacts-sqlite-qt5/tst_database -perfcounter tickcounter</step>
+           </case>
+       </set>
        </set>
    </suite>
 </testdefinition>
