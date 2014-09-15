@@ -47,6 +47,7 @@ private slots:
     void fromDateTimeString();
     void fromDateTimeString_speed();
     void fromDateTimeString_tz_speed();
+    void fromDateTimeString_isodate_speed();
 
 private:
     char *old_TZ;
@@ -157,6 +158,18 @@ void tst_Database::fromDateTimeString_tz_speed()
 
     QBENCHMARK {
         QDateTime actual = ContactsDatabase::fromDateTimeString(datetime);
+    }
+}
+
+// Compare with Qt upstream date parsing, to see if it's worth
+// simplifying back to calling that.
+void tst_Database::fromDateTimeString_isodate_speed()
+{
+    QString datetime("2014-08-12T14:22:09.334");
+
+    QBENCHMARK {
+        QDateTime rv = QDateTime::fromString(datetime, Qt::ISODate);
+        rv.setTimeSpec(Qt::UTC);
     }
 }
 
