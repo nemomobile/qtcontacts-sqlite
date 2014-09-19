@@ -984,6 +984,11 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
             if (useNormalizedNumber) {
                 // Normalize the input for comparison
                 bindValue = ContactsEngine::normalizedPhoneNumber(stringValue);
+                if (bindValue.isEmpty()) {
+                    *failed = true;
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed with invalid phone number: %1").arg(stringValue));
+                    return QLatin1String("FAILED");
+                }
                 if (caseInsensitive) {
                     bindValue = bindValue.toLower();
                 }
