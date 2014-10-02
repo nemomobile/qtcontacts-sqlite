@@ -46,6 +46,12 @@
 #include <QContactUrl>
 
 namespace QtContactsSqliteExtensions {
+
+    // QDataStream encoding version to use in OOB storage.
+    // Don't change this without scheduling a migration for stored data!
+    // (which can be done in contactsdatabase.cpp)
+    const QDataStream::Version STREAM_VERSION = QDataStream::Qt_5_1;
+
     class TwoWayContactSyncAdapterPrivate
     {
     public:
@@ -498,20 +504,24 @@ bool TwoWayContactSyncAdapterPrivate::readStateData(const QString &accountId, Re
 
         QByteArray cdata = values.value(QStringLiteral("exportedIds")).toByteArray();
         QDataStream readExportedIds(cdata);
+        readExportedIds.setVersion(STREAM_VERSION);
         readExportedIds >> syncState.m_exportedIds;
     }
 
     if (mode == ReadAll || mode == ReadRemaining) {
         QByteArray cdata = values.value(QStringLiteral("prevRemote")).toByteArray();
         QDataStream readPrevRemote(cdata);
+        readPrevRemote.setVersion(STREAM_VERSION);
         readPrevRemote >> syncState.m_prevRemote;
 
         cdata = values.value(QStringLiteral("possiblyUploadedAdditions")).toByteArray();
         QDataStream readPossiblyUploadedAdditions(cdata);
+        readPossiblyUploadedAdditions.setVersion(STREAM_VERSION);
         readPossiblyUploadedAdditions >> syncState.m_possiblyUploadedAdditions;
 
         cdata = values.value(QStringLiteral("definitelyDownloadedAdditions")).toByteArray();
         QDataStream readDefinitelyDownloadedAdditions(cdata);
+        readDefinitelyDownloadedAdditions.setVersion(STREAM_VERSION);
         readDefinitelyDownloadedAdditions >> syncState.m_definitelyDownloadedAdditions;
     }
 
@@ -941,6 +951,7 @@ bool TwoWayContactSyncAdapter::storeRemoteChanges(const QList<QContact> &deleted
         QMap<QString, QVariant> oobValues;
         QByteArray cdata;
         QDataStream write(&cdata, QIODevice::WriteOnly);
+        write.setVersion(STREAM_VERSION);
         write << syncState.m_definitelyDownloadedAdditions;
         oobValues.insert(QStringLiteral("definitelyDownloadedAdditions"), QVariant(cdata));
         if (!d->m_engine->storeOOB(syncState.m_oobScope, oobValues)) {
@@ -1179,6 +1190,7 @@ bool TwoWayContactSyncAdapter::determineLocalChanges(QDateTime *localSince,
             QMap<QString, QVariant> oobValues;
             QByteArray cdata;
             QDataStream write(&cdata, QIODevice::WriteOnly);
+            write.setVersion(STREAM_VERSION);
             write << syncState.m_possiblyUploadedAdditions;
             oobValues.insert(QStringLiteral("possiblyUploadedAdditions"), QVariant(cdata));
             if (!d->m_engine->storeOOB(syncState.m_oobScope, oobValues)) {
@@ -1232,6 +1244,7 @@ bool TwoWayContactSyncAdapter::storeSyncStateData(const QString &accountId)
         // store the MUTATED_PREV_REMOTE list into oob as PREV_REMOTE for next time.
         QByteArray cdata;
         QDataStream write(&cdata, QIODevice::WriteOnly);
+        write.setVersion(STREAM_VERSION);
         write << syncState.m_mutatedPrevRemote;
         values.insert(QStringLiteral("prevRemote"), QVariant(cdata));
     }
@@ -1240,6 +1253,7 @@ bool TwoWayContactSyncAdapter::storeSyncStateData(const QString &accountId)
         // also store the EXPORTED_IDS list into oob to track non-synctarget contacts we upsynced.
         QByteArray cdata;
         QDataStream writeExportedIds(&cdata, QIODevice::WriteOnly);
+        writeExportedIds.setVersion(STREAM_VERSION);
         writeExportedIds << syncState.m_exportedIds;
         values.insert(QStringLiteral("exportedIds"), QVariant(cdata));
     }
