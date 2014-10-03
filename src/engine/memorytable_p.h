@@ -45,7 +45,7 @@ public:
     typedef QByteArray value_type;
 
     class const_iterator
-        : std::iterator<std::forward_iterator_tag, MemoryTable::value_type, std::ptrdiff_t, const MemoryTable::value_type *, const MemoryTable::value_type &>
+        : public std::iterator<std::forward_iterator_tag, MemoryTable::value_type, std::ptrdiff_t, const MemoryTable::value_type *, const MemoryTable::value_type &>
     {
         friend class MemoryTable;
 
