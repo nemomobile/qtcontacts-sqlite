@@ -2008,15 +2008,19 @@ QContactManager::Error ContactReader::queryContacts(
         "FROM temp.%2 "
         "CROSS JOIN Details ON Details.contactId = temp.%2.contactId " // Cross join ensures we scan the temp table first
         "%3 "
+        "%4 "
         "ORDER BY temp.%2.rowId ASC"));
 
     const QString selectTemplate(QString::fromLatin1(
         "%1.*"));
     const QString joinTemplate(QString::fromLatin1(
         "LEFT JOIN %1 ON %1.detailId = Details.detailId"));
+    const QString detailNameTemplate(QString::fromLatin1(
+        "WHERE Details.detail IN ('%1')"));
 
     QStringList selectSpec;
     QStringList joinSpec;
+    QStringList detailNameSpec;
 
     QHash<QString, QPair<ReadDetail, int> > readProperties;
 
@@ -2037,6 +2041,7 @@ QContactManager::Error ContactReader::queryContacts(
 
             selectSpec.append(selectTemplate.arg(detailTable));
             joinSpec.append(joinTemplate.arg(detailTable));
+            detailNameSpec.append(detailName);
 
             readProperties.insert(detailName, qMakePair(detail.read, offset));
             offset += detail.fieldCount + (detail.includesContext ? 1 : 2);
@@ -2047,6 +2052,10 @@ QContactManager::Error ContactReader::queryContacts(
     QString detailQueryStatement(detailQueryTemplate.arg(selectSpec.join(QChar::fromLatin1(','))));
     detailQueryStatement = detailQueryStatement.arg(tableName);
     detailQueryStatement = detailQueryStatement.arg(joinSpec.join(QChar::fromLatin1(' ')));
+    if (definitionMask.isEmpty())
+        detailQueryStatement = detailQueryStatement.arg(QString());
+    else
+        detailQueryStatement = detailQueryStatement.arg(detailNameTemplate.arg(detailNameSpec.join(QLatin1String("','"))));
 
     // If selectSpec is empty, all required details are in the Contacts table
     QSqlQuery detailQuery(m_database);
