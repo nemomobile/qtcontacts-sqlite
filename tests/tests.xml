@@ -10,8 +10,17 @@
            <case manual="false" name="contactmanager">
                <step>/opt/tests/qtcontacts-sqlite-qt5/tst_qcontactmanager</step>
            </case>
+           <case manual="false" name="contactmanagerfiltering">
+               <step>/opt/tests/qtcontacts-sqlite-qt5/tst_qcontactmanagerfiltering</step>
+           </case>
            <case manual="false" name="database">
                <step>/opt/tests/qtcontacts-sqlite-qt5/tst_database -perfcounter tickcounter</step>
+           </case>
+           <case manual="false" name="memorytable">
+               <step>/opt/tests/qtcontacts-sqlite-qt5/tst_memorytable</step>
+           </case>
+           <case manual="false" name="phonenumber">
+               <step>/opt/tests/qtcontacts-sqlite-qt5/tst_phonenumber</step>
            </case>
        </set>
    </suite>
