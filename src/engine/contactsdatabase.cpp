@@ -534,6 +534,59 @@ static const char *createOriginMetadataIdIndex =
 static const char *createOriginMetadataGroupIdIndex =
         "\n CREATE INDEX OriginMetadataGroupIdIndex ON OriginMetadata(groupId);";
 
+// Running ANALYZE on an empty database is not useful,
+// so seed it with ANALYZE results from a developer device
+// that has a good mix of active accounts.
+//
+// Having the ANALYZE data available prevents some bad query plans
+// such as using ContactsIsDeactivatedIndex for most queries because
+// they have "WHERE isDeactivated = 0".
+static const char *createAnalyzeData1 =
+        // ANALYZE creates the sqlite_stat1 table; constrain it to sqlite_master
+        // just to make sure it doesn't do needless work.
+        "\n ANALYZE sqlite_master;";
+static const char *createAnalyzeData2 =
+        "\n DELETE FROM sqlite_stat1;";
+static const char *createAnalyzeData3 =
+        "\n INSERT INTO sqlite_stat1 VALUES"
+        "\n   ('Details', 'DetailsRemoveIndex', '26154 6 2'),"
+        "\n   ('Presences','PresencesDetailsContactIdIndex','732 2'),"
+        "\n   ('OnlineAccounts','OnlineAccountsIndex','732 3'),"
+        "\n   ('OnlineAccounts','OnlineAccountsDetailsContactIdIndex','732 2'),"
+        "\n   ('Nicknames','NicknamesIndex','1921 4'),"
+        "\n   ('Nicknames','NicknamesDetailsContactIdIndex','1921 2'),"
+        "\n   ('Urls','UrlsDetailsContactIdIndex','1687 2'),"
+        "\n   ('Guids','GuidsDetailsContactIdIndex','3034 2'),"
+        "\n   ('OriginMetadata','OriginMetadataGroupIdIndex','2665 533'),"
+        "\n   ('OriginMetadata','OriginMetadataIdIndex','2665 6'),"
+        "\n   ('OriginMetadata','OriginMetadataDetailsContactIdIndex','2665 1'),"
+        "\n   ('GlobalPresences','GlobalPresencesDetailsContactIdIndex','663 1'),"
+        "\n   ('Contacts','ContactsTypeIndex','4827 4827'),"
+        "\n   ('Contacts','ContactsIsDeactivatedIndex','4827 4827'),"
+        "\n   ('Contacts','ContactsIsOnlineIndex','4827 2414'),"
+        "\n   ('Contacts','ContactsHasOnlineAccountIndex','4827 2414'),"
+        "\n   ('Contacts','ContactsHasEmailAddressIndex','4827 2414'),"
+        "\n   ('Contacts','ContactsHasPhoneNumberIndex','4827 2414'),"
+        "\n   ('Contacts','ContactsIsFavoriteIndex','4827 2414'),"
+        "\n   ('Contacts','ContactsModifiedIndex','4827 3'),"
+        "\n   ('Contacts','ContactsLastNameIndex','4827 7'),"
+        "\n   ('Contacts','ContactsFirstNameIndex','4827 6'),"
+        "\n   ('Contacts','ContactsSyncTargetIndex','4827 537'),"
+        "\n   ('Birthdays','BirthdaysDetailsContactIdIndex','576 1'),"
+        "\n   ('PhoneNumbers','PhoneNumbersIndex','4525 7'),"
+        "\n   ('PhoneNumbers','PhoneNumbersDetailsContactIdIndex','4525 3'),"
+        "\n   ('Notes','NotesDetailsContactIdIndex','2036 2'),"
+        "\n   ('Relationships','RelationshipsSecondIdIndex','3213 2'),"
+        "\n   ('Relationships','RelationshipsFirstIdIndex','3213 2'),"
+        "\n   ('Relationships','sqlite_autoindex_Relationships_1','3213 2 2 1'),"
+        "\n   ('Avatars','AvatarsDetailsContactIdIndex','2776 3'),"
+        "\n   ('DeletedContacts','DeletedContactsDeletedIndex','6222 2'),"
+        "\n   ('Organizations','OrganizationsDetailsContactIdIndex','477 2'),"
+        "\n   ('EmailAddresses','EmailAddressesIndex','3861 5'),"
+        "\n   ('EmailAddresses','EmailAddressesDetailsContactIdIndex','3861 2'),"
+        "\n   ('Addresses','AddressesDetailsContactIdIndex','469 2'),"
+        "\n   ('OOB','sqlite_autoindex_OOB_1','29 1');";
+
 static const char *createStatements[] =
 {
     createContactsTable,
@@ -606,6 +659,9 @@ static const char *createStatements[] =
     createContactsIsOnlineIndex,
     createContactsIsDeactivatedIndex,
     createContactsTypeIndex,
+    createAnalyzeData1,
+    createAnalyzeData2,
+    createAnalyzeData3,
 };
 
 // Upgrade statement indexed by old version
@@ -1215,6 +1271,13 @@ static const char *upgradeVersion13[] = {
     "PRAGMA user_version=14",
     0 // NULL-terminated
 };
+static const char *upgradeVersion14[] = {
+    createAnalyzeData1,
+    createAnalyzeData2,
+    createAnalyzeData3,
+    "PRAGMA user_version=15",
+    0 // NULL-terminated
+};
 
 typedef bool (*UpgradeFunction)(QSqlDatabase &database);
 
@@ -1294,9 +1357,10 @@ static UpgradeOperation upgradeVersions[] = {
     { 0,                        upgradeVersion11 },
     { 0,                        upgradeVersion12 },
     { 0,                        upgradeVersion13 },
+    { 0,                        upgradeVersion14 },
 };
 
-static const int currentSchemaVersion = 14;
+static const int currentSchemaVersion = 15;
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {
