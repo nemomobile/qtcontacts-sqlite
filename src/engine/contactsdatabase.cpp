@@ -486,24 +486,6 @@ static const char *createContactsLastNameIndex =
 static const char *createContactsModifiedIndex =
         "\n CREATE INDEX ContactsModifiedIndex ON Contacts(modified);";
 
-static const char *createContactsIsFavoriteIndex =
-        "\n CREATE INDEX ContactsIsFavoriteIndex ON Contacts(isFavorite);";
-
-static const char *createContactsHasPhoneNumberIndex =
-        "\n CREATE INDEX ContactsHasPhoneNumberIndex ON Contacts(hasPhoneNumber);";
-
-static const char *createContactsHasEmailAddressIndex =
-        "\n CREATE INDEX ContactsHasEmailAddressIndex ON Contacts(hasEmailAddress);";
-
-static const char *createContactsHasOnlineAccountIndex =
-        "\n CREATE INDEX ContactsHasOnlineAccountIndex ON Contacts(hasOnlineAccount);";
-
-static const char *createContactsIsOnlineIndex =
-        "\n CREATE INDEX ContactsIsOnlineIndex ON Contacts(isOnline);";
-
-static const char *createContactsIsDeactivatedIndex =
-        "\n CREATE INDEX ContactsIsDeactivatedIndex ON Contacts(isDeactivated);";
-
 static const char *createContactsTypeIndex =
         "\n CREATE INDEX ContactsTypeIndex ON Contacts(type);";
 
@@ -562,12 +544,6 @@ static const char *createAnalyzeData3 =
         "\n   ('OriginMetadata','OriginMetadataDetailsContactIdIndex','2665 1'),"
         "\n   ('GlobalPresences','GlobalPresencesDetailsContactIdIndex','663 1'),"
         "\n   ('Contacts','ContactsTypeIndex','4827 4827'),"
-        "\n   ('Contacts','ContactsIsDeactivatedIndex','4827 4827'),"
-        "\n   ('Contacts','ContactsIsOnlineIndex','4827 2414'),"
-        "\n   ('Contacts','ContactsHasOnlineAccountIndex','4827 2414'),"
-        "\n   ('Contacts','ContactsHasEmailAddressIndex','4827 2414'),"
-        "\n   ('Contacts','ContactsHasPhoneNumberIndex','4827 2414'),"
-        "\n   ('Contacts','ContactsIsFavoriteIndex','4827 2414'),"
         "\n   ('Contacts','ContactsModifiedIndex','4827 3'),"
         "\n   ('Contacts','ContactsLastNameIndex','4827 7'),"
         "\n   ('Contacts','ContactsFirstNameIndex','4827 6'),"
@@ -652,12 +628,6 @@ static const char *createStatements[] =
     createOriginMetadataIdIndex,
     createOriginMetadataGroupIdIndex,
     createContactsModifiedIndex,
-    createContactsIsFavoriteIndex,
-    createContactsHasPhoneNumberIndex,
-    createContactsHasEmailAddressIndex,
-    createContactsHasOnlineAccountIndex,
-    createContactsIsOnlineIndex,
-    createContactsIsDeactivatedIndex,
     createContactsTypeIndex,
     createAnalyzeData1,
     createAnalyzeData2,
@@ -667,11 +637,6 @@ static const char *createStatements[] =
 // Upgrade statement indexed by old version
 static const char *upgradeVersion0[] = {
     createContactsModifiedIndex,
-    createContactsIsFavoriteIndex,
-    createContactsHasPhoneNumberIndex,
-    createContactsHasEmailAddressIndex,
-    createContactsHasOnlineAccountIndex,
-    createContactsIsOnlineIndex,
     "PRAGMA user_version=1",
     0 // NULL-terminated
 };
@@ -685,7 +650,6 @@ static const char *upgradeVersion1[] = {
 };
 static const char *upgradeVersion2[] = {
     "ALTER TABLE Contacts ADD COLUMN isDeactivated BOOL DEFAULT 0",
-    createContactsIsDeactivatedIndex,
     "PRAGMA user_version=3",
     0 // NULL-terminated
 };
@@ -704,8 +668,6 @@ static const char *upgradeVersion4[] = {
     0 // NULL-terminated
 };
 static const char *upgradeVersion5[] = {
-    // Create the isDeactivated index, if it was previously missed
-    "CREATE INDEX IF NOT EXISTS ContactsIsDeactivatedIndex ON Contacts(isDeactivated)",
     "ALTER TABLE Contacts ADD COLUMN type INTEGER DEFAULT 0",
     createContactsTypeIndex,
     "PRAGMA user_version=6",
@@ -1272,6 +1234,16 @@ static const char *upgradeVersion13[] = {
     0 // NULL-terminated
 };
 static const char *upgradeVersion14[] = {
+    // Drop indexes that will never be used by the query planner once
+    // the ANALYZE data is there. (Boolean indexes can't be selective
+    // enough unless the planner knows which value is more common,
+    // which it doesn't.)
+    "DROP INDEX IF EXISTS ContactsIsDeactivatedIndex",
+    "DROP INDEX IF EXISTS ContactsIsOnlineIndex",
+    "DROP INDEX IF EXISTS ContactsHasOnlineAccountIndex",
+    "DROP INDEX IF EXISTS ContactsHasEmailAddressIndex",
+    "DROP INDEX IF EXISTS ContactsHasPhoneNumberIndex",
+    "DROP INDEX IF EXISTS ContactsIsFavoriteIndex",
     createAnalyzeData1,
     createAnalyzeData2,
     createAnalyzeData3,
