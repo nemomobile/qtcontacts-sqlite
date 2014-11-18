@@ -486,24 +486,6 @@ static const char *createContactsLastNameIndex =
 static const char *createContactsModifiedIndex =
         "\n CREATE INDEX ContactsModifiedIndex ON Contacts(modified);";
 
-static const char *createContactsIsFavoriteIndex =
-        "\n CREATE INDEX ContactsIsFavoriteIndex ON Contacts(isFavorite);";
-
-static const char *createContactsHasPhoneNumberIndex =
-        "\n CREATE INDEX ContactsHasPhoneNumberIndex ON Contacts(hasPhoneNumber);";
-
-static const char *createContactsHasEmailAddressIndex =
-        "\n CREATE INDEX ContactsHasEmailAddressIndex ON Contacts(hasEmailAddress);";
-
-static const char *createContactsHasOnlineAccountIndex =
-        "\n CREATE INDEX ContactsHasOnlineAccountIndex ON Contacts(hasOnlineAccount);";
-
-static const char *createContactsIsOnlineIndex =
-        "\n CREATE INDEX ContactsIsOnlineIndex ON Contacts(isOnline);";
-
-static const char *createContactsIsDeactivatedIndex =
-        "\n CREATE INDEX ContactsIsDeactivatedIndex ON Contacts(isDeactivated);";
-
 static const char *createContactsTypeIndex =
         "\n CREATE INDEX ContactsTypeIndex ON Contacts(type);";
 
@@ -533,6 +515,63 @@ static const char *createOriginMetadataIdIndex =
 
 static const char *createOriginMetadataGroupIdIndex =
         "\n CREATE INDEX OriginMetadataGroupIdIndex ON OriginMetadata(groupId);";
+
+// Running ANALYZE on an empty database is not useful,
+// so seed it with ANALYZE results based on a developer device
+// that has a good mix of active accounts.
+//
+// Having the ANALYZE data available prevents some bad query plans
+// such as using ContactsIsDeactivatedIndex for most queries because
+// they have "WHERE isDeactivated = 0".
+//
+// NOTE: when adding an index to the schema, add a row for it to
+// this table. The format is table name, index name, data, and
+// the data is a string containing numbers, it starts with the
+// table size and then has one number for each column in the index,
+// where that number is the average number of rows selected by
+// an indexed value.
+// The best way to get these numbers is to run ANALYZE on a
+// real database and scale the results to the numbers here
+// (5000 contacts and 25000 details).
+static const char *createAnalyzeData1 =
+        // ANALYZE creates the sqlite_stat1 table; constrain it to sqlite_master
+        // just to make sure it doesn't do needless work.
+        "\n ANALYZE sqlite_master;";
+static const char *createAnalyzeData2 =
+        "\n DELETE FROM sqlite_stat1;";
+static const char *createAnalyzeData3 =
+        "\n INSERT INTO sqlite_stat1 VALUES"
+        "\n   ('Details', 'DetailsRemoveIndex', '25000 6 2'),"
+        "\n   ('Presences','PresencesDetailsContactIdIndex','1000 2'),"
+        "\n   ('OnlineAccounts','OnlineAccountsIndex','1000 3'),"
+        "\n   ('OnlineAccounts','OnlineAccountsDetailsContactIdIndex','1000 2'),"
+        "\n   ('Nicknames','NicknamesIndex','2000 4'),"
+        "\n   ('Nicknames','NicknamesDetailsContactIdIndex','2000 2'),"
+        "\n   ('Urls','UrlsDetailsContactIdIndex','1500 2'),"
+        "\n   ('Guids','GuidsDetailsContactIdIndex','3000 2'),"
+        "\n   ('OriginMetadata','OriginMetadataGroupIdIndex','2500 500'),"
+        "\n   ('OriginMetadata','OriginMetadataIdIndex','2500 6'),"
+        "\n   ('OriginMetadata','OriginMetadataDetailsContactIdIndex','2500 1'),"
+        "\n   ('GlobalPresences','GlobalPresencesDetailsContactIdIndex','500 1'),"
+        "\n   ('Contacts','ContactsTypeIndex','5000 5000'),"
+        "\n   ('Contacts','ContactsModifiedIndex','5000 3'),"
+        "\n   ('Contacts','ContactsLastNameIndex','5000 7'),"
+        "\n   ('Contacts','ContactsFirstNameIndex','5000 6'),"
+        "\n   ('Contacts','ContactsSyncTargetIndex','5000 500'),"
+        "\n   ('Birthdays','BirthdaysDetailsContactIdIndex','500 1'),"
+        "\n   ('PhoneNumbers','PhoneNumbersIndex','4500 7'),"
+        "\n   ('PhoneNumbers','PhoneNumbersDetailsContactIdIndex','4500 3'),"
+        "\n   ('Notes','NotesDetailsContactIdIndex','2000 2'),"
+        "\n   ('Relationships','RelationshipsSecondIdIndex','3000 2'),"
+        "\n   ('Relationships','RelationshipsFirstIdIndex','3000 2'),"
+        "\n   ('Relationships','sqlite_autoindex_Relationships_1','3000 2 2 1'),"
+        "\n   ('Avatars','AvatarsDetailsContactIdIndex','3000 3'),"
+        "\n   ('DeletedContacts','DeletedContactsDeletedIndex','6000 2'),"
+        "\n   ('Organizations','OrganizationsDetailsContactIdIndex','500 2'),"
+        "\n   ('EmailAddresses','EmailAddressesIndex','4000 5'),"
+        "\n   ('EmailAddresses','EmailAddressesDetailsContactIdIndex','4000 2'),"
+        "\n   ('Addresses','AddressesDetailsContactIdIndex','500 2'),"
+        "\n   ('OOB','sqlite_autoindex_OOB_1','29 1');";
 
 static const char *createStatements[] =
 {
@@ -599,23 +638,15 @@ static const char *createStatements[] =
     createOriginMetadataIdIndex,
     createOriginMetadataGroupIdIndex,
     createContactsModifiedIndex,
-    createContactsIsFavoriteIndex,
-    createContactsHasPhoneNumberIndex,
-    createContactsHasEmailAddressIndex,
-    createContactsHasOnlineAccountIndex,
-    createContactsIsOnlineIndex,
-    createContactsIsDeactivatedIndex,
     createContactsTypeIndex,
+    createAnalyzeData1,
+    createAnalyzeData2,
+    createAnalyzeData3,
 };
 
 // Upgrade statement indexed by old version
 static const char *upgradeVersion0[] = {
     createContactsModifiedIndex,
-    createContactsIsFavoriteIndex,
-    createContactsHasPhoneNumberIndex,
-    createContactsHasEmailAddressIndex,
-    createContactsHasOnlineAccountIndex,
-    createContactsIsOnlineIndex,
     "PRAGMA user_version=1",
     0 // NULL-terminated
 };
@@ -629,7 +660,6 @@ static const char *upgradeVersion1[] = {
 };
 static const char *upgradeVersion2[] = {
     "ALTER TABLE Contacts ADD COLUMN isDeactivated BOOL DEFAULT 0",
-    createContactsIsDeactivatedIndex,
     "PRAGMA user_version=3",
     0 // NULL-terminated
 };
@@ -648,8 +678,6 @@ static const char *upgradeVersion4[] = {
     0 // NULL-terminated
 };
 static const char *upgradeVersion5[] = {
-    // Create the isDeactivated index, if it was previously missed
-    "CREATE INDEX IF NOT EXISTS ContactsIsDeactivatedIndex ON Contacts(isDeactivated)",
     "ALTER TABLE Contacts ADD COLUMN type INTEGER DEFAULT 0",
     createContactsTypeIndex,
     "PRAGMA user_version=6",
@@ -1215,6 +1243,23 @@ static const char *upgradeVersion13[] = {
     "PRAGMA user_version=14",
     0 // NULL-terminated
 };
+static const char *upgradeVersion14[] = {
+    // Drop indexes that will never be used by the query planner once
+    // the ANALYZE data is there. (Boolean indexes can't be selective
+    // enough unless the planner knows which value is more common,
+    // which it doesn't.)
+    "DROP INDEX IF EXISTS ContactsIsDeactivatedIndex",
+    "DROP INDEX IF EXISTS ContactsIsOnlineIndex",
+    "DROP INDEX IF EXISTS ContactsHasOnlineAccountIndex",
+    "DROP INDEX IF EXISTS ContactsHasEmailAddressIndex",
+    "DROP INDEX IF EXISTS ContactsHasPhoneNumberIndex",
+    "DROP INDEX IF EXISTS ContactsIsFavoriteIndex",
+    createAnalyzeData1,
+    createAnalyzeData2,
+    createAnalyzeData3,
+    "PRAGMA user_version=15",
+    0 // NULL-terminated
+};
 
 typedef bool (*UpgradeFunction)(QSqlDatabase &database);
 
@@ -1294,9 +1339,10 @@ static UpgradeOperation upgradeVersions[] = {
     { 0,                        upgradeVersion11 },
     { 0,                        upgradeVersion12 },
     { 0,                        upgradeVersion13 },
+    { 0,                        upgradeVersion14 },
 };
 
-static const int currentSchemaVersion = 14;
+static const int currentSchemaVersion = 15;
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {
