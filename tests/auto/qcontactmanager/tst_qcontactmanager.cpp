@@ -56,9 +56,6 @@
 
 #define SQLITE_MANAGER "org.nemomobile.contacts.sqlite"
 
-//#define DEFAULT_MANAGER "memory"
-#define DEFAULT_MANAGER SQLITE_MANAGER
-
 //TESTED_COMPONENT=src/contacts
 //TESTED_CLASS=
 //TESTED_FILES=
@@ -263,7 +260,7 @@ void tst_QContactManager::initTestCase()
 {
     registerIdType();
 
-    managerDataHolder.reset(new QContactManagerDataHolder());
+    managerDataHolder.reset(new QContactManagerDataHolder(false));
 
     /* Make sure these other test plugins are NOT loaded by default */
     // These are now removed from the list of managers in addManagers()
@@ -487,6 +484,7 @@ void tst_QContactManager::uriParsing_data()
 QContactManager *tst_QContactManager::newContactManager(const QMap<QString, QString> &params)
 {
     QMap<QString, QString> parameters;
+    parameters.insert("autoTest", "true");
     parameters.insert("mergePresenceChanges", "false");
 
     QMap<QString, QString>::const_iterator it = params.constBegin(), end = params.constEnd();
@@ -494,7 +492,7 @@ QContactManager *tst_QContactManager::newContactManager(const QMap<QString, QStr
         parameters.insert(it.key(), it.value());
     }
 
-    return new QContactManager(DEFAULT_MANAGER, parameters);
+    return new QContactManager(SQLITE_MANAGER, parameters);
 }
 
 void tst_QContactManager::addManagers()
@@ -503,8 +501,9 @@ void tst_QContactManager::addManagers()
 
     // Only test the qtcontacts-sqlite engine
     QMap<QString, QString> params;
+    params.insert("autoTest", "true");
     params.insert("mergePresenceChanges", "false");
-    QTest::newRow("mgr='" DEFAULT_MANAGER "'") << QContactManager::buildUri(DEFAULT_MANAGER, params);
+    QTest::newRow("mgr='" SQLITE_MANAGER "'") << QContactManager::buildUri(SQLITE_MANAGER, params);
 }
 
 /*
@@ -1641,8 +1640,9 @@ void tst_QContactManager::presenceReporting_data()
     QTest::addColumn<bool>("mergePresenceChanges");
     QTest::addColumn<QString>("uri");
 
-    const QString managerName(QString::fromLatin1(DEFAULT_MANAGER));
+    const QString managerName(QString::fromLatin1(SQLITE_MANAGER));
     QMap<QString, QString> params;
+    params.insert("autoTest", "true");
 
     params.insert(QString::fromLatin1("mergePresenceChanges"), QString::fromLatin1("true"));
     QTest::newRow("mergePresenceChanges=true") << true << QContactManager::buildUri(managerName, params);
@@ -1756,8 +1756,9 @@ void tst_QContactManager::presenceAccumulation()
 
 void tst_QContactManager::nonprivileged()
 {
-    const QString managerName(QString::fromLatin1(DEFAULT_MANAGER));
+    const QString managerName(QString::fromLatin1(SQLITE_MANAGER));
     QMap<QString, QString> params;
+    params.insert("autoTest", "true");
 
     QScopedPointer<QContactManager> privilegedCm(QContactManager::fromUri(QContactManager::buildUri(managerName, params)));
     QVERIFY(privilegedCm);
@@ -2383,9 +2384,9 @@ void tst_QContactManager::signalEmission()
 #endif
     QVERIFY(m1->saveContact(&c2));
     modSigCount += 1;
-    if(uri.contains(QLatin1String("tracker")) || uri.contains(QLatin1String("sqlite"))) {
-        // tracker backend coalesces signals for performance reasons, so wait a little
-         QTest::qWait(1000);
+    if (uri.contains(QLatin1String("sqlite"))) {
+        // backend coalesces signals for performance reasons, so wait a little
+        QTest::qWait(1000);
     }
 #ifndef DETAIL_DEFINITION_SUPPORTED
     saveContactName(&c2, &nc2, "Mark");

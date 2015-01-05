@@ -499,13 +499,14 @@ private:
 class JobThread : public QThread
 {
 public:
-    JobThread(ContactsEngine *engine, const QString &databaseUuid, bool nonprivileged)
+    JobThread(ContactsEngine *engine, const QString &databaseUuid, bool nonprivileged, bool autoTest)
         : m_currentJob(0)
         , m_engine(engine)
         , m_updatePending(false)
         , m_running(true)
         , m_databaseUuid(databaseUuid)
         , m_nonprivileged(nonprivileged)
+        , m_autoTest(autoTest)
     {
         start(QThread::IdlePriority);
     }
@@ -710,6 +711,7 @@ private:
     bool m_running;
     QString m_databaseUuid;
     bool m_nonprivileged;
+    bool m_autoTest;
 };
 
 class JobContactReader : public ContactReader
@@ -737,8 +739,11 @@ private:
 
 void JobThread::run()
 {
+    QString dbId(QStringLiteral("qtcontacts-sqlite%1-job-%2"));
+    dbId = dbId.arg(m_autoTest ? QStringLiteral("-test") : QString()).arg(m_databaseUuid);
+
     ContactsDatabase database;
-    if (!database.open(QString(QLatin1String("qtcontacts-sqlite-job-%1")).arg(m_databaseUuid), m_nonprivileged, true)) {
+    if (!database.open(dbId, m_nonprivileged, m_autoTest, true)) {
         while (m_running) {
             if (m_pendingJobs.isEmpty()) {
                 m_wait.wait(&m_mutex);
@@ -805,6 +810,12 @@ ContactsEngine::ContactsEngine(const QString &name, const QMap<QString, QString>
                mergePresenceChanges.toInt() == 1) {
         setMergePresenceChanges(true);
     }
+
+    QString autoTest = m_parameters.value(QString::fromLatin1("autoTest"));
+    if (autoTest.toLower() == QLatin1String("true") ||
+        autoTest.toInt() == 1) {
+        setAutoTest(true);
+    }
 }
 
 ContactsEngine::~ContactsEngine()
@@ -822,7 +833,10 @@ QString ContactsEngine::databaseUuid()
 
 QContactManager::Error ContactsEngine::open()
 {
-    if (m_database.open(QString(QLatin1String("qtcontacts-sqlite-%1")).arg(databaseUuid()), m_nonprivileged)) {
+    QString dbId(QStringLiteral("qtcontacts-sqlite%1-%2"));
+    dbId = dbId.arg(m_autoTest ? QStringLiteral("-test") : QString()).arg(databaseUuid());
+
+    if (m_database.open(dbId, m_nonprivileged, m_autoTest)) {
         setNonprivileged(m_database.nonprivileged());
 
         m_notifier.reset(new ContactNotifier(m_nonprivileged));
@@ -836,7 +850,7 @@ QContactManager::Error ContactsEngine::open()
         m_notifier->connect("relationshipsRemoved", "au", this, SLOT(_q_relationshipsRemoved(QVector<quint32>)));
         return QContactManager::NoError;
     } else {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to open engine database"));
+        QTCONTACTS_SQLITE_WARNING((QString::fromLatin1("Unable to open engine database %1"), dbId));
         return QContactManager::UnspecifiedError;
     }
 }
@@ -1077,7 +1091,7 @@ bool ContactsEngine::startRequest(QContactAbstractRequest* request)
     }
 
     if (!m_jobThread)
-        m_jobThread.reset(new JobThread(this, databaseUuid(), m_nonprivileged));
+        m_jobThread.reset(new JobThread(this, databaseUuid(), m_nonprivileged, m_autoTest));
     job->updateState(QContactAbstractRequest::ActiveState);
     m_jobThread->enqueue(job);
 

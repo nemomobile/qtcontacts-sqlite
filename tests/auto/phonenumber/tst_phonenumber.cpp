@@ -35,8 +35,6 @@
 #include "../../../src/extensions/qtcontacts-extensions.h"
 #include "../../../src/extensions/qtcontacts-extensions_impl.h"
 
-#define SQLITE_MANAGER "org.nemomobile.contacts.sqlite"
-
 class tst_PhoneNumber : public QObject
 {
 Q_OBJECT

@@ -136,6 +136,7 @@ tst_Aggregation::tst_Aggregation()
     : m_cm(0)
 {
     QMap<QString, QString> parameters;
+    parameters.insert(QString::fromLatin1("autoTest"), QString::fromLatin1("true"));
     parameters.insert(QString::fromLatin1("mergePresenceChanges"), QString::fromLatin1("true"));
     m_cm = new QContactManager(QString::fromLatin1("org.nemomobile.contacts.sqlite"), parameters);
 

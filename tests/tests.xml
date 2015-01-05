@@ -5,12 +5,15 @@
        <set name="unit-tests" feature="qtcontacts-sqlite-qt5">
            <description>Backend correctness automatic tests</description>
            <case manual="false" name="aggregation">
+               <step>rm -rf /home/nemo/.local/share/system/privileged/Contacts/qtcontacts-sqlite-test</step>
                <step>/opt/tests/qtcontacts-sqlite-qt5/tst_aggregation</step>
            </case>
            <case manual="false" name="contactmanager">
+               <step>rm -rf /home/nemo/.local/share/system/privileged/Contacts/qtcontacts-sqlite-test</step>
                <step>/opt/tests/qtcontacts-sqlite-qt5/tst_qcontactmanager</step>
            </case>
            <case manual="false" name="contactmanagerfiltering">
+               <step>rm -rf /home/nemo/.local/share/system/Contacts/qtcontacts-sqlite-test</step>
                <step>/opt/tests/qtcontacts-sqlite-qt5/tst_qcontactmanagerfiltering</step>
            </case>
            <case manual="false" name="database">

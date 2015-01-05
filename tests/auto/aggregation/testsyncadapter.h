@@ -89,8 +89,6 @@ private Q_SLOTS:
     void finalizeTwoWaySync();
 
 private:
-    QContactManager m_manager;
-
     // simulating server-side changes, per account:
     mutable QMap<QString, QTimer*> m_simulationTimers;
     mutable QMap<QString, bool> m_downsyncWasRequired;
