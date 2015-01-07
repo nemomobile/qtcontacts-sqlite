@@ -2297,6 +2297,11 @@ QSqlError ContactsDatabase::lastError() const
     return m_database.lastError();
 }
 
+bool ContactsDatabase::isOpen() const
+{
+    return m_database.isOpen();
+}
+
 bool ContactsDatabase::nonprivileged() const
 {
     return m_nonprivileged;
