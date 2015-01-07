@@ -498,6 +498,19 @@ private:
 
 class JobThread : public QThread
 {
+    struct MutexUnlocker {
+        QMutexLocker &m_locker;
+
+        explicit MutexUnlocker(QMutexLocker &locker) : m_locker(locker)
+        {
+            m_locker.unlock();
+        }
+        ~MutexUnlocker()
+        {
+            m_locker.relock();
+        }
+    };
+
 public:
     JobThread(ContactsEngine *engine, const QString &databaseUuid, bool nonprivileged, bool autoTest)
         : m_currentJob(0)
@@ -765,9 +778,10 @@ void JobThread::run()
     m_nonprivileged = m_database.nonprivileged();
     m_running = true;
 
-    locker.unlock();
-    m_wait.wakeOne();
-    locker.relock();
+    {
+        MutexUnlocker unlocker(locker);
+        m_wait.wakeOne();
+    }
 
     if (!m_database.isOpen()) {
         while (m_running) {
@@ -792,16 +806,17 @@ void JobThread::run()
                 m_wait.wait(&m_mutex);
             } else {
                 m_currentJob = m_pendingJobs.takeFirst();
-                locker.unlock();
 
-                QElapsedTimer timer;
-                timer.start();
+                {
+                    MutexUnlocker unlocker(locker);
 
-                m_currentJob->execute(&reader, writer);
-                QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Job executed in %1 ms : %2 : error = %3")
-                        .arg(timer.elapsed()).arg(m_currentJob->description()).arg(m_currentJob->error()));
+                    QElapsedTimer timer;
+                    timer.start();
+                    m_currentJob->execute(&reader, writer);
+                    QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Job executed in %1 ms : %2 : error = %3")
+                            .arg(timer.elapsed()).arg(m_currentJob->description()).arg(m_currentJob->error()));
+                }
 
-                locker.relock();
                 m_finishedJobs.append(m_currentJob);
                 m_currentJob = 0;
                 postUpdate();
