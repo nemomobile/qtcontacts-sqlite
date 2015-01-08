@@ -61,7 +61,8 @@ int semaphoreInit(const char *id, size_t count, const int *initialValues)
 {
     int rv = -1;
 
-    key_t key = ::ftok(id, 0);
+    // It doesn't matter what proj_id we use, there are no other ftok uses on this ID
+    key_t key = ::ftok(id, 1);
 
     rv = ::semget(key, count, 0);
     if (rv == -1) {
