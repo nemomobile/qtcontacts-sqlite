@@ -9,7 +9,6 @@ CONFIG += plugin hide_symbols
 PLUGIN_TYPE=contacts
 
 # we hardcode this for Qt4 as there's no GenericDataLocation offered by QDesktopServices
-DEFINES += 'QTCONTACTS_SQLITE_CENTRAL_DATA_DIR=\'\"/home/nemo/.local/share/system\"\''
 DEFINES += 'QTCONTACTS_SQLITE_PRIVILEGED_DIR=\'\"privileged\"\''
 DEFINES += 'QTCONTACTS_SQLITE_DATABASE_DIR=\'\"Contacts/qtcontacts-sqlite\"\''
 DEFINES += 'QTCONTACTS_SQLITE_DATABASE_NAME=\'\"contacts.db\"\''
