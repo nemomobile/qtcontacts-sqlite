@@ -509,6 +509,12 @@ public:
         , m_autoTest(autoTest)
     {
         start(QThread::IdlePriority);
+
+        // Don't return until the started thread has indicated it is running
+        QMutexLocker locker(&m_mutex);
+        if (!m_running) {
+            m_wait.wait(&m_mutex);
+        }
     }
 
     ~JobThread()
@@ -523,12 +529,8 @@ public:
 
     void run();
 
-    bool waitForRunning()
+    bool databaseOpen() const
     {
-        QMutexLocker locker(&m_mutex);
-        if (!m_running) {
-            m_wait.wait(&m_mutex);
-        }
         return m_database.isOpen();
     }
 
@@ -854,29 +856,30 @@ QString ContactsEngine::databaseUuid()
 QContactManager::Error ContactsEngine::open()
 {
     // Start the async thread, and wait to see if it can open the database
-    if (!m_jobThread)
+    if (!m_jobThread) {
         m_jobThread.reset(new JobThread(this, databaseUuid(), m_nonprivileged, m_autoTest));
 
-    if (m_jobThread->waitForRunning()) {
-        // We may not have got privileged access if we requested it
-        setNonprivileged(m_jobThread->nonprivileged());
+        if (m_jobThread->databaseOpen()) {
+            // We may not have got privileged access if we requested it
+            setNonprivileged(m_jobThread->nonprivileged());
 
-        if (!m_notifier) {
-            m_notifier.reset(new ContactNotifier(m_nonprivileged));
-            m_notifier->connect("contactsAdded", "au", this, SLOT(_q_contactsAdded(QVector<quint32>)));
-            m_notifier->connect("contactsChanged", "au", this, SLOT(_q_contactsChanged(QVector<quint32>)));
-            m_notifier->connect("contactsPresenceChanged", "au", this, SLOT(_q_contactsPresenceChanged(QVector<quint32>)));
-            m_notifier->connect("syncContactsChanged", "as", this, SLOT(_q_syncContactsChanged(QStringList)));
-            m_notifier->connect("contactsRemoved", "au", this, SLOT(_q_contactsRemoved(QVector<quint32>)));
-            m_notifier->connect("selfContactIdChanged", "uu", this, SLOT(_q_selfContactIdChanged(quint32,quint32)));
-            m_notifier->connect("relationshipsAdded", "au", this, SLOT(_q_relationshipsAdded(QVector<quint32>)));
-            m_notifier->connect("relationshipsRemoved", "au", this, SLOT(_q_relationshipsRemoved(QVector<quint32>)));
+            if (!m_notifier) {
+                m_notifier.reset(new ContactNotifier(m_nonprivileged));
+                m_notifier->connect("contactsAdded", "au", this, SLOT(_q_contactsAdded(QVector<quint32>)));
+                m_notifier->connect("contactsChanged", "au", this, SLOT(_q_contactsChanged(QVector<quint32>)));
+                m_notifier->connect("contactsPresenceChanged", "au", this, SLOT(_q_contactsPresenceChanged(QVector<quint32>)));
+                m_notifier->connect("syncContactsChanged", "as", this, SLOT(_q_syncContactsChanged(QStringList)));
+                m_notifier->connect("contactsRemoved", "au", this, SLOT(_q_contactsRemoved(QVector<quint32>)));
+                m_notifier->connect("selfContactIdChanged", "uu", this, SLOT(_q_selfContactIdChanged(quint32,quint32)));
+                m_notifier->connect("relationshipsAdded", "au", this, SLOT(_q_relationshipsAdded(QVector<quint32>)));
+                m_notifier->connect("relationshipsRemoved", "au", this, SLOT(_q_relationshipsRemoved(QVector<quint32>)));
+            }
+        } else {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to open asynchronous engine database connection"));
         }
-        return QContactManager::NoError;
     }
 
-    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to open asynchronous engine database connection"));
-    return QContactManager::UnspecifiedError;
+    return m_jobThread->databaseOpen() ? QContactManager::NoError : QContactManager::UnspecifiedError;
 }
 
 QString ContactsEngine::managerName() const
