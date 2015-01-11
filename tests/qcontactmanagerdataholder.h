@@ -70,7 +70,7 @@ class QContact;
 class QContactManagerDataHolder
 {
 public:
-    QContactManagerDataHolder()
+    QContactManagerDataHolder(bool nonprivileged)
     {
         QStringList managerNames = QContactManager::availableManagers();
 
@@ -78,8 +78,14 @@ public:
             // Only test the qtcontacts-sqlite engine
             if (mgr != QLatin1String("org.nemomobile.contacts.sqlite"))
                 continue;
+
             QMap<QString, QString> params;
+            params.insert("autoTest", "true");
             params.insert("mergePresenceChanges", "false");
+            if (nonprivileged) {
+                params.insert("nonprivileged", "true");
+            }
+
             QString mgrUri = QContactManager::buildUri(mgr, params);
             QContactManager* cm = QContactManager::fromUri(mgrUri);
             if (cm) {

@@ -107,7 +107,7 @@ public:
     QMutex *accessMutex() const;
     ProcessMutex *processMutex() const;
 
-    bool open(const QString &databaseName, bool nonprivileged, bool secondaryConnection = false);
+    bool open(const QString &databaseName, bool nonprivileged, bool autoTest, bool secondaryConnection = false);
 
     operator QSqlDatabase &();
     operator QSqlDatabase const &() const;

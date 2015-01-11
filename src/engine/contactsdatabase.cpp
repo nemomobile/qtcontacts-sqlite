@@ -2173,7 +2173,7 @@ bool directoryIsRW(const QString &dirPath)
        || databaseDirInfo.permission(QFile::ReadUser  | QFile::WriteUser));
 }
 
-bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, bool secondaryConnection)
+bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, bool autoTest, bool secondaryConnection)
 {
     QMutexLocker locker(accessMutex());
 
@@ -2183,22 +2183,25 @@ bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, b
     }
 
     // horrible hack: Qt4 didn't have GenericDataLocation so we hardcode DATA_DIR location.
-    QString privilegedDataDir(QString("%1/%2/")
-            .arg(QString::fromLatin1(QTCONTACTS_SQLITE_CENTRAL_DATA_DIR))
-            .arg(QString::fromLatin1(QTCONTACTS_SQLITE_PRIVILEGED_DIR)));
-    QString unprivilegedDataDir(QString::fromLatin1(QTCONTACTS_SQLITE_CENTRAL_DATA_DIR));
+    const QString unprivilegedDataDirPath(QString::fromLatin1(QTCONTACTS_SQLITE_CENTRAL_DATA_DIR) + "/");
+    const QString privilegedDataDirPath(unprivilegedDataDirPath + QTCONTACTS_SQLITE_PRIVILEGED_DIR + "/");
+
+    QString databaseSubdir(QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR));
+    if (autoTest) {
+        databaseSubdir.append(QString::fromLatin1("-test"));
+    }
 
     QDir databaseDir;
-    if (!nonprivileged && databaseDir.mkpath(privilegedDataDir + QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR))) {
+    if (!nonprivileged && databaseDir.mkpath(privilegedDataDirPath + databaseSubdir)) {
         // privileged.
-        databaseDir = privilegedDataDir + QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR);
+        databaseDir = privilegedDataDirPath + databaseSubdir;
     } else {
         // not privileged.
-        if (!databaseDir.mkpath(unprivilegedDataDir + QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR))) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to create contacts database directory: %1").arg(unprivilegedDataDir + QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR)));
+        if (!databaseDir.mkpath(unprivilegedDataDirPath + databaseSubdir)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to create contacts database directory: %1").arg(unprivilegedDataDirPath + databaseSubdir));
             return false;
         }
-        databaseDir = unprivilegedDataDir + QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR);
+        databaseDir = unprivilegedDataDirPath + databaseSubdir;
         if (!nonprivileged) {
             QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Could not access privileged data directory; using nonprivileged"));
         }

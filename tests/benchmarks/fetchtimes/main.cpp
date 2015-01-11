@@ -274,6 +274,7 @@ int main(int argc, char  *argv[])
     const bool quickMode(args.contains(QStringLiteral("-q")) || args.contains(QStringLiteral("--quick")));
 
     QMap<QString, QString> parameters;
+    parameters.insert(QString::fromLatin1("autoTest"), QString::fromLatin1("true"));
     parameters.insert(QString::fromLatin1("mergePresenceChanges"), QString::fromLatin1("false"));
 
     QContactManager manager(QString::fromLatin1("org.nemomobile.contacts.sqlite"), parameters);

@@ -42,8 +42,19 @@
 
 #define TSA_GUID_STRING(accountId, fname, lname) QString(accountId + ":" + fname + lname)
 
+namespace {
+
+QMap<QString, QString> managerParameters() {
+    QMap<QString, QString> params;
+    params.insert(QStringLiteral("autoTest"), QStringLiteral("true"));
+    params.insert(QStringLiteral("mergePresenceChanges"), QStringLiteral("true"));
+    return params;
+}
+
+}
+
 TestSyncAdapter::TestSyncAdapter(QObject *parent)
-    : QObject(parent), TwoWayContactSyncAdapter(QStringLiteral("testsyncadapter"))
+    : QObject(parent), TwoWayContactSyncAdapter(QStringLiteral("testsyncadapter"), managerParameters())
 {
 }
 

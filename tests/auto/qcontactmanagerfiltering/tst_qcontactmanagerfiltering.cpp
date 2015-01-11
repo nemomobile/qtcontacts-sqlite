@@ -66,6 +66,14 @@ do {                                                                      \
  * This test is mostly just for testing sorting and filtering -
  * having it in tst_QContactManager makes maintenance more
  * difficult!
+ *
+ * Note: this test maintains the semantics of qtpim filtering, and
+ * thus works correctly only in nonprivileged mode (in privileged
+ * mode aggregation is used, which complicates filtering results).
+ * The test enforces access to the nonprivileged database.
+ *
+ * When changing the results of filtering, ensure that the privileged
+ * semantics are tested by the aggregation autotest.
  */
 
 Q_DECLARE_METATYPE(QVariant)
@@ -213,7 +221,7 @@ tst_QContactManagerFiltering::~tst_QContactManagerFiltering()
 
 void tst_QContactManagerFiltering::initTestCase()
 {
-    managerDataHolder.reset(new QContactManagerDataHolder());
+    managerDataHolder.reset(new QContactManagerDataHolder(true));
 
     // firstly, build a list of the managers we wish to test.
     QStringList managerNames;
@@ -221,6 +229,8 @@ void tst_QContactManagerFiltering::initTestCase()
 
     foreach (const QString &mgr, managerNames) {
         QMap<QString, QString> params;
+        params.insert(QStringLiteral("autoTest"), QStringLiteral("true"));
+        params.insert(QStringLiteral("nonprivileged"), QStringLiteral("true"));
         QString mgrUri = QContactManager::buildUri(mgr, params);
         QContactManager* cm = QContactManager::fromUri(mgrUri);
         cm->setObjectName(mgr);

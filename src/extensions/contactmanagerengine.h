@@ -44,9 +44,11 @@ namespace QtContactsSqliteExtensions {
  *                           and reported via the contactsChanged signal. Otherwise presence
  *                           changes will be reported separately, via the contactsPresenceChanged
  *                           signal of the QContactManager's engine object.
- * 'nonprivileged'         - if true, the engine will not attempt to use the privileged database
+ *  'nonprivileged'        - if true, the engine will not attempt to use the privileged database
  *                           of contact details, which is not accessible to normal processes. Otherwise
  *                           the privileged database will be preferred if accessible.
+ *  'autoTest'             - if true, an alternate database path is accessed, separate to the
+ *                           path used by non-auto-test applications
  */
 
 class Q_DECL_EXPORT ContactManagerEngine
@@ -60,10 +62,11 @@ public:
         PreserveRemoteChanges
     };
 
-    ContactManagerEngine() : m_nonprivileged(false), m_mergePresenceChanges(false) {}
+    ContactManagerEngine() : m_nonprivileged(false), m_mergePresenceChanges(false), m_autoTest(false) {}
 
     void setNonprivileged(bool b) { m_nonprivileged = b; }
     void setMergePresenceChanges(bool b) { m_mergePresenceChanges = b; }
+    void setAutoTest(bool b) { m_autoTest = b; }
 
     virtual bool Q_DECL_DEPRECATED fetchSyncContacts(const QString &syncTarget, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
                                    QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
@@ -97,6 +100,7 @@ Q_SIGNALS:
 protected:
     bool m_nonprivileged;
     bool m_mergePresenceChanges;
+    bool m_autoTest;
 };
 
 }
