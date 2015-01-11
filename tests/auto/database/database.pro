@@ -5,7 +5,6 @@ TARGET = tst_database
 QT += sql contacts-private
 
 # copied from src/engine/engine.pro, modified for test db
-DEFINES += 'QTCONTACTS_SQLITE_CENTRAL_DATA_DIR=\'\"/home/nemo/.local/share/system\"\''
 DEFINES += 'QTCONTACTS_SQLITE_PRIVILEGED_DIR=\'\"privileged\"\''
 DEFINES += 'QTCONTACTS_SQLITE_DATABASE_DIR=\'\"Contacts/qtcontacts-sqlite\"\''
 DEFINES += 'QTCONTACTS_SQLITE_DATABASE_NAME=\'\"contacts-test.db\"\''

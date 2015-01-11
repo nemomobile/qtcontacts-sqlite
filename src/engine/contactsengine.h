@@ -177,6 +177,7 @@ private slots:
 
 private:
     QString databaseUuid();
+    ContactsDatabase &database();
 
     ContactReader *reader() const;
     ContactWriter *writer();
@@ -184,7 +185,7 @@ private:
     QString m_databaseUuid;
     const QString m_name;
     QMap<QString, QString> m_parameters;
-    ContactsDatabase m_database;
+    QScopedPointer<ContactsDatabase> m_database;
     mutable QScopedPointer<ContactReader> m_synchronousReader;
     QScopedPointer<ContactWriter> m_synchronousWriter;
     QScopedPointer<ContactNotifier> m_notifier;

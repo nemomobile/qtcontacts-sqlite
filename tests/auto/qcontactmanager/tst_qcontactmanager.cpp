@@ -137,6 +137,7 @@ private slots:
     void add();
     void update();
     void remove();
+    void removeAsync();
     void batch();
     void observerDeletion();
     void signalEmission();
@@ -195,6 +196,7 @@ private slots:
     void add_data() {addManagers();}
     void update_data() {addManagers();}
     void remove_data() {addManagers();}
+    void removeAsync_data() {addManagers();}
     void batch_data() {addManagers();}
     void signalEmission_data() {addManagers();}
     void detailDefinitions_data() {addManagers();}
@@ -1046,6 +1048,10 @@ void tst_QContactManager::remove()
     QScopedPointer<QContactManager> cm(QContactManager::fromUri(uri));
     const int contactCount = cm->contactIds().count();
 
+    QTest::qWait(500); // wait for signal coalescing.
+    QSignalSpy addedSpy(cm.data(), contactsAddedSignal);
+    QSignalSpy removedSpy(cm.data(), contactsRemovedSignal);
+
     /* Save a new contact first */
 #ifndef DETAIL_DEFINITION_SUPPORTED
     QContact alice = createContact("AliceRemove", "inWonderlandRemove", "123456789");
@@ -1056,12 +1062,81 @@ void tst_QContactManager::remove()
     QVERIFY(cm->saveContact(&alice));
     QVERIFY(cm->error() == QContactManager::NoError);
     QVERIFY(alice.id() != QContactId());
+    QVERIFY(cm->contactIds().count() > contactCount);
+
+    QTRY_VERIFY(addedSpy.count() > 0);
+    addedSpy.clear();
+    QVERIFY(removedSpy.count() == 0);
 
     /* Remove the created contact */
     QVERIFY(cm->removeContact(retrievalId(alice)));
     QCOMPARE(cm->contactIds().count(), contactCount);
     QVERIFY(cm->contact(retrievalId(alice)).isEmpty());
     QCOMPARE(cm->error(), QContactManager::DoesNotExistError);
+
+    QTRY_VERIFY(removedSpy.count() > 0);
+    removedSpy.clear();
+    QVERIFY(addedSpy.count() == 0);
+}
+
+void tst_QContactManager::removeAsync()
+{
+    QFETCH(QString, uri);
+    QScopedPointer<QContactManager> cm(QContactManager::fromUri(uri));
+    const int contactCount = cm->contactIds().count();
+
+    QTest::qWait(500); // wait for signal coalescing.
+    QSignalSpy addedSpy(cm.data(), contactsAddedSignal);
+    QSignalSpy removedSpy(cm.data(), contactsRemovedSignal);
+
+    /* Save a new contact first */
+#ifndef DETAIL_DEFINITION_SUPPORTED
+    QContact alice = createContact("AliceRemove", "inWonderlandRemove", "123456789");
+#else
+    QContactDetailDefinition nameDef = cm->detailDefinition(QContactName::DefinitionName, QContactType::TypeContact);
+    QContact alice = createContact(nameDef, "AliceRemove", "inWonderlandRemove", "123456789");
+#endif
+
+    /* Use an asynchronous save request */
+    QContactSaveRequest saveRequest;
+    saveRequest.setContact(alice);
+    saveRequest.setManager(cm.data());
+    saveRequest.start();
+
+    QVERIFY(saveRequest.waitForFinished());
+    QVERIFY(saveRequest.isFinished());
+
+    QMap<int, QContactManager::Error> errorMap(saveRequest.errorMap());
+    QVERIFY(errorMap.count() == 0 || (errorMap.count() == 1 && errorMap.first() == QContactManager::NoError));
+
+    alice = saveRequest.contacts().first();
+    QVERIFY(alice.id() != QContactId());
+    QVERIFY(cm->contactIds().count() > contactCount);
+
+    QTRY_VERIFY(addedSpy.count() > 0);
+    addedSpy.clear();
+    QVERIFY(removedSpy.count() == 0);
+
+    /* Remove the created contact asynchronously */
+    QContactRemoveRequest removeRequest;
+    removeRequest.setContactId(alice.id());
+    removeRequest.setManager(cm.data());
+    removeRequest.start();
+
+    QVERIFY(removeRequest.waitForFinished());
+    QVERIFY(removeRequest.isFinished());
+
+    errorMap = removeRequest.errorMap();
+    QVERIFY(errorMap.count() == 0 || (errorMap.count() == 1 && errorMap.first() == QContactManager::NoError));
+
+    QCOMPARE(cm->contactIds().count(), contactCount);
+
+    QVERIFY(cm->contact(retrievalId(alice)).isEmpty());
+    QCOMPARE(cm->error(), QContactManager::DoesNotExistError);
+
+    QTRY_VERIFY(removedSpy.count() > 0);
+    removedSpy.clear();
+    QVERIFY(addedSpy.count() == 0);
 }
 
 void tst_QContactManager::batch()

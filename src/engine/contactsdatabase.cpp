@@ -2182,9 +2182,8 @@ bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, b
         return false;
     }
 
-    // horrible hack: Qt4 didn't have GenericDataLocation so we hardcode DATA_DIR location.
-    const QString unprivilegedDataDirPath(QString::fromLatin1(QTCONTACTS_SQLITE_CENTRAL_DATA_DIR) + "/");
-    const QString privilegedDataDirPath(unprivilegedDataDirPath + QTCONTACTS_SQLITE_PRIVILEGED_DIR + "/");
+    const QString systemDataDirPath(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/system/");
+    const QString privilegedDataDirPath(systemDataDirPath + QTCONTACTS_SQLITE_PRIVILEGED_DIR + "/");
 
     QString databaseSubdir(QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR));
     if (autoTest) {
@@ -2197,11 +2196,11 @@ bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, b
         databaseDir = privilegedDataDirPath + databaseSubdir;
     } else {
         // not privileged.
-        if (!databaseDir.mkpath(unprivilegedDataDirPath + databaseSubdir)) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to create contacts database directory: %1").arg(unprivilegedDataDirPath + databaseSubdir));
+        if (!databaseDir.mkpath(systemDataDirPath + databaseSubdir)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to create contacts database directory: %1").arg(systemDataDirPath + databaseSubdir));
             return false;
         }
-        databaseDir = unprivilegedDataDirPath + databaseSubdir;
+        databaseDir = systemDataDirPath + databaseSubdir;
         if (!nonprivileged) {
             QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Could not access privileged data directory; using nonprivileged"));
         }
@@ -2295,6 +2294,11 @@ ContactsDatabase::operator QSqlDatabase const &() const
 QSqlError ContactsDatabase::lastError() const
 {
     return m_database.lastError();
+}
+
+bool ContactsDatabase::isOpen() const
+{
+    return m_database.isOpen();
 }
 
 bool ContactsDatabase::nonprivileged() const

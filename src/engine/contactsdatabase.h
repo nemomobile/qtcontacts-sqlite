@@ -114,6 +114,7 @@ public:
 
     QSqlError lastError() const;
 
+    bool isOpen() const;
     bool nonprivileged() const;
     bool aggregating() const;
     bool localized() const;
