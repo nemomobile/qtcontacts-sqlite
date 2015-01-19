@@ -45,7 +45,34 @@
 #include <QContactTimestamp>
 #include <QContactUrl>
 
+#define QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG(msg)                           \
+    do {                                                                 \
+        if (Q_UNLIKELY(qtcontacts_sqlite_twcsa_debug_trace_enabled())) { \
+            qDebug() << msg;                                             \
+        }                                                                \
+    } while (0)
+
+#define QTCONTACTS_SQLITE_TWCSA_DEBUG_CONTACT(contact)                   \
+    do {                                                                 \
+        if (Q_UNLIKELY(qtcontacts_sqlite_twcsa_debug_trace_enabled())) { \
+            dumpContact(contact);                                        \
+        }                                                                \
+    } while (0)
+
+#define QTCONTACTS_SQLITE_TWCSA_DEBUG_DETAIL(detail)                     \
+    do {                                                                 \
+        if (Q_UNLIKELY(qtcontacts_sqlite_twcsa_debug_trace_enabled())) { \
+            dumpContactDetail(detail);                                   \
+        }                                                                \
+    } while (0)
+
 namespace QtContactsSqliteExtensions {
+
+    static bool qtcontacts_sqlite_twcsa_debug_trace_enabled()
+    {
+        static const bool traceEnabled(!QString(QLatin1String(qgetenv("QTCONTACTS_SQLITE_TWCSA_TRACE"))).isEmpty());
+        return traceEnabled;
+    }
 
     // QDataStream encoding version to use in OOB storage.
     // Don't change this without scheduling a migration for stored data!
@@ -416,16 +443,21 @@ QDateTime maxModificationTimestamp(const QList<QContact> &contacts)
     return since;
 }
 
+void dumpContactDetail(const QContactDetail &d)
+{
+    qWarning() << "++ ---------" << d.type();
+    QMap<int, QVariant> values = d.values();
+    foreach (int key, values.keys()) {
+        qWarning() << "    " << key << "=" << values.value(key);
+    }
+}
+
 void dumpContact(const QContact &c)
 {
     QList<QContactDetail> cdets = c.details();
     removeIgnorableDetailsFromList(&cdets, defaultIgnorableDetailTypes());
     foreach (const QContactDetail &det, cdets) {
-        qWarning() << "++ ---------" << det.type();
-        QMap<int, QVariant> values = det.values();
-        foreach (int key, values.keys()) {
-            qWarning() << "    " << key << "=" << values.value(key);
-        }
+        dumpContactDetail(det);
     }
 }
 
@@ -552,6 +584,7 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapterPrivate::createUpdateL
     QList<QPair<QContact, QContact> > alreadyDownloadedArtifacts;
 
     // Index all existing contacts by their ID value
+    QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("indexing previously seen remote contacts by id");
     QHash<QContactId, int> prevIdToIndex;
     for (int i = 0; i < syncState.m_prevRemote.size(); ++i) {
         const QContact &prevContact(syncState.m_prevRemote.at(i));
@@ -563,6 +596,7 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapterPrivate::createUpdateL
         }
     }
 
+    QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("examining remote delta lists to determine which local contacts need to be added/modified/removed");
     QList<int> deletePositions;
     QList<QPair<int, int> > modificationPositions;
     QList<int> additionPositions;
@@ -578,16 +612,21 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapterPrivate::createUpdateL
         }
         if (prevIndex == -1) {
             const QString &pcGuid(prevContact.detail<QContactGuid>().guid());
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("contact:" << pcGuid << "marked as deleted remotely, not found locally");
             if (syncState.m_possiblyUploadedAdditions.contains(id)) {
                 // The contact was uploaded during a failed sync, and subsequently deleted remotely.
+                QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("contact:" << pcGuid << "was uploaded during a failed sync and then deleted remotely");
                 alreadyUploadedArtifacts.append(qMakePair(syncState.m_possiblyUploadedAdditions.value(id), QContact()));
             } else if (syncState.m_definitelyDownloadedAdditions.contains(pcGuid)) {
                 // The contact was downloaded during a failed sync, and subsequently deleted remotely.
+                QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("contact:" << pcGuid << "was downloaded during a failed sync and then deleted remotely");
                 alreadyDownloadedArtifacts.append(qMakePair(syncState.m_definitelyDownloadedAdditions.value(pcGuid), QContact()));
             } else {
                 // Ignore this removal, the contact may already have been removed remotely
+                QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("contact:" << pcGuid << "was never seen locally but reported as deleted remotely...");
             }
         } else {
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("contact:" << prevContact.detail<QContactGuid>().guid() << "marked as deleted remotely, found at index" << prevIndex);
             deletePositions.append(prevIndex);
         }
     }
@@ -607,21 +646,27 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapterPrivate::createUpdateL
             // or it was downloaded and stored during a failed sync and is being re-reported as an addition.
             // We always treat it as a remote modification in case it was subsequently modified remotely.
             const QString &pcGuid(prevContact.detail<QContactGuid>().guid());
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("contact:" << pcGuid << "marked as added or modified remotely, not found locally");
             if (syncState.m_possiblyUploadedAdditions.contains(id)) {
+                QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("contact:" << pcGuid << "was uploaded during a failed sync and then modified remotely");
                 alreadyUploadedArtifacts.append(qMakePair(syncState.m_possiblyUploadedAdditions.value(id), prevContact));
             } else if (syncState.m_definitelyDownloadedAdditions.contains(pcGuid)) {
+                QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("contact:" << pcGuid << "was downloaded during a failed sync and then modified remotely");
                 prevContact.setId(syncState.m_definitelyDownloadedAdditions.value(pcGuid).id());
                 alreadyDownloadedArtifacts.append(qMakePair(syncState.m_definitelyDownloadedAdditions.value(pcGuid), prevContact));
             } else {
                 // This must be a pure server-side addition
+                QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("contact:" << pcGuid << "was never seen locally, must be a pure server-side addition");
                 additionPositions.append(i);
             }
         } else {
+                QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("contact:" << prevContact.detail<QContactGuid>().guid() << "was modified remotely, found at index" << prevIndex);
             modificationPositions.append(qMakePair(prevIndex, i));
         }
     }
 
     // determine remote additions/modifications
+    QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("creating update-pairs for remote additions/modifications/removals");
     QList<int> prevRemoteDeletionIndexes;
     QHash<int, QContact> prevRemoteModificationIndexes;
     QList<QContact> prevRemoteAdditions;
@@ -650,6 +695,17 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapterPrivate::createUpdateL
             prevRemoteModificationIndexes.insert((*it).first, updated);
             // modifications: <PREV_REMOTE, UPDATED_REMOTE>
             retn.append(qMakePair(prevContact, updated));
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("substantial change detected for contact" << prevContact.detail<QContactGuid>().guid());
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_CONTACT(prevContact);
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("!=");
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_CONTACT(newContact);
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("with delta applied, the updated contact will become:");
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_CONTACT(updated);
+        } else {
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("ignoring insubstantial change to contact" << prevContact.detail<QContactGuid>().guid());
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_CONTACT(prevContact);
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("==");
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_CONTACT(newContact);
         }
     }
 
@@ -721,24 +777,34 @@ QContact TwoWayContactSyncAdapterPrivate::applyRemoteDeltaToPrev(const QContact 
 {
     QContact newRemote = prev;
 
+    QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("determining detail-delta for contact:" << prev.detail<QContactGuid>().guid());
     QPair<QList<QContactDetail>, QList<QContactDetail> > fbd = fallbackDelta(newRemote, curr);
     QList<QContactDetail> removals = fbd.first;
     QList<QContactDetail> additions = fbd.second;
+    QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("initial-guess delta has" << removals.size() << "removals and" << additions.size() << "additions.");
+
     QList<QContactDetail> modifications = improveDelta(&removals, &additions);
+    QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("improved delta has" << removals.size() << "removals and" << additions.size() << "additions, with" << modifications.size() << "modifications");
 
     for (int i = 0; i < removals.size(); ++i) {
         QContactDetail removal = removals.at(i);
         newRemote.removeDetail(&removal);
+        QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("removing detail:");
+        QTCONTACTS_SQLITE_TWCSA_DEBUG_DETAIL(removal);
     }
 
     for (int i = 0; i < additions.size(); ++i) {
         QContactDetail addition = additions.at(i);
         newRemote.saveDetail(&addition);
+        QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("adding detail:");
+        QTCONTACTS_SQLITE_TWCSA_DEBUG_DETAIL(addition);
     }
 
     for (int i = 0; i < modifications.size(); ++i) {
         QContactDetail modification = modifications.at(i);
         newRemote.saveDetail(&modification);
+        QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("modifying detail:");
+        QTCONTACTS_SQLITE_TWCSA_DEBUG_DETAIL(modification);
     }
 
     return newRemote;
@@ -749,6 +815,7 @@ QContact TwoWayContactSyncAdapterPrivate::applyRemoteDeltaToPrev(const QContact 
 // if the changes are minimal enough to be considered a modification.
 QList<QContactDetail> TwoWayContactSyncAdapterPrivate::improveDelta(QList<QContactDetail> *removals, QList<QContactDetail> *additions)
 {
+    QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("improving delta, have:" << removals->size() << "removals," << additions->size() << "additions");
     QList<QContactDetail> finalRemovals;
     QList<QContactDetail> finalAdditions;
     QList<QContactDetail> finalModifications;
@@ -762,10 +829,14 @@ QList<QContactDetail> TwoWayContactSyncAdapterPrivate::improveDelta(QList<QConta
 
     QSet<int> seenTypes;
     foreach (int type, bucketedRemovals.keys()) {
+        QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("dealing with detail type:" << type);
         seenTypes.insert(type);
         QList<QContactDetail> removalsOfThisType = bucketedRemovals.values(type);
+        QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("have" << removalsOfThisType.size() << "removals of this type");
         QList<QContactDetail> additionsOfThisType = bucketedAdditions.values(type);
+        QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("have" << additionsOfThisType.size() << "additions of this type");
         QList<QContactDetail> modificationsOfThisType = m_q->determineModifications(&removalsOfThisType, &additionsOfThisType);
+        QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("have" << modificationsOfThisType.size() << "modifications of this type - and now rCount =" << removalsOfThisType.size() << ", aCount =" << additionsOfThisType.size());
         finalRemovals.append(removalsOfThisType);
         finalAdditions.append(additionsOfThisType);
         finalModifications.append(modificationsOfThisType);
@@ -776,6 +847,8 @@ QList<QContactDetail> TwoWayContactSyncAdapterPrivate::improveDelta(QList<QConta
             finalAdditions.append(bucketedAdditions.values(type));
         }
     }
+
+        QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("ended up with: a/m/r:" << finalAdditions.size() << "/" << finalModifications.size() << "/" << finalRemovals.size());
 
     *removals = finalRemovals;
     *additions = finalAdditions;
@@ -833,6 +906,7 @@ bool TwoWayContactSyncAdapter::readSyncStateData(QDateTime *remoteSince, const Q
 
     if (!d->readStateData(accountId, (mode == ReadPartialState ? TwoWayContactSyncAdapterPrivate::ReadPartial
                                                                : TwoWayContactSyncAdapterPrivate::ReadAll))) {
+        qWarning() << Q_FUNC_INFO << "failed to read state data";
         return false;
     }
 
@@ -1395,15 +1469,19 @@ QList<QContactDetail> TwoWayContactSyncAdapter::determineModifications(QList<QCo
     QList<int> remainingRemovals;
     QList<int> remainingAdditions;
 
+    QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("determining modifications from the given list of additions/removals for details of a particular type");
+
     // for each possible permutation, determine its score.
     // lower is a closer match (ie, score == distance).
     for (int i = 0; i < removalsOfThisType->size(); ++i) {
         for (int j = 0; j < additionsOfThisType->size(); ++j) {
             // determine the score for the permutation
-            scoresForPermutations.insert(permutationsOfIndexes.size(),
-                                         scoreForDetailPair(removalsOfThisType->at(i),
-                                                            additionsOfThisType->at(j)));
+            int score = scoreForDetailPair(removalsOfThisType->at(i),
+                                           additionsOfThisType->at(j));
+            scoresForPermutations.insert(permutationsOfIndexes.size(), score);
             permutationsOfIndexes.append(QPair<int, int>(i, j));
+
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("score for permutation" << i << "," << j << "=" << score);
 
             // this is so that we can avoid "re-using" details in modification pairs.
             if (!remainingRemovals.contains(i)) {
@@ -1434,6 +1512,7 @@ QList<QContactDetail> TwoWayContactSyncAdapter::determineModifications(QList<QCo
         if (lowScorePermutationIdx != -1) {
             // we have a valid permutation which should be treated as a modification.
             QPair<int, int> bestPermutation = permutationsOfIndexes.at(lowScorePermutationIdx);
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("have determined that permutation" << bestPermutation.first << "," << bestPermutation.second << "is a modification");
             remainingRemovals.removeAll(bestPermutation.first);
             remainingAdditions.removeAll(bestPermutation.second);
             QContactDetail modification = removalsOfThisType->at(bestPermutation.first);
