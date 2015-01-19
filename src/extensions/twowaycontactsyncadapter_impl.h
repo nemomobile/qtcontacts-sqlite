@@ -1474,6 +1474,7 @@ QList<QContactDetail> TwoWayContactSyncAdapter::determineModifications(QList<QCo
     // for each possible permutation, determine its score.
     // lower is a closer match (ie, score == distance).
     for (int i = 0; i < removalsOfThisType->size(); ++i) {
+        remainingRemovals.append(i);
         for (int j = 0; j < additionsOfThisType->size(); ++j) {
             // determine the score for the permutation
             int score = scoreForDetailPair(removalsOfThisType->at(i),
@@ -1484,9 +1485,6 @@ QList<QContactDetail> TwoWayContactSyncAdapter::determineModifications(QList<QCo
             QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("score for permutation" << i << "," << j << "=" << score);
 
             // this is so that we can avoid "re-using" details in modification pairs.
-            if (!remainingRemovals.contains(i)) {
-                remainingRemovals.append(i);
-            }
             if (!remainingAdditions.contains(j)) {
                 remainingAdditions.append(j);
             }
