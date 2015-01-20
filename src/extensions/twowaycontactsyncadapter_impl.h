@@ -1468,6 +1468,9 @@ QList<QContactDetail> TwoWayContactSyncAdapter::determineModifications(QList<QCo
 
     QList<int> remainingRemovals;
     QList<int> remainingAdditions;
+    for (int i = 0; i < additionsOfThisType->size(); ++i) {
+        remainingAdditions.append(i);
+    }
 
     QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("determining modifications from the given list of additions/removals for details of a particular type");
 
@@ -1481,13 +1484,7 @@ QList<QContactDetail> TwoWayContactSyncAdapter::determineModifications(QList<QCo
                                            additionsOfThisType->at(j));
             scoresForPermutations.insert(permutationsOfIndexes.size(), score);
             permutationsOfIndexes.append(QPair<int, int>(i, j));
-
             QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("score for permutation" << i << "," << j << "=" << score);
-
-            // this is so that we can avoid "re-using" details in modification pairs.
-            if (!remainingAdditions.contains(j)) {
-                remainingAdditions.append(j);
-            }
         }
     }
 
