@@ -3059,7 +3059,7 @@ static QContactDetail findContactDetail(QContact *contact, const StringPair &ide
     return QContactDetail();
 }
 
-static bool removeContactDetails(QContact *contact, const QList<StringPair> &removals)
+static bool applyAggregateRemovalsToConstituent(QContact *contact, const QList<StringPair> &removals)
 {
     foreach (const StringPair &identity, removals) {
         QContactDetail detail(findContactDetail(contact, identity));
@@ -3071,7 +3071,7 @@ static bool removeContactDetails(QContact *contact, const QList<StringPair> &rem
     return true;
 }
 
-static bool modifyContactDetails(QContact *contact, const QList<QPair<StringPair, QContactDetail> > &updates)
+static bool applyAggregateUpdatesToConstituent(QContact *contact, const QList<QPair<StringPair, QContactDetail> > &updates)
 {
     QList<QPair<StringPair, QContactDetail> >::const_iterator it = updates.constBegin(), end = updates.constEnd();
     for ( ; it != end; ++it) {
@@ -3220,7 +3220,7 @@ QContactManager::Error ContactWriter::calculateDelta(QContact *contact, const Co
         for ( ; rit != rend; ++rit) {
             QMap<quint32, QContact *>::iterator cit = updatedContacts.find(rit.key());
             if (cit != updatedContacts.end()) {
-                if (!removeContactDetails(cit.value(), rit.value())) {
+                if (!applyAggregateRemovalsToConstituent(cit.value(), rit.value())) {
                     QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to remove details from constituent contact: %1").arg(cit.key()));
                     return QContactManager::UnspecifiedError;
                 }
@@ -3235,12 +3235,12 @@ QContactManager::Error ContactWriter::calculateDelta(QContact *contact, const Co
         for ( ; mit != mend; ++mit) {
             QMap<quint32, QContact *>::iterator cit = updatedContacts.find(mit.key());
             if (cit != updatedContacts.end()) {
-                if (!modifyContactDetails(cit.value(), mit.value())) {
-                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to remove details from constituent contact: %1").arg(cit.key()));
+                if (!applyAggregateUpdatesToConstituent(cit.value(), mit.value())) {
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to update details in constituent contact: %1").arg(cit.key()));
                     return QContactManager::UnspecifiedError;
                 }
             } else {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to find constituent contact to remove detail: %1").arg(mit.key()));
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to find constituent contact to update detail: %1").arg(mit.key()));
                 return QContactManager::UnspecifiedError;
             }
         }
@@ -4216,7 +4216,6 @@ static void modifyContactDetail(const QContactDetail &original, const QContactDe
     DetailMap::const_iterator mit = modifiedValues.constBegin(), mend = modifiedValues.constEnd();
     for ( ; mit != mend; ++mit) {
         const int field(mit.key());
-        const QVariant modifiedValue(mit.value());
 
         const QVariant originalValue(originalValues[field]);
         originalValues.remove(field);
@@ -4250,6 +4249,11 @@ static void modifyContactDetail(const QContactDetail &original, const QContactDe
         }
 
         recipient->removeValue(field);
+    }
+
+    // set the modifiable flag to true unless the sync adapter has set it explicitly
+    if (!recipient->values().contains(QContactDetail__FieldModifiable)) {
+        recipient->setValue(QContactDetail__FieldModifiable, true);
     }
 }
 
@@ -4729,6 +4733,10 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
                         if (conflictPolicy == QtContactsSqliteExtensions::ContactManagerEngine::PreserveRemoteChanges) {
                             // Handle the updated value as an addition
                             QContactDetail updated(mit.value().second);
+                            // Mark the updated detail as Modifiable unless it was explicitly marked (by the sync adapter) as non-modifiable
+                            if (!updated.values().contains(QContactDetail__FieldModifiable)) {
+                                updated.setValue(QContactDetail__FieldModifiable, true);
+                            }
                             contact.saveDetail(&updated);
                         }
                     }
@@ -4774,8 +4782,10 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
                     }
 
                     foreach (QContactDetail detail, additionDetails) {
-                        // Sync contact details should be modifiable
-                        detail.setValue(QContactDetail__FieldModifiable, true);
+                        // Sync contact details should be modifiable unless explicitly marked otherwise by the sync adapter
+                        if (!detail.values().contains(QContactDetail__FieldModifiable)) {
+                            detail.setValue(QContactDetail__FieldModifiable, true);
+                        }
                         contactForAdditions->saveDetail(&detail);
                     }
 
@@ -4838,9 +4848,12 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
                     newContact.removeDetail(&stDetail);
                 }
             } else {
-                // Copy the details to mark them all as modifiable
+                // Copy the details to mark them all as modifiable unless explicitly marked otherwise
                 foreach (QContactDetail detail, addContact->details()) {
-                    detail.setValue(QContactDetail__FieldModifiable, true);
+                    // Mark the updated detail as Modifiable unless it was explicitly marked (by the sync adapter) as non-modifiable
+                    if (!detail.values().contains(QContactDetail__FieldModifiable)) {
+                        detail.setValue(QContactDetail__FieldModifiable, true);
+                    }
                     newContact.saveDetail(&detail);
                 }
 

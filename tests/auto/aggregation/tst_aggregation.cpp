@@ -6380,9 +6380,18 @@ void tst_Aggregation::testOOB()
     QCOMPARE(keys, QStringList());
 }
 
-bool haveExpectedContent(const QContact &c, const QString &phone, const QString &email)
+bool haveExpectedContent(const QContact &c, const QString &phone, TestSyncAdapter::PhoneModifiability modifiability, const QString &email)
 {
-    return c.detail<QContactPhoneNumber>().number() == phone
+    const QContactPhoneNumber &phn(c.detail<QContactPhoneNumber>());
+
+    TestSyncAdapter::PhoneModifiability modif = TestSyncAdapter::ImplicitlyModifiable;
+    if (phn.values().contains(QContactDetail__FieldModifiable)) {
+        modif = phn.value<bool>(QContactDetail__FieldModifiable)
+              ? TestSyncAdapter::ExplicitlyModifiable
+              : TestSyncAdapter::ExplicitlyNonModifiable;
+    }
+
+    return phn.number() == phone && modif == modifiability
         && c.detail<QContactEmailAddress>().emailAddress() == email;
 }
 
@@ -6395,9 +6404,9 @@ void tst_Aggregation::testSyncAdapter()
     // add some contacts remotely, and downsync them.  It should not result in an upsync.
     QString accountId(QStringLiteral("1"));
     TestSyncAdapter tsa;
-    tsa.addRemoteContact(accountId, "John", "TsaOne", "1111111");
-    tsa.addRemoteContact(accountId, "Bob", "TsaTwo", "2222222");
-    tsa.addRemoteContact(accountId, "Mark", "TsaThree", "3333333");
+    tsa.addRemoteContact(accountId, "John", "TsaOne", "1111111", TestSyncAdapter::ImplicitlyModifiable);
+    tsa.addRemoteContact(accountId, "Bob", "TsaTwo", "2222222", TestSyncAdapter::ExplicitlyModifiable);
+    tsa.addRemoteContact(accountId, "Mark", "TsaThree", "3333333", TestSyncAdapter::ExplicitlyNonModifiable);
 
     QSignalSpy finishedSpy(&tsa, SIGNAL(finished()));
     tsa.performTwoWaySync(accountId);
@@ -6453,12 +6462,15 @@ void tst_Aggregation::testSyncAdapter()
     QVERIFY(tsa.downsyncWasRequired(accountId));
 
     // ensure that the downsynced contacts have the data we expect
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneStcId), QStringLiteral("1111111"), QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneAggId), QStringLiteral("1111111"), QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoStcId), QStringLiteral("2222222"), QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoAggId), QStringLiteral("2222222"), QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeStcId), QStringLiteral("3333333"), QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeAggId), QStringLiteral("3333333"), QString()));
+    // note that aggregate contacts don't have a modifiability flag, since by definition
+    // the modification would "actually" occur to some constituent contact detail,
+    // and thus are considered by the haveExpectedContent function to be ImplicitlyModifiable.
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneStcId), QStringLiteral("1111111"), TestSyncAdapter::ExplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneAggId), QStringLiteral("1111111"), TestSyncAdapter::ImplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoStcId), QStringLiteral("2222222"), TestSyncAdapter::ExplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoAggId), QStringLiteral("2222222"), TestSyncAdapter::ImplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeStcId), QStringLiteral("3333333"), TestSyncAdapter::ExplicitlyNonModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeAggId), QStringLiteral("3333333"), TestSyncAdapter::ImplicitlyModifiable, QString()));
 
     // now modify tsaTwo's aggregate - should cause the creation of an incidental local.
     // triggering update should then not require downsync but would require upsync.
@@ -6490,15 +6502,15 @@ void tst_Aggregation::testSyncAdapter()
     QVERIFY(tsa.upsyncWasRequired(accountId));
 
     // ensure that the contacts have the data we expect
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneStcId), QStringLiteral("1111111"), QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneAggId), QStringLiteral("1111111"), QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoStcId), QStringLiteral("2222222"), QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoLocalId), QString(), QStringLiteral("bob@tsatwo.com")));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoAggId), QStringLiteral("2222222"), QStringLiteral("bob@tsatwo.com")));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeStcId), QStringLiteral("3333333"), QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeAggId), QStringLiteral("3333333"), QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneStcId), QStringLiteral("1111111"), TestSyncAdapter::ExplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneAggId), QStringLiteral("1111111"), TestSyncAdapter::ImplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoStcId), QStringLiteral("2222222"), TestSyncAdapter::ExplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoLocalId), QString(), TestSyncAdapter::ImplicitlyModifiable, QStringLiteral("bob@tsatwo.com")));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoAggId), QStringLiteral("2222222"), TestSyncAdapter::ImplicitlyModifiable, QStringLiteral("bob@tsatwo.com")));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeStcId), QStringLiteral("3333333"), TestSyncAdapter::ExplicitlyNonModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeAggId), QStringLiteral("3333333"), TestSyncAdapter::ImplicitlyModifiable, QString()));
     QVERIFY(haveExpectedContent(tsa.remoteContact(accountId, QStringLiteral("Bob"), QStringLiteral("TsaTwo")),
-                                QStringLiteral("2222222"), QStringLiteral("bob@tsatwo.com")));
+                                QStringLiteral("2222222"), TestSyncAdapter::ExplicitlyModifiable, QStringLiteral("bob@tsatwo.com")));
 
     // modify both locally and remotely.
     // we modify the phone number locally (ie, the synctarget constituent)
@@ -6528,15 +6540,15 @@ void tst_Aggregation::testSyncAdapter()
     QVERIFY(tsa.upsyncWasRequired(accountId));
 
     // ensure that the contacts have the data we expect
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneStcId), QStringLiteral("1111111"), QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneAggId), QStringLiteral("1111111"), QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoStcId), QStringLiteral("2222229"), QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoLocalId), QString(), QStringLiteral("bob2@tsatwo.com")));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoAggId), QStringLiteral("2222229"), QStringLiteral("bob2@tsatwo.com")));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeStcId), QStringLiteral("3333333"), QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeAggId), QStringLiteral("3333333"), QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneStcId), QStringLiteral("1111111"), TestSyncAdapter::ExplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneAggId), QStringLiteral("1111111"), TestSyncAdapter::ImplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoStcId), QStringLiteral("2222229"), TestSyncAdapter::ExplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoLocalId), QString(), TestSyncAdapter::ImplicitlyModifiable, QStringLiteral("bob2@tsatwo.com")));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoAggId), QStringLiteral("2222229"), TestSyncAdapter::ImplicitlyModifiable, QStringLiteral("bob2@tsatwo.com")));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeStcId), QStringLiteral("3333333"), TestSyncAdapter::ExplicitlyNonModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeAggId), QStringLiteral("3333333"), TestSyncAdapter::ImplicitlyModifiable, QString()));
     QVERIFY(haveExpectedContent(tsa.remoteContact(accountId, QStringLiteral("Bob"), QStringLiteral("TsaTwo")),
-                                QStringLiteral("2222229"), QStringLiteral("bob2@tsatwo.com")));
+                                QStringLiteral("2222229"), TestSyncAdapter::ExplicitlyModifiable, QStringLiteral("bob2@tsatwo.com")));
 
     // remove a contact locally, ensure that the removal is upsynced.
     QVERIFY(tsa.remoteContact(accountId, QStringLiteral("Mark"), QStringLiteral("TsaThree")) != QContact());
@@ -6547,13 +6559,13 @@ void tst_Aggregation::testSyncAdapter()
     QVERIFY(tsa.upsyncWasRequired(accountId));
 
     // ensure that the contacts have the data we expect
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneStcId), QStringLiteral("1111111"), QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneAggId), QStringLiteral("1111111"), QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoStcId), QStringLiteral("2222229"), QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoLocalId), QString(), QStringLiteral("bob2@tsatwo.com")));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoAggId), QStringLiteral("2222229"), QStringLiteral("bob2@tsatwo.com")));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneStcId), QStringLiteral("1111111"), TestSyncAdapter::ExplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneAggId), QStringLiteral("1111111"), TestSyncAdapter::ImplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoStcId), QStringLiteral("2222229"), TestSyncAdapter::ExplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoLocalId), QString(), TestSyncAdapter::ImplicitlyModifiable, QStringLiteral("bob2@tsatwo.com")));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoAggId), QStringLiteral("2222229"), TestSyncAdapter::ImplicitlyModifiable, QStringLiteral("bob2@tsatwo.com")));
     QVERIFY(haveExpectedContent(tsa.remoteContact(accountId, QStringLiteral("Bob"), QStringLiteral("TsaTwo")),
-                                QStringLiteral("2222229"), QStringLiteral("bob2@tsatwo.com")));
+                                QStringLiteral("2222229"), TestSyncAdapter::ExplicitlyModifiable, QStringLiteral("bob2@tsatwo.com")));
     QVERIFY(tsa.remoteContact(accountId, QStringLiteral("Mark"), QStringLiteral("TsaThree")) == QContact()); // deleted remotely.
 
     // add a contact locally, ensure that the addition is upsynced.
@@ -6583,7 +6595,7 @@ void tst_Aggregation::testSyncAdapter()
     QVERIFY(tsa.downsyncWasRequired(accountId));
     QVERIFY(tsa.upsyncWasRequired(accountId));
     QVERIFY(haveExpectedContent(tsa.remoteContact(accountId, QStringLiteral("Jennifer"), QStringLiteral("TsaFour")),
-                                QString(), QStringLiteral("jennifer@tsafour.com")));
+                                QString(), TestSyncAdapter::ImplicitlyModifiable, QStringLiteral("jennifer@tsafour.com")));
 
     // remove some contacts remotely, ensure the removals are downsynced.
     QTest::qWait(1);

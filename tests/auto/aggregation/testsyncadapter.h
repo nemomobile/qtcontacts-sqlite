@@ -52,8 +52,14 @@ public:
     TestSyncAdapter(QObject *parent = 0);
     ~TestSyncAdapter();
 
+    enum PhoneModifiability {
+        ImplicitlyModifiable = 0,
+        ExplicitlyModifiable,
+        ExplicitlyNonModifiable
+    };
+
     // for testing purposes
-    void addRemoteContact(const QString &accountId, const QString &fname, const QString &lname, const QString &phone);
+    void addRemoteContact(const QString &accountId, const QString &fname, const QString &lname, const QString &phone, PhoneModifiability mod = ImplicitlyModifiable);
     void removeRemoteContact(const QString &accountId, const QString &fname, const QString &lname);
     void setRemoteContact(const QString &accountId, const QString &fname, const QString &lname, const QContact &contact);
     void changeRemoteContactPhone(const QString &accountId, const QString &fname, const QString &lname, const QString &modPhone);

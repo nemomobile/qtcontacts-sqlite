@@ -32,6 +32,7 @@
 
 #include "testsyncadapter.h"
 #include "../../../src/extensions/twowaycontactsyncadapter_impl.h"
+#include "../../../src/extensions/qtcontacts-extensions.h"
 
 #include <QTimer>
 
@@ -62,7 +63,7 @@ TestSyncAdapter::~TestSyncAdapter()
 {
 }
 
-void TestSyncAdapter::addRemoteContact(const QString &accountId, const QString &fname, const QString &lname, const QString &phone)
+void TestSyncAdapter::addRemoteContact(const QString &accountId, const QString &fname, const QString &lname, const QString &phone, TestSyncAdapter::PhoneModifiability mod)
 {
     QContactName ncn;
     ncn.setFirstName(fname);
@@ -70,6 +71,11 @@ void TestSyncAdapter::addRemoteContact(const QString &accountId, const QString &
 
     QContactPhoneNumber ncp;
     ncp.setNumber(phone);
+    if (mod == TestSyncAdapter::ExplicitlyModifiable) {
+        ncp.setValue(QContactDetail__FieldModifiable, true);
+    } else if (mod == TestSyncAdapter::ExplicitlyNonModifiable) {
+        ncp.setValue(QContactDetail__FieldModifiable, false);
+    }
 
     QContact newContact;
     newContact.saveDetail(&ncn);
