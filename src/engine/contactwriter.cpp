@@ -60,6 +60,22 @@
 #include <QtDebug>
 
 namespace {
+    void dumpContactDetail(const QContactDetail &d)
+    {
+        QTCONTACTS_SQLITE_DEBUG("++ --------- detail type:" << d.type());
+        QMap<int, QVariant> values = d.values();
+        Q_FOREACH (int key, values.keys()) {
+            QTCONTACTS_SQLITE_DEBUG("    " << key << "=" << values.value(key));
+        }
+    }
+
+    void dumpContact(const QContact &c)
+    {
+        Q_FOREACH (const QContactDetail &det, c.details()) {
+            dumpContactDetail(det);
+        }
+    }
+
     void updateMaxSyncTimestamp(const QList<QContact> *contacts, QDateTime *prevMaxSyncTimestamp)
     {
         Q_ASSERT(prevMaxSyncTimestamp);
@@ -2530,6 +2546,27 @@ static ContactWriter::DetailList allSingularDetails()
     return details;
 }
 
+static QContactDetail supportedDetailInstance(QContactDetail::DetailType type)
+{
+    if (allSupportedDetails().contains(type)) {
+        return QContactDetail(type);
+    }
+
+    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("unsupported detail type: %1").arg(static_cast<int>(type)));
+    return QContactDetail();
+}
+
+static QContactDetail contactDetailOfType(const QContact &c, QContactDetail::DetailType type)
+{
+    // this function is guaranteed to return a detail of the correct type
+    // as long as the type parameter is a supported detail type.
+    const QContactDetail &retn = c.detail(type);
+    if (retn.type() == type) { // note, it could be QContactDetail::TypeUndefined, if no such detail existed in the contact.
+        return retn;
+    }
+    return supportedDetailInstance(type); // default constructed detail of the correct type
+}
+
 static QContactManager::Error enforceDetailConstraints(QContact *contact)
 {
     static const ContactWriter::DetailList supported(allSupportedDetails());
@@ -2543,6 +2580,14 @@ static QContactManager::Error enforceDetailConstraints(QContact *contact)
     foreach (const QContactDetail &det, contact->details()) {
         if (!detailListContains(supported, det)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Invalid detail type: %1 %2").arg(detailTypeName(det)).arg(det.type()));
+            if (det.isEmpty()) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Detail is also empty!"));
+            } else {
+                QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Dumping detail contents:"));
+                dumpContactDetail(det);
+            }
+            QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Dumping contact contents:"));
+            dumpContact(*contact);
             return QContactManager::InvalidDetailError;
         } else {
             ++detailCounts[detailType(det)];
@@ -2601,7 +2646,9 @@ static void promoteDetailsToLocal(const QList<QContactDetail> addDelta, const QL
             (detailType(det) == detailType<QContactBirthday>()) ||
             (detailType(det) == detailType<QContactStatusFlags>())) {
             detToRemove = localContact->detail(detailType(det));
-            localContact->removeDetail(&detToRemove);
+            if (detToRemove.type() != QContactDetail::TypeUndefined) {
+                localContact->removeDetail(&detToRemove);
+            }
         } else {
             // all other details are just removed directly.
             bool found = false;
@@ -4333,7 +4380,7 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
                 const QContactDetail::DetailType type(detailType(detail));
                 if (compositionDetailTypes.contains(type)) {
                     // This is a modification of a contacts table detail - we will eventually work out the new composition
-                    contactModifications[contactId].append(qMakePair(identity, qMakePair(original.detail(type), detail)));
+                    contactModifications[contactId].append(qMakePair(identity, qMakePair(contactDetailOfType(original, type), detail)));
                     compositionModificationIds.insert(contactId);
                 } else {
                     // This is a new detail altogether
@@ -4684,39 +4731,65 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
                     if (identity.first.isEmpty()) {
                         const QContactDetail::DetailType type(detailType((*mit).second.second));
                         composedModifications.insert(type, (*mit).second);
+                        if (type == QContactDetail::TypeUndefined
+                                || (*mit).second.first.type() != type
+                                || (*mit).second.second.type() != type) {
+                            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("error: invalid composed modification:")
+                                                      << type
+                                                      << (*mit).second.first.type()
+                                                      << (*mit).second.second.type());
+                        }
                     } else {
+                        // identity is a pair of provenance + detailTypeName
                         modifications.insert(identity, (*mit).second);
+                        if (identity.second.isEmpty()
+                                || (*mit).second.first.type() == QContactDetail::TypeUndefined
+                                || (*mit).second.second.type() != (*mit).second.first.type()) {
+                            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("error: invalid identified modification:")
+                                                      << identity.first << identity.second
+                                                      << (*mit).second.first.type()
+                                                      << (*mit).second.second.type());
+                        }
                     }
                 }
 
                 foreach (QContactDetail detail, contact.details()) {
+                    // apply server-side modifications to the local contact.
+                    // we determine which detail to apply the changes to via provenance field data.
                     const QString provenance(detail.value(QContactDetail__FieldProvenance).toString());
-
                     if (provenance.isEmpty()) {
+                        // we don't have provenance to determine which detail this modification actually is.
+                        // instead, attempt to match based on the detail type.
                         QMap<QContactDetail::DetailType, DetailPair>::iterator cit = composedModifications.find(detailType(detail));
                         if (cit != composedModifications.end()) {
                             // Apply this modification
                             modifyContactDetail((*cit).first, (*cit).second, conflictPolicy, &detail);
-                            contact.saveDetail(&detail);
-
+                            if (detail.type() == QContactDetail::TypeUndefined) {
+                                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("error: invalid non-identified detail modification"));
+                            } else {
+                                contact.saveDetail(&detail);
+                            }
                             composedModifications.erase(cit);
                         }
                     } else {
+                        // We have provenance.  We can determine precisely which detail
+                        // is being modified.  The <provenance, type> pair form that identity.
                         const StringPair detailIdentity(qMakePair(provenance, detailTypeName(detail)));
-
                         QSet<StringPair>::iterator rit = removals.find(detailIdentity);
                         if (rit != removals.end()) {
                             // Remove this detail from the contact
                             contact.removeDetail(&detail);
-
                             removals.erase(rit);
                         } else {
                             QMap<StringPair, DetailPair>::iterator mit = modifications.find(detailIdentity);
                             if (mit != modifications.end()) {
                                 // Apply the modification to this contact's detail
                                 modifyContactDetail((*mit).first, (*mit).second, conflictPolicy, &detail);
-                                contact.saveDetail(&detail);
-
+                                if (detail.type() == QContactDetail::TypeUndefined) {
+                                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("error: invalid identified detail modification"));
+                                } else {
+                                    contact.saveDetail(&detail);
+                                }
                                 modifications.erase(mit);
                             }
                         }
@@ -4727,6 +4800,10 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
                     // Is there anything that can be done here, for PreserveRemoteChanges?
                 }
                 if (!modifications.isEmpty()) {
+                    // Any server-side modification of a detail which cannot be found
+                    // locally (ie, was deleted locally) should either be dropped
+                    // (if PreserveRemoteChanges is false) or treated as a new detail
+                    // addition (if PreserveRemoteChanges is true).
                     QMap<StringPair, DetailPair>::const_iterator mit = modifications.constBegin(), mend = modifications.constEnd();
                     for ( ; mit != mend; ++mit) {
                         const StringPair identity(mit.key());
@@ -4737,17 +4814,28 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
                             if (!updated.values().contains(QContactDetail__FieldModifiable)) {
                                 updated.setValue(QContactDetail__FieldModifiable, true);
                             }
-                            contact.saveDetail(&updated);
+                            if (updated.type() == QContactDetail::TypeUndefined) {
+                                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("error: invalid preserved remote detail modification-as-addition detail"));
+                            } else {
+                                contact.saveDetail(&updated);
+                            }
                         }
                     }
                 }
                 if (!composedModifications.isEmpty()) {
                     QMap<QContactDetail::DetailType, DetailPair>::const_iterator cit = composedModifications.constBegin(), cend = composedModifications.constEnd();
                     for ( ; cit != cend; ++cit) {
-                        // Apply these modifications to empty details, and add to the contact
-                        QContactDetail detail = contact.detail(cit.key());
+                        // Apply these modifications to empty details, and add to the contact.
+                        // These details are different in that the resulting aggregate value cannot be
+                        // accurately traced back to its origin when multiple constituents are aggregated
+                        // together, unlike the details which are not subject to composition.
+                        QContactDetail detail = contactDetailOfType(contact, cit.key());
                         modifyContactDetail((*cit).first, (*cit).second, conflictPolicy, &detail);
-                        contact.saveDetail(&detail);
+                        if (detail.type() == QContactDetail::TypeUndefined) {
+                            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("error: attempting to add invalid composed modification detail"));
+                        } else {
+                            contact.saveDetail(&detail);
+                        }
                     }
                 }
 
@@ -4786,7 +4874,11 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
                         if (!detail.values().contains(QContactDetail__FieldModifiable)) {
                             detail.setValue(QContactDetail__FieldModifiable, true);
                         }
-                        contactForAdditions->saveDetail(&detail);
+                        if (detail.type() == QContactDetail::TypeUndefined) {
+                            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("error: attempting to add invalid pure addition detail"));
+                        } else {
+                            contactForAdditions->saveDetail(&detail);
+                        }
                     }
 
                     if (contactForAdditions == &stContact) {
@@ -4808,6 +4900,10 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
             }
         }
 
+        // create incidental local constituents to store aggregated data
+        // which does not originate from the server-side contact.
+        // The codepath is hit in the exportUpdates() case, when importing
+        // changes from a subset database, not during "normal" sync.
         QMap<quint32, QList<QContactDetail> >::const_iterator ait = aggregateAdditions.constBegin(), aend = aggregateAdditions.constEnd();
         for ( ; ait != aend; ++ait) {
             QContact updatedAggregate(aggregateDetails[ait.key()]);
@@ -4825,8 +4921,12 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
 
             copyNameDetails(updatedAggregate, &localConstituent);
 
-            foreach (QContactDetail detail, ait.value()) {
-                localConstituent.saveDetail(&detail);
+            foreach (QContactDetail detail, ait.value()) {\
+                if (detail.type() == QContactDetail::TypeUndefined) {
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("error: attempting to downpromote invalid detail from aggregate"));
+                } else {
+                    localConstituent.saveDetail(&detail);
+                }
             }
 
             updatedContacts.append(localConstituent);
@@ -4834,6 +4934,7 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
 
         const int additionIndex(updatedContacts.count());
 
+        // add server-side addition contacts as new sync-target contacts on device.
         foreach (QContact *addContact, contactsToAdd) {
             // Rebuild this contact to our specifications
             QContact newContact;
@@ -4854,7 +4955,11 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
                     if (!detail.values().contains(QContactDetail__FieldModifiable)) {
                         detail.setValue(QContactDetail__FieldModifiable, true);
                     }
-                    newContact.saveDetail(&detail);
+                    if (detail.type() == QContactDetail::TypeUndefined) {
+                        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("error: attempting to add invalid detail in new server-side addition contact"));
+                    } else {
+                        newContact.saveDetail(&detail);
+                    }
                 }
 
                 QContactSyncTarget stDetail = newContact.detail<QContactSyncTarget>();
@@ -5085,7 +5190,7 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
 
     QContactManager::Error writeErr = enforceDetailConstraints(contact);
     if (writeErr != QContactManager::NoError) {
-        QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Contact failed detail constraints"));
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Contact failed detail constraints"));
         return writeErr;
     }
 
@@ -5169,7 +5274,7 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
 
     QContactManager::Error writeError = enforceDetailConstraints(contact);
     if (writeError != QContactManager::NoError) {
-        QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Contact failed detail constraints"));
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Contact failed detail constraints"));
         return writeError;
     }
 

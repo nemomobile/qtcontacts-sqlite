@@ -795,15 +795,23 @@ QContact TwoWayContactSyncAdapterPrivate::applyRemoteDeltaToPrev(const QContact 
 
     for (int i = 0; i < additions.size(); ++i) {
         QContactDetail addition = additions.at(i);
-        newRemote.saveDetail(&addition);
-        QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("adding detail:");
+        if (addition.type() == QContactDetail::TypeUndefined) {
+            qWarning() << Q_FUNC_INFO << "invalid detail addition at index" << i << ": FIXME!";
+        } else {
+            newRemote.saveDetail(&addition);
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("adding detail:");
+        }
         QTCONTACTS_SQLITE_TWCSA_DEBUG_DETAIL(addition);
     }
 
     for (int i = 0; i < modifications.size(); ++i) {
         QContactDetail modification = modifications.at(i);
-        newRemote.saveDetail(&modification);
-        QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("modifying detail:");
+        if (modification.type() == QContactDetail::TypeUndefined) {
+            qWarning() << Q_FUNC_INFO << "invalid detail modification at index" << i << ": FIXME!";
+        } else {
+            newRemote.saveDetail(&modification);
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("modifying detail:");
+        }
         QTCONTACTS_SQLITE_TWCSA_DEBUG_DETAIL(modification);
     }
 
@@ -848,7 +856,7 @@ QList<QContactDetail> TwoWayContactSyncAdapterPrivate::improveDelta(QList<QConta
         }
     }
 
-        QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("ended up with: a/m/r:" << finalAdditions.size() << "/" << finalModifications.size() << "/" << finalRemovals.size());
+    QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("ended up with detail a/m/r:" << finalAdditions.size() << "/" << finalModifications.size() << "/" << finalRemovals.size());
 
     *removals = finalRemovals;
     *additions = finalAdditions;

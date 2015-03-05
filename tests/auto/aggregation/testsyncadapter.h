@@ -64,6 +64,7 @@ public:
     void setRemoteContact(const QString &accountId, const QString &fname, const QString &lname, const QContact &contact);
     void changeRemoteContactPhone(const QString &accountId, const QString &fname, const QString &lname, const QString &modPhone);
     void changeRemoteContactEmail(const QString &accountId, const QString &fname, const QString &lname, const QString &modEmail);
+    void changeRemoteContactName(const QString &accountId, const QString &fname, const QString &lname, const QString &modfname, const QString &modlname);
 
 
     // triggering sync and checking state.

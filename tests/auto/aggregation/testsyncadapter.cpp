@@ -152,6 +152,28 @@ void TestSyncAdapter::changeRemoteContactEmail(const QString &accountId,  const 
     m_remoteAddMods[accountId].insert(contactGuidStr);
 }
 
+void TestSyncAdapter::changeRemoteContactName(const QString &accountId, const QString &fname, const QString &lname, const QString &modfname, const QString &modlname)
+{
+    const QString contactGuidStr(TSA_GUID_STRING(accountId, fname, lname));
+    if (!m_remoteServerContacts[accountId].contains(contactGuidStr)) {
+        qWarning() << "Contact:" << contactGuidStr << "doesn't exist remotely!";
+        return;
+    }
+
+    QContact modContact = m_remoteServerContacts[accountId][contactGuidStr];
+    QContactName mcn = modContact.detail<QContactName>();
+    if (modfname.isEmpty() && modlname.isEmpty()) {
+        modContact.removeDetail(&mcn);
+    } else {
+        mcn.setFirstName(modfname);
+        mcn.setLastName(modlname);
+        modContact.saveDetail(&mcn);
+    }
+
+    m_remoteServerContacts[accountId].insert(contactGuidStr, modContact);
+    m_remoteAddMods[accountId].insert(contactGuidStr);
+}
+
 void TestSyncAdapter::performTwoWaySync(const QString &accountId)
 {
     // reset our state.
