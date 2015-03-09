@@ -90,7 +90,7 @@ namespace {
 
         int frequency[256] = { 0 };
         for ( ; it != end; ++it) {
-            frequency[static_cast<int>(*it)] += 1;
+            frequency[static_cast<unsigned char>(*it)] += 1;
         }
         for (int i = 0; i < 256; ++i) {
             if (frequency[i] != 0) {
