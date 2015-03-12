@@ -49,7 +49,7 @@ class TestSyncAdapter : public QObject, public QtContactsSqliteExtensions::TwoWa
     Q_OBJECT
 
 public:
-    TestSyncAdapter(QObject *parent = 0);
+    TestSyncAdapter(const QString &accountId, QObject *parent = 0);
     ~TestSyncAdapter();
 
     enum PhoneModifiability {
@@ -64,6 +64,7 @@ public:
     void setRemoteContact(const QString &accountId, const QString &fname, const QString &lname, const QContact &contact);
     void changeRemoteContactPhone(const QString &accountId, const QString &fname, const QString &lname, const QString &modPhone);
     void changeRemoteContactEmail(const QString &accountId, const QString &fname, const QString &lname, const QString &modEmail);
+    void changeRemoteContactName(const QString &accountId, const QString &fname, const QString &lname, const QString &modfname, const QString &modlname);
 
 
     // triggering sync and checking state.
@@ -95,6 +96,8 @@ private Q_SLOTS:
     void finalizeTwoWaySync();
 
 private:
+    void cleanUp(const QString &accountId);
+    QString m_accountId;
     // simulating server-side changes, per account:
     mutable QMap<QString, QTimer*> m_simulationTimers;
     mutable QMap<QString, bool> m_downsyncWasRequired;

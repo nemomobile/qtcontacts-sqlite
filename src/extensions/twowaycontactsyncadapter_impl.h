@@ -454,6 +454,7 @@ void dumpContactDetail(const QContactDetail &d)
 
 void dumpContact(const QContact &c)
 {
+    qWarning() << "++++ ---- Contact:" << c.id();
     QList<QContactDetail> cdets = c.details();
     removeIgnorableDetailsFromList(&cdets, defaultIgnorableDetailTypes());
     foreach (const QContactDetail &det, cdets) {
@@ -795,15 +796,23 @@ QContact TwoWayContactSyncAdapterPrivate::applyRemoteDeltaToPrev(const QContact 
 
     for (int i = 0; i < additions.size(); ++i) {
         QContactDetail addition = additions.at(i);
-        newRemote.saveDetail(&addition);
-        QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("adding detail:");
+        if (addition.type() == QContactDetail::TypeUndefined) {
+            qWarning() << Q_FUNC_INFO << "invalid detail addition at index" << i << ": FIXME!";
+        } else {
+            newRemote.saveDetail(&addition);
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("adding detail:");
+        }
         QTCONTACTS_SQLITE_TWCSA_DEBUG_DETAIL(addition);
     }
 
     for (int i = 0; i < modifications.size(); ++i) {
         QContactDetail modification = modifications.at(i);
-        newRemote.saveDetail(&modification);
-        QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("modifying detail:");
+        if (modification.type() == QContactDetail::TypeUndefined) {
+            qWarning() << Q_FUNC_INFO << "invalid detail modification at index" << i << ": FIXME!";
+        } else {
+            newRemote.saveDetail(&modification);
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("modifying detail:");
+        }
         QTCONTACTS_SQLITE_TWCSA_DEBUG_DETAIL(modification);
     }
 
@@ -848,7 +857,7 @@ QList<QContactDetail> TwoWayContactSyncAdapterPrivate::improveDelta(QList<QConta
         }
     }
 
-        QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("ended up with: a/m/r:" << finalAdditions.size() << "/" << finalModifications.size() << "/" << finalRemovals.size());
+    QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("ended up with detail a/m/r:" << finalAdditions.size() << "/" << finalModifications.size() << "/" << finalRemovals.size());
 
     *removals = finalRemovals;
     *additions = finalAdditions;
@@ -1372,7 +1381,13 @@ bool TwoWayContactSyncAdapter::purgeSyncStateData(const QString &accountId, bool
         purgeKeys << QStringLiteral("definitelyDownloadedAdditions");
     }
 
-    if (!d->m_engine->removeOOB(syncState.m_oobScope, purgeKeys)) {
+    // If this function is called without first calling initSyncAdapter, the
+    // OOB scope variable will not be initialized.  In that case, try to use
+    // the default OOB scope instead.
+    if (syncState.m_oobScope.isEmpty()) {
+        qWarning() << Q_FUNC_INFO << "error - cannot purge sync state data for uninitialized adapter";
+        purgeSucceeded = false;
+    } else if (!d->m_engine->removeOOB(syncState.m_oobScope, purgeKeys)) {
         qWarning() << Q_FUNC_INFO << "error - couldn't purge state data from oob!";
         purgeSucceeded = false;
     }

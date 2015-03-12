@@ -6403,7 +6403,7 @@ void tst_Aggregation::testSyncAdapter()
 
     // add some contacts remotely, and downsync them.  It should not result in an upsync.
     QString accountId(QStringLiteral("1"));
-    TestSyncAdapter tsa;
+    TestSyncAdapter tsa(accountId);
     tsa.addRemoteContact(accountId, "John", "TsaOne", "1111111", TestSyncAdapter::ImplicitlyModifiable);
     tsa.addRemoteContact(accountId, "Bob", "TsaTwo", "2222222", TestSyncAdapter::ExplicitlyModifiable);
     tsa.addRemoteContact(accountId, "Mark", "TsaThree", "3333333", TestSyncAdapter::ExplicitlyNonModifiable);
@@ -6659,6 +6659,92 @@ void tst_Aggregation::testSyncAdapter()
     foreach (const QContactId &id, allIds) {
         QVERIFY(originalIds.contains(id));
     }
+
+    // now add a new contact remotely, which has a name.
+    // remove the name locally, and modify it remotely - this will cause a "composed detail" modification update.
+    tsa.addRemoteContact(accountId, "John", "TsaFive", "555555", TestSyncAdapter::ImplicitlyModifiable);
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 11);
+    allIds = m_cm->contactIds(allSyncTargets);
+    QCOMPARE(allIds.size(), originalIds.size() + 2); // remote + aggregate
+    allContacts = m_cm->contacts(allSyncTargets);
+    QContact tsaFiveStc, tsaFiveAgg;
+    for (int i = allContacts.size() - 1; i >= 0; --i) {
+        const QContact &c(allContacts[i]);
+        if (originalIds.contains(c.id())) {
+            allContacts.removeAt(i);
+        } else {
+            bool isAggregate = c.relatedContacts(QStringLiteral("Aggregates"), QContactRelationship::Second).size() > 0;
+            if (isAggregate) {
+                tsaFiveAgg = c;
+            } else {
+                tsaFiveStc = c;
+            }
+        }
+    }
+    QVERIFY(tsaFiveAgg.id() != QContactId());
+    QVERIFY(tsaFiveStc.id() != QContactId());
+    // now remove the name on the local copy
+    QContactName tsaFiveName = tsaFiveStc.detail<QContactName>();
+    tsaFiveStc.removeDetail(&tsaFiveName);
+    QVERIFY(m_cm->saveContact(&tsaFiveStc));
+    // now modify the name on the remote server, and trigger sync.
+    // during this process, the local contact will NOT have a QContactName detail
+    // so the modification pair will be <null, newName>.  This used to trigger a bug.
+    tsa.changeRemoteContactName(accountId, "John", "TsaFive", "Jonathan", "TsaFive");
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 12);
+    // ensure that the contact contains the data we expect
+    // currently, we only support PreserveLocalChanges conflict resolution
+    tsaFiveStc = m_cm->contact(tsaFiveStc.id());
+    QCOMPARE(tsaFiveStc.detail<QContactName>().firstName(), QString());
+    QCOMPARE(tsaFiveStc.detail<QContactName>().lastName(), QString());
+    QCOMPARE(tsaFiveStc.detail<QContactPhoneNumber>().number(), QStringLiteral("555555"));
+    // now do the same test as above, but this time remove the name remotely and modify it locally.
+    tsa.addRemoteContact(accountId, "James", "TsaSix", "666666", TestSyncAdapter::ImplicitlyModifiable);
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 13);
+    allIds = m_cm->contactIds(allSyncTargets);
+    QCOMPARE(allIds.size(), originalIds.size() + 4); // remote + aggregate for Five and Six
+    allContacts = m_cm->contacts(allSyncTargets);
+    QContact tsaSixStc, tsaSixAgg;
+    for (int i = allContacts.size() - 1; i >= 0; --i) {
+        const QContact &c(allContacts[i]);
+        if (originalIds.contains(c.id())) {
+            allContacts.removeAt(i);
+        } else {
+            bool isAggregate = c.relatedContacts(QStringLiteral("Aggregates"), QContactRelationship::Second).size() > 0;
+            if (isAggregate && c.id() != tsaFiveAgg.id()) {
+                tsaSixAgg = c;
+            } else if (!isAggregate && c.id() != tsaFiveStc.id()){
+                tsaSixStc = c;
+            }
+        }
+    }
+    QVERIFY(tsaSixAgg.id() != QContactId());
+    QVERIFY(tsaSixStc.id() != QContactId());
+    // now modify the name on the local copy
+    QContactName tsaSixName = tsaSixStc.detail<QContactName>();
+    tsaSixName.setFirstName("Jimmy");
+    tsaSixStc.saveDetail(&tsaSixName);
+    QVERIFY(m_cm->saveContact(&tsaSixStc));
+    // now remove the name on the remote server, and trigger sync.
+    // during this process, the remote contact will NOT have a QContactName detail
+    // so the modification pair will be <newName, null>.
+    tsa.changeRemoteContactName(accountId, "James", "TsaSix", "", "");
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 14);
+    // ensure that the contact contains the data we expect
+    // currently, we only support PreserveLocalChanges conflict resolution
+    tsaSixStc = m_cm->contact(tsaSixStc.id());
+    QCOMPARE(tsaSixStc.detail<QContactName>().firstName(), QStringLiteral("Jimmy"));
+    QCOMPARE(tsaSixStc.detail<QContactName>().lastName(), QStringLiteral("TsaSix"));
+    QCOMPARE(tsaSixStc.detail<QContactPhoneNumber>().number(), QStringLiteral("666666"));
+    // clean up.
+    QVERIFY(m_cm->removeContact(tsaFiveAgg.id()));
+    QVERIFY(m_cm->removeContact(tsaSixAgg.id()));
+    QCOMPARE(m_cm->contactIds(allSyncTargets).size(), originalIds.size());
+    tsa.removeAllContacts();
 }
 
 QTEST_MAIN(tst_Aggregation)

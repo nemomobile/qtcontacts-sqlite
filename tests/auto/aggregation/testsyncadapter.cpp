@@ -54,13 +54,23 @@ QMap<QString, QString> managerParameters() {
 
 }
 
-TestSyncAdapter::TestSyncAdapter(QObject *parent)
+TestSyncAdapter::TestSyncAdapter(const QString &accountId, QObject *parent)
     : QObject(parent), TwoWayContactSyncAdapter(QStringLiteral("testsyncadapter"), managerParameters())
+    , m_accountId(accountId)
 {
+    cleanUp(accountId);
 }
 
 TestSyncAdapter::~TestSyncAdapter()
 {
+    cleanUp(m_accountId);
+}
+
+void TestSyncAdapter::cleanUp(const QString &accountId)
+{
+    initSyncAdapter(accountId);
+    readSyncStateData(&m_remoteSince[accountId], accountId, TwoWayContactSyncAdapter::ReadPartialState);
+    purgeSyncStateData(accountId, true);
 }
 
 void TestSyncAdapter::addRemoteContact(const QString &accountId, const QString &fname, const QString &lname, const QString &phone, TestSyncAdapter::PhoneModifiability mod)
@@ -152,6 +162,28 @@ void TestSyncAdapter::changeRemoteContactEmail(const QString &accountId,  const 
     m_remoteAddMods[accountId].insert(contactGuidStr);
 }
 
+void TestSyncAdapter::changeRemoteContactName(const QString &accountId, const QString &fname, const QString &lname, const QString &modfname, const QString &modlname)
+{
+    const QString contactGuidStr(TSA_GUID_STRING(accountId, fname, lname));
+    if (!m_remoteServerContacts[accountId].contains(contactGuidStr)) {
+        qWarning() << "Contact:" << contactGuidStr << "doesn't exist remotely!";
+        return;
+    }
+
+    QContact modContact = m_remoteServerContacts[accountId][contactGuidStr];
+    QContactName mcn = modContact.detail<QContactName>();
+    if (modfname.isEmpty() && modlname.isEmpty()) {
+        modContact.removeDetail(&mcn);
+    } else {
+        mcn.setFirstName(modfname);
+        mcn.setLastName(modlname);
+        modContact.saveDetail(&mcn);
+    }
+
+    m_remoteServerContacts[accountId].insert(contactGuidStr, modContact);
+    m_remoteAddMods[accountId].insert(contactGuidStr);
+}
+
 void TestSyncAdapter::performTwoWaySync(const QString &accountId)
 {
     // reset our state.
@@ -181,7 +213,7 @@ void TestSyncAdapter::determineRemoteChanges(const QDateTime &, const QString &a
     if (!m_simulationTimers.contains(accountId)) {
         simtimer = new QTimer(this);
         simtimer->setSingleShot(true);
-        simtimer->setInterval(1100);
+        simtimer->setInterval(200); // simulate network latency
         simtimer->setProperty("accountId", accountId);
         m_simulationTimers.insert(accountId, simtimer);
     } else {
@@ -288,7 +320,7 @@ void TestSyncAdapter::upsyncLocalChanges(const QDateTime &,
     if (!m_simulationTimers.contains(accountId)) {
         simtimer = new QTimer(this);
         simtimer->setSingleShot(true);
-        simtimer->setInterval(1100);
+        simtimer->setInterval(200); // simulate network latency.
         simtimer->setProperty("accountId", accountId);
         m_simulationTimers.insert(accountId, simtimer);
     } else {
