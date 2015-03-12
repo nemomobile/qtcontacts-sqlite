@@ -54,13 +54,23 @@ QMap<QString, QString> managerParameters() {
 
 }
 
-TestSyncAdapter::TestSyncAdapter(QObject *parent)
+TestSyncAdapter::TestSyncAdapter(const QString &accountId, QObject *parent)
     : QObject(parent), TwoWayContactSyncAdapter(QStringLiteral("testsyncadapter"), managerParameters())
+    , m_accountId(accountId)
 {
+    cleanUp(accountId);
 }
 
 TestSyncAdapter::~TestSyncAdapter()
 {
+    cleanUp(m_accountId);
+}
+
+void TestSyncAdapter::cleanUp(const QString &accountId)
+{
+    initSyncAdapter(accountId);
+    readSyncStateData(&m_remoteSince[accountId], accountId, TwoWayContactSyncAdapter::ReadPartialState);
+    purgeSyncStateData(accountId, true);
 }
 
 void TestSyncAdapter::addRemoteContact(const QString &accountId, const QString &fname, const QString &lname, const QString &phone, TestSyncAdapter::PhoneModifiability mod)
@@ -203,7 +213,7 @@ void TestSyncAdapter::determineRemoteChanges(const QDateTime &, const QString &a
     if (!m_simulationTimers.contains(accountId)) {
         simtimer = new QTimer(this);
         simtimer->setSingleShot(true);
-        simtimer->setInterval(1100);
+        simtimer->setInterval(200); // simulate network latency
         simtimer->setProperty("accountId", accountId);
         m_simulationTimers.insert(accountId, simtimer);
     } else {
@@ -310,7 +320,7 @@ void TestSyncAdapter::upsyncLocalChanges(const QDateTime &,
     if (!m_simulationTimers.contains(accountId)) {
         simtimer = new QTimer(this);
         simtimer->setSingleShot(true);
-        simtimer->setInterval(1100);
+        simtimer->setInterval(200); // simulate network latency.
         simtimer->setProperty("accountId", accountId);
         m_simulationTimers.insert(accountId, simtimer);
     } else {

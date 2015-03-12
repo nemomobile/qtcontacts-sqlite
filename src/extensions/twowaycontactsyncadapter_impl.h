@@ -454,6 +454,7 @@ void dumpContactDetail(const QContactDetail &d)
 
 void dumpContact(const QContact &c)
 {
+    qWarning() << "++++ ---- Contact:" << c.id();
     QList<QContactDetail> cdets = c.details();
     removeIgnorableDetailsFromList(&cdets, defaultIgnorableDetailTypes());
     foreach (const QContactDetail &det, cdets) {
@@ -1380,7 +1381,13 @@ bool TwoWayContactSyncAdapter::purgeSyncStateData(const QString &accountId, bool
         purgeKeys << QStringLiteral("definitelyDownloadedAdditions");
     }
 
-    if (!d->m_engine->removeOOB(syncState.m_oobScope, purgeKeys)) {
+    // If this function is called without first calling initSyncAdapter, the
+    // OOB scope variable will not be initialized.  In that case, try to use
+    // the default OOB scope instead.
+    if (syncState.m_oobScope.isEmpty()) {
+        qWarning() << Q_FUNC_INFO << "error - cannot purge sync state data for uninitialized adapter";
+        purgeSucceeded = false;
+    } else if (!d->m_engine->removeOOB(syncState.m_oobScope, purgeKeys)) {
         qWarning() << Q_FUNC_INFO << "error - couldn't purge state data from oob!";
         purgeSucceeded = false;
     }

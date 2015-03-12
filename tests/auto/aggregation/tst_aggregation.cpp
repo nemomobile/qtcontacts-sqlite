@@ -6403,7 +6403,7 @@ void tst_Aggregation::testSyncAdapter()
 
     // add some contacts remotely, and downsync them.  It should not result in an upsync.
     QString accountId(QStringLiteral("1"));
-    TestSyncAdapter tsa;
+    TestSyncAdapter tsa(accountId);
     tsa.addRemoteContact(accountId, "John", "TsaOne", "1111111", TestSyncAdapter::ImplicitlyModifiable);
     tsa.addRemoteContact(accountId, "Bob", "TsaTwo", "2222222", TestSyncAdapter::ExplicitlyModifiable);
     tsa.addRemoteContact(accountId, "Mark", "TsaThree", "3333333", TestSyncAdapter::ExplicitlyNonModifiable);
@@ -6744,6 +6744,7 @@ void tst_Aggregation::testSyncAdapter()
     QVERIFY(m_cm->removeContact(tsaFiveAgg.id()));
     QVERIFY(m_cm->removeContact(tsaSixAgg.id()));
     QCOMPARE(m_cm->contactIds(allSyncTargets).size(), originalIds.size());
+    tsa.removeAllContacts();
 }
 
 QTEST_MAIN(tst_Aggregation)
