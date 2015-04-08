@@ -59,8 +59,3 @@ make %{?_smp_mflags}
 rm -rf %{buildroot}
 %qmake5_install
 
-%post tests
-for n in tst_aggregation tst_qcontactmanager ; do
-    pathname=/opt/tests/qtcontacts-sqlite-qt5/$n
-    chgrp privileged $pathname && chmod g+s $pathname
-done
