@@ -6745,6 +6745,61 @@ void tst_Aggregation::testSyncAdapter()
     QVERIFY(m_cm->removeContact(tsaSixAgg.id()));
     QCOMPARE(m_cm->contactIds(allSyncTargets).size(), originalIds.size());
     tsa.removeAllContacts();
+
+    // the following test ensures that "remote duplicate removal" works correctly.
+    // - have multiple duplicated contacts server-side
+    // - sync them down
+    // - remove all but one duplicate server-side
+    // - sync the changes (removals)
+    // - ensure that the removals are applied correctly device-side.
+    tsa.addRemoteDuplicates(accountId, "John", "Duplicate", "1234321");
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 15);
+    allContacts = m_cm->contacts(allSyncTargets);
+    int syncTargetConstituentsCount = 0, aggCount = 0;
+    QContact tsaSevenAgg;
+    for (int i = allContacts.size() - 1; i >= 0; --i) {
+        const QContact &c(allContacts[i]);
+        if (originalIds.contains(c.id())) {
+            allContacts.removeAt(i);
+        } else {
+            int tempAggCount = c.relatedContacts(QStringLiteral("Aggregates"), QContactRelationship::Second).size();
+            if (tempAggCount > 0) {
+                aggCount = tempAggCount;
+                tsaSevenAgg = c;
+            } else {
+                syncTargetConstituentsCount += 1;
+            }
+        }
+    }
+    QVERIFY(tsaSevenAgg.id() != QContactId());
+    QCOMPARE(aggCount, 3); // the aggregate should aggregate the 3 duplicates
+    QCOMPARE(syncTargetConstituentsCount, 3); // there should be 3 duplicates
+    tsa.mergeRemoteDuplicates(accountId);
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 16);
+    allContacts = m_cm->contacts(allSyncTargets);
+    syncTargetConstituentsCount = 0; aggCount = 0;
+    for (int i = allContacts.size() - 1; i >= 0; --i) {
+        const QContact &c(allContacts[i]);
+        if (originalIds.contains(c.id())) {
+            allContacts.removeAt(i);
+        } else {
+            int tempAggCount = c.relatedContacts(QStringLiteral("Aggregates"), QContactRelationship::Second).size();
+            if (tempAggCount > 0) {
+                tsaSevenAgg = c;
+                aggCount = tempAggCount;
+            } else {
+                syncTargetConstituentsCount += 1;
+            }
+        }
+    }
+    QCOMPARE(aggCount, 1); // now there should be just one sync target constituent.
+    QCOMPARE(syncTargetConstituentsCount, 1);
+    // clean up.
+    QVERIFY(m_cm->removeContact(tsaSevenAgg.id()));
+    QCOMPARE(m_cm->contactIds(allSyncTargets).size(), originalIds.size());
+    tsa.removeAllContacts();
 }
 
 QTEST_MAIN(tst_Aggregation)

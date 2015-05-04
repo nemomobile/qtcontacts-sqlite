@@ -116,6 +116,7 @@ namespace QtContactsSqliteExtensions {
             QList<QContactId> m_exportedIds;
             QList<QContact> m_prevRemote;
             QList<QContact> m_mutatedPrevRemote;
+            QList<QContactId> m_remotelyDeletedThisSync;             // this one is ephemeral
             QMap<QContactId, QContact> m_possiblyUploadedAdditions;  // this one is stored OOB
             QMap<QContactId, QContact> m_reportedUploadedAdditions;  // this one is ephemeral
             QMap<QString, QContact> m_definitelyDownloadedAdditions; // this one is stored OOB. Guid key.
@@ -629,6 +630,7 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapterPrivate::createUpdateL
         } else {
             QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("contact:" << prevContact.detail<QContactGuid>().guid() << "marked as deleted remotely, found at index" << prevIndex);
             deletePositions.append(prevIndex);
+            syncState.m_remotelyDeletedThisSync.append(id);
         }
     }
 
@@ -661,7 +663,7 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapterPrivate::createUpdateL
                 additionPositions.append(i);
             }
         } else {
-                QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("contact:" << prevContact.detail<QContactGuid>().guid() << "was modified remotely, found at index" << prevIndex);
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("contact:" << prevContact.detail<QContactGuid>().guid() << "was modified remotely, found at index" << prevIndex);
             modificationPositions.append(qMakePair(prevIndex, i));
         }
     }
@@ -1261,8 +1263,16 @@ bool TwoWayContactSyncAdapter::determineLocalChanges(QDateTime *localSince,
                 }
 
                 if (!foundToReplace) {
-                    // we shouldn't treat this as a local addition, this is always a bug.
-                    qWarning() << Q_FUNC_INFO << "FIXME: local modification reported for non-upsynced local contact:" << lid;
+                    if (syncState.m_remotelyDeletedThisSync.contains(lid)) {
+                        // local modification reported for remotely deleted contact.
+                        // we shouldn't get here, since the storeRemoteChanges() function should result in
+                        // the contact being removed from the local database, but if we do, don't upsync
+                        // the spurious modification.
+                        qWarning() << Q_FUNC_INFO << "ignoring local modification reported for remotely deleted contact:" << lid;
+                    } else {
+                        // we shouldn't treat this as a local addition, this is always a bug.
+                        qWarning() << Q_FUNC_INFO << "FIXME: local modification reported for non-upsynced local contact:" << lid;
+                    }
                 }
             }
         }
