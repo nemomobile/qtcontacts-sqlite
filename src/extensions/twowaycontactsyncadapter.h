@@ -67,14 +67,16 @@ public:
                                     QList<QContact> *addModRemote,
                                     const QString &accountId,
                                     bool needToApplyDelta = true,
-                                    const QSet<QContactDetail::DetailType> &ignorableDetailTypes = QSet<QContactDetail::DetailType>());
+                                    const QSet<QContactDetail::DetailType> &ignorableDetailTypes = QSet<QContactDetail::DetailType>(),
+                                    const QHash<QContactDetail::DetailType, QSet<int> > &ignorableDetailFields = QHash<QContactDetail::DetailType, QSet<int> >());
     // step five: determine which contact changes occurred locally.
     virtual bool determineLocalChanges(QDateTime *localSince,
                                        QList<QContact> *locallyAdded,
                                        QList<QContact> *locallyModified,
                                        QList<QContact> *locallyDeleted,
                                        const QString &accountId,
-                                       const QSet<QContactDetail::DetailType> &ignorableDetailTypes = QSet<QContactDetail::DetailType>());
+                                       const QSet<QContactDetail::DetailType> &ignorableDetailTypes = QSet<QContactDetail::DetailType>(),
+                                       const QHash<QContactDetail::DetailType, QSet<int> > &ignorableDetailFields = QHash<QContactDetail::DetailType, QSet<int> >());
     // step six: store those changes to the remote server
     //   this is asynchronous and implementation-specific.
     virtual void upsyncLocalChanges(const QDateTime &localSince,

@@ -52,10 +52,20 @@
         }                                                                \
     } while (0)
 
-#define QTCONTACTS_SQLITE_TWCSA_DEBUG_CONTACT(contact)                   \
+#define QTCONTACTS_SQLITE_TWCSA_DEBUG_CONTACT_DELTA(contact1, contact2, ignorableDetails, ignorableFields) \
     do {                                                                 \
         if (Q_UNLIKELY(qtcontacts_sqlite_twcsa_debug_trace_enabled())) { \
-            dumpContact(contact);                                        \
+            (void)exactContactMatchExistsInList(                         \
+                    contact1, QList<QContact>() << contact2,             \
+                    ignorableDetails, ignorableFields,                   \
+                    true); /* print differences */                       \
+        }                                                                \
+    } while (0)
+
+#define QTCONTACTS_SQLITE_TWCSA_DEBUG_CONTACT(contact, ignorableDetails, ignorableFields) \
+    do {                                                                 \
+        if (Q_UNLIKELY(qtcontacts_sqlite_twcsa_debug_trace_enabled())) { \
+            dumpContact(contact, ignorableDetails, ignorableFields);     \
         }                                                                \
     } while (0)
 
@@ -145,7 +155,8 @@ namespace QtContactsSqliteExtensions {
                                                            QList<QContact> *remoteAddedModified,
                                                            QList<QPair<int, int> > *additionIndices,
                                                            bool needToApplyDelta,
-                                                           const QSet<QContactDetail::DetailType> &ignorableDetailTypes);
+                                                           const QSet<QContactDetail::DetailType> &ignorableDetailTypes,
+                                                           const QHash<QContactDetail::DetailType, QSet<int> > &ignorableDetailFields);
         QContact applyRemoteDeltaToPrev(const QContact &prev, const QContact &curr);
         QList<QContactDetail> improveDelta(QList<QContactDetail> *removals, QList<QContactDetail> *additions);
 
@@ -215,14 +226,70 @@ const QSet<QContactDetail::DetailType> &defaultIgnorableDetailTypes()
     return types;
 }
 
-void removeIgnorableDetailsFromList(QList<QContactDetail> *dets, const QSet<QContactDetail::DetailType> &ignorableDetailTypes)
+QHash<QContactDetail::DetailType, QSet<int> > getDefaultIgnorableDetailFields()
+{
+    QHash<QContactDetail::DetailType, QSet<int> > rv;
+    // Currently, no fields are ignorable by default other than PhoneNumber::NormalizedNumber
+    // but that field is hardcoded to be removed, so doesn't appear here.
+    // Clients can add their own ignorable fields depending on the semantics of their
+    // sync service (eg, might not be able to handle some subtypes or contexts, etc)
+    return rv;
+}
+
+const QHash<QContactDetail::DetailType, QSet<int> > &defaultIgnorableDetailFields()
+{
+    static QHash<QContactDetail::DetailType, QSet<int> > fields(getDefaultIgnorableDetailFields());
+    return fields;
+}
+
+void removeIgnorableDetailsFromList(QList<QContactDetail> *dets,
+                                    const QSet<QContactDetail::DetailType> &ignorableDetailTypes,
+                                    const QHash<QContactDetail::DetailType, QSet<int> > &ignorableDetailFields)
 {
     // ignore differences in certain detail types
     for (int i = dets->size() - 1; i >= 0; --i) {
         const QContactDetail::DetailType type(dets->at(i).type());
         if (ignorableDetailTypes.contains(type)) {
-            dets->removeAt(i);      // we can ignore this detail
+            dets->removeAt(i); // we can ignore this detail altogether
+        } else {
+            // remove any fields specified as ignorable by the adapter
+            // (eg, if that adapter cannot sync certain fields of some detail types).
+            QContactDetail modD = dets->at(i);
+            if (ignorableDetailFields.contains(type)) {
+                Q_FOREACH (int ignorableField, ignorableDetailFields.value(type)) {
+                    modD.removeValue(ignorableField);
+                }
+            }
+            // remove any fields which should never be synced by any adapter.
+            modD.removeValue(QContactDetail__FieldProvenance);
+            modD.removeValue(QContactDetail__FieldModifiable);
+            if (type == QContactDetail::TypePhoneNumber) {
+                modD.removeValue(QContactPhoneNumber__FieldNormalizedNumber);
+            }
+            // replace detail in list.
+            dets->replace(i, modD);
         }
+    }
+}
+
+void dumpContactDetail(const QContactDetail &d)
+{
+    qWarning() << "++ ---------" << d.type();
+    QMap<int, QVariant> values = d.values();
+    foreach (int key, values.keys()) {
+        qWarning() << "    " << key << "=" << values.value(key);
+    }
+}
+
+void dumpContact(const QContact &c,
+                 const QSet<QContactDetail::DetailType> &ignorableDetailTypes = defaultIgnorableDetailTypes(),
+                 const QHash<QContactDetail::DetailType, QSet<int> > &ignorableDetailFields = defaultIgnorableDetailFields())
+{
+    qWarning() << "++++ ---- Contact:" << c.id();
+    QList<QContactDetail> cdets = c.details();
+    removeIgnorableDetailsFromList(&cdets, ignorableDetailTypes, ignorableDetailFields);
+    foreach (const QContactDetail &det, cdets) {
+        dumpContactDetail(det);
     }
 }
 
@@ -281,27 +348,15 @@ int scoreForDetailPair(const QContactDetail &removal, const QContactDetail &addi
     return score;
 }
 
-bool detailPairExactlyMatches(const QContactDetail &a, const QContactDetail &b)
+bool detailPairExactlyMatches(const QContactDetail &a, const QContactDetail &b, bool printDifferences = false)
 {
     if (a.type() != b.type()) {
         return false;
     }
 
-    // some fields should not be compared.
-    QMap<int, QVariant> avalues = a.values();
-    avalues.remove(QContactDetail__FieldProvenance);
-    avalues.remove(QContactDetail__FieldModifiable);
-
-    QMap<int, QVariant> bvalues = b.values();
-    bvalues.remove(QContactDetail__FieldProvenance);
-    bvalues.remove(QContactDetail__FieldModifiable);
-
-    if (a.type() == QContactDetail::TypePhoneNumber) {
-        avalues.remove(QContactPhoneNumber__FieldNormalizedNumber);
-        bvalues.remove(QContactPhoneNumber__FieldNormalizedNumber);
-    }
-
     // now ensure that all values match
+    QMap<int, QVariant> avalues = a.values();
+    QMap<int, QVariant> bvalues = b.values();
     foreach (int akey, avalues.keys()) {
         QVariant avalue = avalues.value(akey);
         if (!bvalues.contains(akey)) {
@@ -314,11 +369,17 @@ bool detailPairExactlyMatches(const QContactDetail &a, const QContactDetail &b)
                 // this is ok.
             } else {
                 // a has a real value which b does not have.
+                if (Q_UNLIKELY(printDifferences)) {
+                    QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("detail A of type" << a.type() << "has value which B does not have:" << akey << "=" << avalue);
+                }
                 return false;
             }
         } else {
             // b contains the same key, but do the values match?
             if (scoreForValuePair(avalue, bvalues.value(akey)) != 0) {
+                if (Q_UNLIKELY(printDifferences)) {
+                    QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("detail A of type" << a.type() << "has value which differs from B:" << akey << "=" << avalue << "!=" << bvalues.value(akey));
+                }
                 return false;
             }
 
@@ -336,6 +397,9 @@ bool detailPairExactlyMatches(const QContactDetail &a, const QContactDetail &b)
             // this is ok.
         } else {
             // b has a real value which a does not have.
+            if (Q_UNLIKELY(printDifferences)) {
+                QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("detail B of type" << b.type() << "has value which A does not have:" << bkey << "=" << bvalue);
+            }
             return false;
         }
     }
@@ -354,39 +418,90 @@ int exactDetailMatchExistsInList(const QContactDetail &det, const QList<QContact
     return -1;
 }
 
-int exactContactMatchExistsInList(const QContact &c, const QList<QContact> &list, const QSet<QContactDetail::DetailType> &ignorableDetailTypes)
+bool contactDetailsMatchExactly(const QList<QContactDetail> &aDetails, const QList<QContactDetail> &bDetails, bool printDifferences = false)
 {
-    const QSet<QContactDetail::DetailType> &ignoreDetails(!ignorableDetailTypes.isEmpty() ? ignorableDetailTypes : defaultIgnorableDetailTypes());
-
-    QList<QContactDetail> cdets = c.details();
-    removeIgnorableDetailsFromList(&cdets, ignoreDetails);
-
-    for (int i = 0; i < list.size(); ++i) {
-        // for it to be an exact match:
-        // a) every detail in cdets must exist in ldets
-        // b) no extra details can exist in ldets
-        QList<QContactDetail> ldets = list[i].details();
-        removeIgnorableDetailsFromList(&ldets, ignoreDetails);
-        if (ldets.size() != cdets.size()) {
-            continue;
+    // for it to be an exact match:
+    // a) every detail in aDetails must exist in bDetails
+    // b) no extra details can exist in bDetails
+    if (aDetails.size() != bDetails.size()) {
+        if (Q_UNLIKELY(printDifferences)) {
+            // detail count differs, and continue the analysis to find out precisely what the differences are.
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("A has more details than B:" << aDetails.size() << ">" << bDetails.size());
+        } else {
+            // detail count differs, return immediately.
+            return false;
         }
+    }
 
-        bool everythingMatches = true;
-        foreach (const QContactDetail &d, cdets) {
-            int exactMatchIndex = exactDetailMatchExistsInList(d, ldets);
-            if (exactMatchIndex == -1) {
-                // no exact match for this detail.
-                everythingMatches = false;
-                break;
+    QList<QContactDetail> nonMatchedADetails;
+    QList<QContactDetail> nonMatchedBDetails = bDetails;
+    bool allADetailsHaveMatches = true;
+    foreach (const QContactDetail &aDetail, aDetails) {
+        int exactMatchIndex = exactDetailMatchExistsInList(aDetail, nonMatchedBDetails);
+        if (exactMatchIndex == -1) {
+            // no exact match for this detail.
+            allADetailsHaveMatches = false;
+            if (Q_UNLIKELY(printDifferences)) {
+                // we only record the difference if we're printing them.
+                nonMatchedADetails.append(aDetail);
             } else {
-                // found a match for this detail.
-                // remove it from ldets so that duplicates in cdets
-                // don't mess up our detection.
-                ldets.removeAt(exactMatchIndex);
+                // we only break if we're not printing all differences.
+                break;
+            }
+        } else {
+            // found a match for this detail.
+            // remove it from ldets so that duplicates in cdets
+            // don't mess up our detection.
+            nonMatchedBDetails.removeAt(exactMatchIndex);
+        }
+    }
+
+    if (allADetailsHaveMatches && nonMatchedBDetails.size() == 0) {
+        return true; // exact match
+    }
+
+    if (Q_UNLIKELY(printDifferences)) {
+        Q_FOREACH (const QContactDetail &ad, nonMatchedADetails) {
+            bool foundMatch = false;
+            for (int i = 0; i < nonMatchedBDetails.size(); ++i) {
+                const QContactDetail &bd = nonMatchedBDetails[i];
+                if (ad.type() == bd.type()) { // most likely a modification.
+                    foundMatch = true;
+                    QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("Detail modified from A to B:");
+                    detailPairExactlyMatches(ad, bd, printDifferences);
+                    nonMatchedBDetails.removeAt(i);
+                    break;
+                }
+            }
+            if (!foundMatch) {
+                QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("New detail exists in contact A:");
+                QTCONTACTS_SQLITE_TWCSA_DEBUG_DETAIL(ad);
             }
         }
+        Q_FOREACH (const QContactDetail &bd, nonMatchedBDetails) {
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("New detail exists in contact B:");
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_DETAIL(bd);
+        }
+    }
 
-        if (everythingMatches && ldets.size() == 0) {
+    return false;
+}
+
+int exactContactMatchExistsInList(const QContact &aContact,
+                                  const QList<QContact> &list,
+                                  const QSet<QContactDetail::DetailType> &ignorableDetailTypes,
+                                  const QHash<QContactDetail::DetailType, QSet<int> > &ignorableDetailFields,
+                                  bool printDifferences = false)
+{
+    const QSet<QContactDetail::DetailType> &ignoreDetails(!ignorableDetailTypes.isEmpty() ? ignorableDetailTypes : defaultIgnorableDetailTypes());
+    const QHash<QContactDetail::DetailType, QSet<int> > &ignoreFields(!ignorableDetailFields.isEmpty() ? ignorableDetailFields : defaultIgnorableDetailFields());
+
+    QList<QContactDetail> aDetails = aContact.details();
+    removeIgnorableDetailsFromList(&aDetails, ignoreDetails, ignoreFields);
+    for (int i = 0; i < list.size(); ++i) {
+        QList<QContactDetail> bDetails = list[i].details();
+        removeIgnorableDetailsFromList(&bDetails, ignoreDetails, ignoreFields);
+        if (contactDetailsMatchExactly(aDetails, bDetails, printDifferences)) {
             return i; // exact match at this index.
         }
     }
@@ -442,25 +557,6 @@ QDateTime maxModificationTimestamp(const QList<QContact> &contacts)
     }
 
     return since;
-}
-
-void dumpContactDetail(const QContactDetail &d)
-{
-    qWarning() << "++ ---------" << d.type();
-    QMap<int, QVariant> values = d.values();
-    foreach (int key, values.keys()) {
-        qWarning() << "    " << key << "=" << values.value(key);
-    }
-}
-
-void dumpContact(const QContact &c)
-{
-    qWarning() << "++++ ---- Contact:" << c.id();
-    QList<QContactDetail> cdets = c.details();
-    removeIgnorableDetailsFromList(&cdets, defaultIgnorableDetailTypes());
-    foreach (const QContactDetail &det, cdets) {
-        dumpContactDetail(det);
-    }
 }
 
 }
@@ -578,7 +674,8 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapterPrivate::createUpdateL
                                                                                     QList<QContact> *remoteAddedModified,
                                                                                     QList<QPair<int, int> > *additionIndices,
                                                                                     bool needToApplyDelta,
-                                                                                    const QSet<QContactDetail::DetailType> &ignorableDetailTypes)
+                                                                                    const QSet<QContactDetail::DetailType> &ignorableDetailTypes,
+                                                                                    const QHash<QContactDetail::DetailType, QSet<int> > &ignorableDetailFields)
 {
     // <PREV_REMOTE, UPDATED_REMOTE> pairs.
     QList<QPair<QContact, QContact> > retn;
@@ -693,22 +790,24 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapterPrivate::createUpdateL
         const QContact &newContact(remoteAddedModified->at((*it).second));
 
         QContact updated = needToApplyDelta ? applyRemoteDeltaToPrev(prevContact, newContact) : newContact;
-        if (exactContactMatchExistsInList(prevContact, QList<QContact>() << updated, ignorableDetailTypes) == -1) {
+        if (exactContactMatchExistsInList(prevContact, QList<QContact>() << updated, ignorableDetailTypes, ignorableDetailFields) == -1) {
             // the change is substantial (ie, wasn't just an eTag update, for example)
             prevRemoteModificationIndexes.insert((*it).first, updated);
             // modifications: <PREV_REMOTE, UPDATED_REMOTE>
             retn.append(qMakePair(prevContact, updated));
             QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("substantial change detected for contact" << prevContact.detail<QContactGuid>().guid());
-            QTCONTACTS_SQLITE_TWCSA_DEBUG_CONTACT(prevContact);
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_CONTACT(prevContact, ignorableDetailTypes, ignorableDetailFields);
             QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("!=");
-            QTCONTACTS_SQLITE_TWCSA_DEBUG_CONTACT(newContact);
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_CONTACT(newContact, ignorableDetailTypes, ignorableDetailFields);
             QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("with delta applied, the updated contact will become:");
-            QTCONTACTS_SQLITE_TWCSA_DEBUG_CONTACT(updated);
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_CONTACT(updated, ignorableDetailTypes, ignorableDetailFields);
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("the specific differences are:");
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_CONTACT_DELTA(prevContact, newContact, ignorableDetailTypes, ignorableDetailFields);
         } else {
             QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("ignoring insubstantial change to contact" << prevContact.detail<QContactGuid>().guid());
-            QTCONTACTS_SQLITE_TWCSA_DEBUG_CONTACT(prevContact);
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_CONTACT(prevContact, ignorableDetailTypes, ignorableDetailFields);
             QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("==");
-            QTCONTACTS_SQLITE_TWCSA_DEBUG_CONTACT(newContact);
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_CONTACT(newContact, ignorableDetailTypes, ignorableDetailFields);
         }
     }
 
@@ -956,7 +1055,8 @@ bool TwoWayContactSyncAdapter::storeRemoteChanges(const QList<QContact> &deleted
                                                   QList<QContact> *addModRemote,
                                                   const QString &accountId,
                                                   bool needToApplyDelta,
-                                                  const QSet<QContactDetail::DetailType> &ignorableDetailTypes)
+                                                  const QSet<QContactDetail::DetailType> &ignorableDetailTypes,
+                                                  const QHash<QContactDetail::DetailType, QSet<int> > &ignorableDetailFields)
 {
     TwoWayContactSyncAdapterPrivate::StateData &syncState(d->m_stateData[accountId]);
 
@@ -986,7 +1086,8 @@ bool TwoWayContactSyncAdapter::storeRemoteChanges(const QList<QContact> &deleted
                                                                                addModRemote,
                                                                                &additionIndices,
                                                                                needToApplyDelta,
-                                                                               ignorableDetailTypes);
+                                                                               ignorableDetailTypes,
+                                                                               ignorableDetailFields);
 
     // store them to qtcontacts-sqlite.
     // Note that because of some magic in the mutation code in createUpdateList(), the
@@ -1056,7 +1157,8 @@ bool TwoWayContactSyncAdapter::determineLocalChanges(QDateTime *localSince,
                                                      QList<QContact> *locallyModified,
                                                      QList<QContact> *locallyDeleted,
                                                      const QString &accountId,
-                                                     const QSet<QContactDetail::DetailType> &ignorableDetailTypes)
+                                                     const QSet<QContactDetail::DetailType> &ignorableDetailTypes,
+                                                     const QHash<QContactDetail::DetailType, QSet<int> > &ignorableDetailFields)
 {
     TwoWayContactSyncAdapterPrivate::StateData &syncState(d->m_stateData[accountId]);
 
@@ -1169,14 +1271,14 @@ bool TwoWayContactSyncAdapter::determineLocalChanges(QDateTime *localSince,
                 // check this contact to see whether it already represents one from the changes lists.
                 QContact remoteContact = syncState.m_mutatedPrevRemote.at(i);
                 if (locallyAdded) {
-                    int matchIndex = exactContactMatchExistsInList(remoteContact, *locallyAdded, ignorableDetailTypes);
+                    int matchIndex = exactContactMatchExistsInList(remoteContact, *locallyAdded, ignorableDetailTypes, ignorableDetailFields);
                     if (matchIndex != -1) {
                         remoteContact = locallyAdded->takeAt(matchIndex);
                         syncState.m_mutatedPrevRemote.replace(i, remoteContact);
                     }
                 }
                 if (locallyModified) {
-                    int matchIndex = exactContactMatchExistsInList(remoteContact, *locallyModified, ignorableDetailTypes);
+                    int matchIndex = exactContactMatchExistsInList(remoteContact, *locallyModified, ignorableDetailTypes, ignorableDetailFields);
                     if (matchIndex != -1) {
                         remoteContact = locallyModified->takeAt(matchIndex);
                         syncState.m_mutatedPrevRemote.replace(i, remoteContact);
