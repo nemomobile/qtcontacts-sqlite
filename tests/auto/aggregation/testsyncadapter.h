@@ -65,7 +65,8 @@ public:
     void changeRemoteContactPhone(const QString &accountId, const QString &fname, const QString &lname, const QString &modPhone);
     void changeRemoteContactEmail(const QString &accountId, const QString &fname, const QString &lname, const QString &modEmail);
     void changeRemoteContactName(const QString &accountId, const QString &fname, const QString &lname, const QString &modfname, const QString &modlname);
-
+    void addRemoteDuplicates(const QString &accountId, const QString &fname, const QString &lname, const QString &phone);
+    void mergeRemoteDuplicates(const QString &accountId);
 
     // triggering sync and checking state.
     void performTwoWaySync(const QString &accountId);
@@ -107,6 +108,7 @@ private:
     mutable QMap<QString, QSet<QString> > m_remoteAddMods; // used to lookup into m_remoteServerContacts
     mutable QMap<QString, QMap<QString, QContact> > m_remoteServerContacts;
     mutable QMap<QString, QSet<QContactId> > m_modifiedIds;
+    mutable QMap<QString, QMultiMap<QString, QString> > m_remoteServerDuplicates; // accountId to originalGuid to duplicateGuids.
 };
 
 #endif

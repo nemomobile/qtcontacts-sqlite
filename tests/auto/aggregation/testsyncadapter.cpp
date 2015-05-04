@@ -73,6 +73,23 @@ void TestSyncAdapter::cleanUp(const QString &accountId)
     purgeSyncStateData(accountId, true);
 }
 
+void TestSyncAdapter::addRemoteDuplicates(const QString &accountId, const QString &fname, const QString &lname, const QString &phone)
+{
+    addRemoteContact(accountId, fname, lname, phone);
+    addRemoteContact(accountId, fname, lname, phone);
+    addRemoteContact(accountId, fname, lname, phone);
+}
+
+void TestSyncAdapter::mergeRemoteDuplicates(const QString &accountId)
+{
+    Q_FOREACH (const QString &dupGuid, m_remoteServerDuplicates[accountId].values()) {
+        m_remoteAddMods[accountId].remove(dupGuid); // shouldn't be any here anyway.
+        m_remoteDeletions[accountId].append(m_remoteServerContacts[accountId][dupGuid]);
+        m_remoteServerContacts[accountId].remove(dupGuid);
+    }
+    m_remoteServerDuplicates[accountId].clear();
+}
+
 void TestSyncAdapter::addRemoteContact(const QString &accountId, const QString &fname, const QString &lname, const QString &phone, TestSyncAdapter::PhoneModifiability mod)
 {
     QContactName ncn;
@@ -92,8 +109,16 @@ void TestSyncAdapter::addRemoteContact(const QString &accountId, const QString &
     newContact.saveDetail(&ncp);
 
     const QString contactGuidStr(TSA_GUID_STRING(accountId, fname, lname));
-    m_remoteServerContacts[accountId].insert(contactGuidStr, newContact);
-    m_remoteAddMods[accountId].insert(contactGuidStr);
+    if (m_remoteServerContacts[accountId].contains(contactGuidStr)) {
+        // this is an intentional duplicate.  we have special handling for duplicates.
+        QString duplicateGuidString = contactGuidStr + ":" + QString::number(m_remoteServerDuplicates[accountId].values(contactGuidStr).size() + 1);
+        m_remoteServerDuplicates[accountId].insert(contactGuidStr, duplicateGuidString);
+        m_remoteServerContacts[accountId].insert(duplicateGuidString, newContact);
+        m_remoteAddMods[accountId].insert(duplicateGuidString);
+    } else {
+        m_remoteServerContacts[accountId].insert(contactGuidStr, newContact);
+        m_remoteAddMods[accountId].insert(contactGuidStr);
+    }
 }
 
 void TestSyncAdapter::removeRemoteContact(const QString &accountId, const QString &fname, const QString &lname)
@@ -237,7 +262,7 @@ void TestSyncAdapter::continueTwoWaySync()
         m_downsyncWasRequired[accountId] = true;
     }
 
-    // callStoreRemoteChanges anyway so that the state machine continues to work.
+    // call storeRemoteChanges anyway so that the state machine continues to work.
     // alternatively, we could set the state to StoredRemoteChanges manually, and skip
     // this call in the else block above, but we should test that it works properly anyway.
     QList<QContact> remoteAddMods;

@@ -4648,19 +4648,19 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
             }
         }
 
+        // even if we previously affected some constituent, we should remove that
+        // constituent if it is contained in the contactsToRemove list.
         QSet<quint32> modifiedContactsToRemove;
         QSet<quint32>::const_iterator rit = contactsToRemove.constBegin(), rend = contactsToRemove.constEnd();
         for ( ; rit != rend; ++rit) {
-            if (!affectedContactIds.contains(*rit)) {
-                const quint32 stId(stConstituents.value(*rit));
-                if (stId != 0) {
-                    // Remove the sync target consituent instead of the base constituent
-                    modifiedContactsToRemove.insert(stId);
-                    affectedContactIds.insert(stId);
-                } else {
-                    modifiedContactsToRemove.insert(*rit);
-                    affectedContactIds.insert(*rit);
-                }
+            const quint32 stId(stConstituents.value(*rit));
+            if (stId != 0) {
+                // Remove the sync target consituent instead of the base constituent
+                modifiedContactsToRemove.insert(stId);
+                affectedContactIds.insert(stId);
+            } else {
+                modifiedContactsToRemove.insert(*rit);
+                affectedContactIds.insert(*rit);
             }
         }
         contactsToRemove = modifiedContactsToRemove;
@@ -4708,6 +4708,9 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
                     if (cst != syncTarget) {
                         if (cst == localSyncTarget || cst == wasLocalSyncTarget) {
                             // We have tried to remove a local contact that has no incidental sync target constituent - ignore
+                            // TODO, shouldn't we also check "exportedIds"?
+                            QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Ignoring local contact removal without sync target constituent: %1")
+                                    .arg(contactId));
                         } else {
                             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Ignoring constituent removal for %1 with invalid sync target: %2")
                                     .arg(contactId).arg(cst));
