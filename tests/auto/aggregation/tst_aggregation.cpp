@@ -6592,7 +6592,7 @@ void tst_Aggregation::testSyncAdapter()
     QVERIFY(tsaFourAggId != QContactId());
     tsa.performTwoWaySync(accountId);
     QTRY_COMPARE(finishedSpy.count(), 7);
-    QVERIFY(tsa.downsyncWasRequired(accountId));
+    QVERIFY(!tsa.downsyncWasRequired(accountId)); // there were no remote changes
     QVERIFY(tsa.upsyncWasRequired(accountId));
     QVERIFY(haveExpectedContent(tsa.remoteContact(accountId, QStringLiteral("Jennifer"), QStringLiteral("TsaFour")),
                                 QString(), TestSyncAdapter::ImplicitlyModifiable, QStringLiteral("jennifer@tsafour.com")));
