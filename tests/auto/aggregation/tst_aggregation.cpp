@@ -6740,11 +6740,12 @@ void tst_Aggregation::testSyncAdapter()
     QCOMPARE(tsaSixStc.detail<QContactName>().firstName(), QStringLiteral("Jimmy"));
     QCOMPARE(tsaSixStc.detail<QContactName>().lastName(), QStringLiteral("TsaSix"));
     QCOMPARE(tsaSixStc.detail<QContactPhoneNumber>().number(), QStringLiteral("666666"));
-    // clean up.
+    // partial clean up, locally remove all contact aggregates from sync adapter.
     QVERIFY(m_cm->removeContact(tsaFiveAgg.id()));
     QVERIFY(m_cm->removeContact(tsaSixAgg.id()));
     QCOMPARE(m_cm->contactIds(allSyncTargets).size(), originalIds.size());
-    tsa.removeAllContacts();
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 15);
 
     // the following test ensures that "remote duplicate removal" works correctly.
     // - have multiple duplicated contacts server-side
@@ -6754,7 +6755,7 @@ void tst_Aggregation::testSyncAdapter()
     // - ensure that the removals are applied correctly device-side.
     tsa.addRemoteDuplicates(accountId, "John", "Duplicate", "1234321");
     tsa.performTwoWaySync(accountId);
-    QTRY_COMPARE(finishedSpy.count(), 15);
+    QTRY_COMPARE(finishedSpy.count(), 16);
     allContacts = m_cm->contacts(allSyncTargets);
     int syncTargetConstituentsCount = 0, aggCount = 0;
     QContact tsaSevenAgg;
@@ -6777,7 +6778,7 @@ void tst_Aggregation::testSyncAdapter()
     QCOMPARE(syncTargetConstituentsCount, 3); // there should be 3 duplicates
     tsa.mergeRemoteDuplicates(accountId);
     tsa.performTwoWaySync(accountId);
-    QTRY_COMPARE(finishedSpy.count(), 16);
+    QTRY_COMPARE(finishedSpy.count(), 17);
     allContacts = m_cm->contacts(allSyncTargets);
     syncTargetConstituentsCount = 0; aggCount = 0;
     for (int i = allContacts.size() - 1; i >= 0; --i) {
