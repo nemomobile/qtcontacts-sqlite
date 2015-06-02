@@ -725,7 +725,7 @@ QList<QPair<QContact, QContact> > TwoWayContactSyncAdapterPrivate::createUpdateL
                 QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("contact:" << pcGuid << "was never seen locally but reported as deleted remotely...");
             }
         } else {
-            QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("contact:" << prevContact.detail<QContactGuid>().guid() << "marked as deleted remotely, found at index" << prevIndex);
+            QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("contact:" << prevContact.detail<QContactGuid>().guid() << "with id" << id << "marked as deleted remotely, found at index" << prevIndex);
             deletePositions.append(prevIndex);
             syncState.m_remotelyDeletedThisSync.append(id);
         }

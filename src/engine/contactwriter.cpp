@@ -4607,7 +4607,6 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
             }
 
             m_database.clearTemporaryContactIdsTable(syncConstituentsTable);
-
             if (!m_database.createTemporaryContactIdsTable(syncConstituentsTable, ids)) {
                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error populating syncConstituents temporary table"));
                 return QContactManager::UnspecifiedError;
@@ -4631,19 +4630,50 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
                 query.reportError("Failed to fetch local constituent ids for sync update");
                 return QContactManager::UnspecifiedError;
             }
+
+            QSet<quint32> allStcIds;
+            QMultiHash<quint32, quint32> modifiedToStcId;
+            QHash<quint32, quint32> aggregateForStcId;
             while (query.next()) {
                 const quint32 stConstituentId = query.value<quint32>(0);
                 const quint32 modifiedConstituentId = query.value<quint32>(1);
                 const quint32 aggregateId = query.value<quint32>(2);
-
                 constituentAggregateIds.insert(modifiedConstituentId, aggregateId);
+                if (stConstituentId) {
+                    modifiedToStcId.insertMulti(modifiedConstituentId, stConstituentId);
+                    allStcIds.insert(stConstituentId);
+                    aggregateForStcId.insert(stConstituentId, aggregateId);
+                }
+            }
 
-                if (stConstituentId && (stConstituentId != modifiedConstituentId)) {
-                    // We may need to modify the sync target constituent also
-                    stConstituents.insert(modifiedConstituentId, stConstituentId);
-                    affectedContactIds.insert(stConstituentId);
-
-                    constituentAggregateIds.insert(stConstituentId, aggregateId);
+            Q_FOREACH (quint32 modifiedId, modifiedToStcId.keys()) {
+                if (allStcIds.contains(modifiedId)) {
+                    // this modified constituent is also a sync target constituent.
+                    // we don't need to create a mapping.
+                } else {
+                    // this modified constituent is NOT a sync target constituent.
+                    // find an appropriate sync target constituent for this modified contact.
+                    QList<quint32> stcIds = modifiedToStcId.values(modifiedId);
+                    quint32 mappedStc = 0;
+                    Q_FOREACH (quint32 stcId, stcIds) {
+                        if (modifiedToStcId.contains(stcId)) {
+                            // this stc was also modified.  Fall back to this if no others exist.
+                            mappedStc = stcId;
+                        } else {
+                            // unmodified stc.  Use this if possible, since other modifications
+                            // might involve removal (so mapped changes would in that case fail).
+                            mappedStc = stcId;
+                            break;
+                        }
+                    }
+                    // use the found sync target contact in our mapping.
+                    if (!mappedStc) {
+                        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("No sync target constituent found for modified contact:") << modifiedId);
+                    } else {
+                        stConstituents.insert(modifiedId, mappedStc);
+                        affectedContactIds.insert(mappedStc);
+                        constituentAggregateIds.insert(mappedStc, aggregateForStcId[mappedStc]);
+                    }
                 }
             }
         }
@@ -5091,7 +5121,6 @@ QContactManager::Error ContactWriter::syncUpdate(const QString &syncTarget,
             // add those ids to the change signal accumulator
             foreach (const QContactId &removedAggId, removedAggregateIds) {
                 m_removedIds.insert(removedAggId);
-
                 const quint32 aggId(ContactId::databaseId(removedAggId));
                 aggregatesOfRemoved.removeAll(aggId);
             }
