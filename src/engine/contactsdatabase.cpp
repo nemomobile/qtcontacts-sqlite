@@ -98,7 +98,8 @@ static const char *createAnniversariesTable =
         "\n contactId INTEGER KEY,"
         "\n originalDateTime DATETIME,"
         "\n calendarId TEXT,"
-        "\n subType TEXT);";
+        "\n subType TEXT,"
+        "\n event TEXT);";
 
 static const char *createAvatarsTable =
         "\n CREATE TABLE Avatars ("
@@ -150,7 +151,9 @@ static const char *createGlobalPresencesTable =
         "\n presenceState INTEGER,"
         "\n timestamp DATETIME,"
         "\n nickname TEXT,"
-        "\n customMessage TEXT);";
+        "\n customMessage TEXT,"
+        "\n presenceStateText TEXT,"
+        "\n presenceStateImageUrl TEXT);";
 
 static const char *createGuidsTable =
         "\n CREATE TABLE Guids ("
@@ -202,7 +205,8 @@ static const char *createOrganizationsTable =
         "\n title TEXT,"
         "\n location TEXT,"
         "\n department TEXT,"
-        "\n logoUrl TEXT);";
+        "\n logoUrl TEXT,"
+        "\n assistantName TEXT);";
 
 static const char *createPhoneNumbersTable =
         "\n CREATE TABLE PhoneNumbers ("
@@ -219,14 +223,17 @@ static const char *createPresencesTable =
         "\n presenceState INTEGER,"
         "\n timestamp DATETIME,"
         "\n nickname TEXT,"
-        "\n customMessage TEXT);";
+        "\n customMessage TEXT,"
+        "\n presenceStateText TEXT,"
+        "\n presenceStateImageUrl TEXT);";
 
 static const char *createRingtonesTable =
         "\n CREATE TABLE Ringtones ("
         "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
         "\n contactId INTEGER KEY,"
         "\n audioRingtone TEXT,"
-        "\n videoRingtone TEXT);";
+        "\n videoRingtone TEXT,"
+        "\n vibrationRingtone TEXT);";
 
 static const char *createTagsTable =
         "\n CREATE TABLE Tags ("
@@ -1260,6 +1267,17 @@ static const char *upgradeVersion14[] = {
     "PRAGMA user_version=15",
     0 // NULL-terminated
 };
+static const char *upgradeVersion15[] = {
+    "ALTER TABLE Anniversaries ADD COLUMN event TEXT",
+    "ALTER TABLE GlobalPresences ADD COLUMN presenceStateText TEXT",
+    "ALTER TABLE GlobalPresences ADD COLUMN presenceStateImageUrl TEXT",
+    "ALTER TABLE Organizations ADD COLUMN assistantName TEXT",
+    "ALTER TABLE Presences ADD COLUMN presenceStateText TEXT",
+    "ALTER TABLE Presences ADD COLUMN presenceStateImageUrl TEXT",
+    "ALTER TABLE Ringtones ADD COLUMN vibrationRingtone TEXT",
+    "PRAGMA user_version=16",
+    0 // NULL-terminated
+};
 
 typedef bool (*UpgradeFunction)(QSqlDatabase &database);
 
@@ -1340,9 +1358,10 @@ static UpgradeOperation upgradeVersions[] = {
     { 0,                        upgradeVersion12 },
     { 0,                        upgradeVersion13 },
     { 0,                        upgradeVersion14 },
+    { 0,                        upgradeVersion15 },
 };
 
-static const int currentSchemaVersion = 15;
+static const int currentSchemaVersion = 16;
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {

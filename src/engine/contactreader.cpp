@@ -222,7 +222,8 @@ static const FieldInfo anniversaryFields[] =
 {
     { QContactAnniversary::FieldOriginalDate, "originalDateTime", DateField },
     { QContactAnniversary::FieldCalendarId, "calendarId", StringField },
-    { QContactAnniversary::FieldSubType, "subType", StringField }
+    { QContactAnniversary::FieldSubType, "subType", StringField },
+    { QContactAnniversary::FieldEvent, "event", StringField }
 };
 
 static void setValues(QContactAnniversary *detail, QSqlQuery *query, const int offset)
@@ -232,6 +233,7 @@ static void setValues(QContactAnniversary *detail, QSqlQuery *query, const int o
     setValue(detail, T::FieldOriginalDate, dateValue(query->value(offset + 0)));
     setValue(detail, T::FieldCalendarId  , query->value(offset + 1));
     setValue(detail, T::FieldSubType     , QVariant::fromValue<int>(Anniversary::subType(query->value(offset + 2).toString())));
+    setValue(detail, T::FieldEvent       , query->value(offset + 3));
 }
 
 static const FieldInfo avatarFields[] =
@@ -413,7 +415,8 @@ static const FieldInfo organizationFields[] =
     { QContactOrganization::FieldTitle, "title", LocalizedField },
     { QContactOrganization::FieldLocation, "location", LocalizedField },
     { QContactOrganization::FieldDepartment, "department", LocalizedField },
-    { QContactOrganization::FieldLogoUrl, "logoUrl", StringField }
+    { QContactOrganization::FieldLogoUrl, "logoUrl", StringField },
+    { QContactOrganization::FieldAssistantName, "assistantName", StringField }
 };
 
 static void setValues(QContactOrganization *detail, QSqlQuery *query, const int offset)
@@ -426,6 +429,7 @@ static void setValues(QContactOrganization *detail, QSqlQuery *query, const int 
     setValue(detail, T::FieldLocation  , query->value(offset + 3));
     setValue(detail, T::FieldDepartment, stringListValue(query->value(offset + 4)));
     setValue(detail, T::FieldLogoUrl   , urlValue(query->value(offset + 5)));
+    setValue(detail, T::FieldAssistantName, query->value(offset + 6));
 }
 
 static const FieldInfo phoneNumberFields[] =
@@ -452,7 +456,9 @@ static const FieldInfo presenceFields[] =
     { QContactPresence::FieldPresenceState, "presenceState", IntegerField },
     { QContactPresence::FieldTimestamp, "timestamp", DateField },
     { QContactPresence::FieldNickname, "nickname", LocalizedField },
-    { QContactPresence::FieldCustomMessage, "customMessage", LocalizedField }
+    { QContactPresence::FieldCustomMessage, "customMessage", LocalizedField },
+    { QContactPresence::FieldPresenceStateText, "presenceStateText", StringField },
+    { QContactPresence::FieldPresenceStateImageUrl, "presenceStateImageUrl", StringField }
 };
 
 static void setValues(QContactPresence *detail, QSqlQuery *query, const int offset)
@@ -463,6 +469,8 @@ static void setValues(QContactPresence *detail, QSqlQuery *query, const int offs
     setValue(detail, T::FieldTimestamp    , ContactsDatabase::fromDateTimeString(query->value(offset + 1).toString()));
     setValue(detail, T::FieldNickname     , query->value(offset + 2));
     setValue(detail, T::FieldCustomMessage, query->value(offset + 3));
+    setValue(detail, T::FieldPresenceStateText, query->value(offset + 4));
+    setValue(detail, T::FieldPresenceStateImageUrl, urlValue(query->value(offset + 5)));
 }
 
 static void setValues(QContactGlobalPresence *detail, QSqlQuery *query, const int offset)
@@ -473,12 +481,15 @@ static void setValues(QContactGlobalPresence *detail, QSqlQuery *query, const in
     setValue(detail, T::FieldTimestamp    , ContactsDatabase::fromDateTimeString(query->value(offset + 1).toString()));
     setValue(detail, T::FieldNickname     , query->value(offset + 2));
     setValue(detail, T::FieldCustomMessage, query->value(offset + 3));
+    setValue(detail, T::FieldPresenceStateText, query->value(offset + 4));
+    setValue(detail, T::FieldPresenceStateImageUrl, urlValue(query->value(offset + 5)));
 }
 
 static const FieldInfo ringtoneFields[] =
 {
     { QContactRingtone::FieldAudioRingtoneUrl, "audioRingtone", StringField },
-    { QContactRingtone::FieldVideoRingtoneUrl, "videoRingtone", StringField }
+    { QContactRingtone::FieldVideoRingtoneUrl, "videoRingtone", StringField },
+    { QContactRingtone::FieldVibrationRingtoneUrl, "vibrationRingtone", StringField }
 };
 
 static void setValues(QContactRingtone *detail, QSqlQuery *query, const int offset)
@@ -487,6 +498,7 @@ static void setValues(QContactRingtone *detail, QSqlQuery *query, const int offs
 
     setValue(detail, T::FieldAudioRingtoneUrl, urlValue(query->value(offset + 0)));
     setValue(detail, T::FieldVideoRingtoneUrl, urlValue(query->value(offset + 1)));
+    setValue(detail, T::FieldVibrationRingtoneUrl, urlValue(query->value(offset + 2)));
 }
 
 static const FieldInfo tagFields[] =
