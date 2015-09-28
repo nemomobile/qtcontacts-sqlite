@@ -1666,13 +1666,15 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
         "  contactId,"
         "  originalDateTime,"
         "  calendarId,"
-        "  subType)"
+        "  subType,"
+        "  event)"
         " VALUES ("
         "  :detailId,"
         "  :contactId,"
         "  :originalDateTime,"
         "  :calendarId,"
-        "  :subType)"
+        "  :subType,"
+        "  :event)"
     ));
 
     ContactsDatabase::Query query(db.prepare(statement));
@@ -1683,6 +1685,7 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
     query.addBindValue(detailValue(detail, T::FieldOriginalDate));
     query.addBindValue(detailValue(detail, T::FieldCalendarId));
     query.addBindValue(Anniversary::subType(detail.subType()));
+    query.addBindValue(detail.value<QString>(T::FieldEvent).trimmed());
     return query;
 }
 
@@ -1845,14 +1848,18 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
         "  presenceState,"
         "  timestamp,"
         "  nickname,"
-        "  customMessage)"
+        "  customMessage,"
+        "  presenceStateText,"
+        "  presenceStateImageUrl)"
         " VALUES ("
         "  :detailId,"
         "  :contactId,"
         "  :presenceState,"
         "  :timestamp,"
         "  :nickname,"
-        "  :customMessage)"
+        "  :customMessage,"
+        "  :presenceStateText,"
+        "  :presenceStateImageUrl)"
     ));
 
     ContactsDatabase::Query query(db.prepare(statement));
@@ -1864,6 +1871,8 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
     query.addBindValue(ContactsDatabase::dateTimeString(detail.value<QDateTime>(T::FieldTimestamp).toUTC()));
     query.addBindValue(detail.value<QString>(T::FieldNickname).trimmed());
     query.addBindValue(detail.value<QString>(T::FieldCustomMessage).trimmed());
+    query.addBindValue(detail.value<QString>(T::FieldPresenceStateText).trimmed());
+    query.addBindValue(detail.value<QString>(T::FieldPresenceStateImageUrl).trimmed());
     return query;
 }
 
@@ -2023,7 +2032,8 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
         "  title,"
         "  location,"
         "  department,"
-        "  logoUrl)"
+        "  logoUrl,"
+        "  assistantName)"
         " VALUES ("
         "  :detailId,"
         "  :contactId,"
@@ -2032,7 +2042,8 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
         "  :title,"
         "  :location,"
         "  :department,"
-        "  :logoUrl)"
+        "  :logoUrl,"
+        "  :assistantName)"
     ));
 
     ContactsDatabase::Query query(db.prepare(statement));
@@ -2046,6 +2057,7 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
     query.addBindValue(detail.value<QString>(T::FieldLocation).trimmed());
     query.addBindValue(detail.department().join(QLatin1String(";")));
     query.addBindValue(detail.value<QString>(T::FieldLogoUrl).trimmed());
+    query.addBindValue(detail.value<QString>(T::FieldAssistantName).trimmed());
     return query;
 }
 
@@ -2086,14 +2098,18 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
         "  presenceState,"
         "  timestamp,"
         "  nickname,"
-        "  customMessage)"
+        "  customMessage,"
+        "  presenceStateText,"
+        "  presenceStateImageUrl)"
         " VALUES ("
         "  :detailId,"
         "  :contactId,"
         "  :presenceState,"
         "  :timestamp,"
         "  :nickname,"
-        "  :customMessage)"
+        "  :customMessage,"
+        "  :presenceStateText,"
+        "  :presenceStateImageUrl)"
     ));
 
     ContactsDatabase::Query query(db.prepare(statement));
@@ -2105,6 +2121,8 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
     query.addBindValue(ContactsDatabase::dateTimeString(detail.value<QDateTime>(T::FieldTimestamp).toUTC()));
     query.addBindValue(detail.value<QString>(T::FieldNickname).trimmed());
     query.addBindValue(detail.value<QString>(T::FieldCustomMessage).trimmed());
+    query.addBindValue(detail.value<QString>(T::FieldPresenceStateText).trimmed());
+    query.addBindValue(detail.value<QString>(T::FieldPresenceStateImageUrl).trimmed());
     return query;
 }
 
@@ -2115,12 +2133,14 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
         "  detailId,"
         "  contactId,"
         "  audioRingtone,"
-        "  videoRingtone)"
+        "  videoRingtone,"
+        "  vibrationRingtone)"
         " VALUES ("
         "  :detailId,"
         "  :contactId,"
         "  :audioRingtone,"
-        "  :videoRingtone)"
+        "  :videoRingtone,"
+        "  :vibrationRingtone)"
     ));
 
     ContactsDatabase::Query query(db.prepare(statement));
@@ -2130,6 +2150,7 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
     query.addBindValue(contactId);
     query.addBindValue(detail.value<QString>(T::FieldAudioRingtoneUrl).trimmed());
     query.addBindValue(detail.value<QString>(T::FieldVideoRingtoneUrl).trimmed());
+    query.addBindValue(detail.value<QString>(T::FieldVibrationRingtoneUrl).trimmed());
     return query;
 }
 
