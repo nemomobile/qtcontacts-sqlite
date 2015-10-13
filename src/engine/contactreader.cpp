@@ -31,7 +31,6 @@
 
 #include "contactreader.h"
 #include "contactsengine.h"
-#include "conversion_p.h"
 #include "trace_p.h"
 
 #include "../extensions/qtcontacts-extensions.h"
@@ -78,8 +77,6 @@
 #include <QVector>
 
 #include <QtDebug>
-
-using namespace Conversion;
 
 static const int ReportBatchSize = 50;
 
@@ -203,6 +200,15 @@ static const FieldInfo addressFields[] =
 
 };
 
+static QList<int> subTypeList(const QStringList &subTypeValues)
+{
+    QList<int> rv;
+    foreach (const QString &value, subTypeValues) {
+        rv.append(value.toInt());
+    }
+    return rv;
+}
+
 static void setValues(QContactAddress *detail, QSqlQuery *query, const int offset)
 {
     typedef QContactAddress T;
@@ -213,9 +219,8 @@ static void setValues(QContactAddress *detail, QSqlQuery *query, const int offse
     setValue(detail, T::FieldLocality     , query->value(offset + 3));
     setValue(detail, T::FieldPostcode     , query->value(offset + 4));
     setValue(detail, T::FieldCountry      , query->value(offset + 5));
-    QStringList subTypeNames(query->value(offset + 6).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
-    setValue(detail, T::FieldSubTypes     , QVariant::fromValue<QList<int> >(Address::subTypeList(subTypeNames)));
-
+    const QStringList subTypeValues(query->value(offset + 6).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
+    setValue(detail, T::FieldSubTypes     , QVariant::fromValue<QList<int> >(subTypeList(subTypeValues)));
 }
 
 static const FieldInfo anniversaryFields[] =
@@ -232,7 +237,7 @@ static void setValues(QContactAnniversary *detail, QSqlQuery *query, const int o
 
     setValue(detail, T::FieldOriginalDate, dateValue(query->value(offset + 0)));
     setValue(detail, T::FieldCalendarId  , query->value(offset + 1));
-    setValue(detail, T::FieldSubType     , QVariant::fromValue<int>(Anniversary::subType(query->value(offset + 2).toString())));
+    setValue(detail, T::FieldSubType     , QVariant::fromValue<int>(query->value(offset + 2).toString().toInt()));
     setValue(detail, T::FieldEvent       , query->value(offset + 3));
 }
 
@@ -394,12 +399,12 @@ static void setValues(QContactOnlineAccount *detail, QSqlQuery *query, const int
 
     setValue(detail, T::FieldAccountUri     , query->value(offset + 0));
     // ignore lowerAccountUri
-    setValue(detail, T::FieldProtocol       , QVariant::fromValue<int>(OnlineAccount::protocol(query->value(offset + 2).toString())));
+    setValue(detail, T::FieldProtocol       , QVariant::fromValue<int>(query->value(offset + 2).toString().toInt()));
     setValue(detail, T::FieldServiceProvider, query->value(offset + 3));
     setValue(detail, T::FieldCapabilities   , stringListValue(query->value(offset + 4)));
 
-    QStringList subTypeNames(query->value(offset + 5).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
-    setValue(detail, T::FieldSubTypes, QVariant::fromValue<QList<int> >(OnlineAccount::subTypeList(subTypeNames)));
+    const QStringList subTypeValues(query->value(offset + 5).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
+    setValue(detail, T::FieldSubTypes, QVariant::fromValue<QList<int> >(subTypeList(subTypeValues)));
 
     setValue(detail, QContactOnlineAccount__FieldAccountPath,                query->value(offset + 6));
     setValue(detail, QContactOnlineAccount__FieldAccountIconPath,            query->value(offset + 7));
@@ -445,8 +450,8 @@ static void setValues(QContactPhoneNumber *detail, QSqlQuery *query, const int o
 
     setValue(detail, T::FieldNumber  , query->value(offset + 0));
 
-    QStringList subTypeNames(query->value(offset + 1).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
-    setValue(detail, T::FieldSubTypes, QVariant::fromValue<QList<int> >(PhoneNumber::subTypeList(subTypeNames)));
+    const QStringList subTypeValues(query->value(offset + 1).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
+    setValue(detail, T::FieldSubTypes, QVariant::fromValue<QList<int> >(subTypeList(subTypeValues)));
 
     setValue(detail, QContactPhoneNumber__FieldNormalizedNumber, query->value(offset + 2));
 }
@@ -516,7 +521,7 @@ static void setValues(QContactTag *detail, QSqlQuery *query, const int offset)
 static const FieldInfo urlFields[] =
 {
     { QContactUrl::FieldUrl, "url", StringField },
-    { QContactUrl::FieldSubType, "subTypes", StringListField }
+    { QContactUrl::FieldSubType, "subTypes", StringField }
 };
 
 static void setValues(QContactUrl *detail, QSqlQuery *query, const int offset)
@@ -524,7 +529,7 @@ static void setValues(QContactUrl *detail, QSqlQuery *query, const int offset)
     typedef QContactUrl T;
 
     setValue(detail, T::FieldUrl    , urlValue(query->value(offset + 0)));
-    setValue(detail, T::FieldSubType, QVariant::fromValue<int>(Url::subType(query->value(offset + 1).toString())));
+    setValue(detail, T::FieldSubType, QVariant::fromValue<int>(query->value(offset + 1).toString().toInt()));
 }
 
 static const FieldInfo originMetadataFields[] =
@@ -833,30 +838,30 @@ static bool validFilterField(F filter)
 
 static QString convertFilterValueToString(const QContactDetailFilter &filter, const QString &defaultValue)
 {
-    // Some enum types are stored in textual form
+    // Some enum values are stored in textual columns
     if (filter.detailType() == QContactOnlineAccount::Type) {
         if (filter.detailField() == QContactOnlineAccount::FieldProtocol) {
-            return OnlineAccount::protocol(filter.value().toInt());
+            return QString::number(filter.value().toInt());
         } else if (filter.detailField() == QContactOnlineAccount::FieldSubTypes) {
             // TODO: what if the value is a list?
-            return OnlineAccount::subTypeList(QList<int>() << filter.value().toInt()).first();
+            return QString::number(filter.value().toInt());
         }
     } else if (filter.detailType() == QContactPhoneNumber::Type) {
         if (filter.detailField() == QContactPhoneNumber::FieldSubTypes) {
             // TODO: what if the value is a list?
-            return PhoneNumber::subTypeList(QList<int>() << filter.value().toInt()).first();
+            return QString::number(filter.value().toInt());
         }
     } else if (filter.detailType() == QContactAnniversary::Type) {
         if (filter.detailField() == QContactAnniversary::FieldSubType) {
-            return Anniversary::subType(filter.value().toInt());
+            return QString::number(filter.value().toInt());
         }
     } else if (filter.detailType() == QContactUrl::Type) {
         if (filter.detailField() == QContactUrl::FieldSubType) {
-            return Url::subType(filter.value().toInt());
+            return QString::number(filter.value().toInt());
         }
     } else if (filter.detailType() == QContactGender::Type) {
         if (filter.detailField() == QContactGender::FieldGender) {
-            return Gender::gender(filter.value().toInt());
+            return QString::number(filter.value().toInt());
         }
     }
 
@@ -2139,15 +2144,8 @@ QContactManager::Error ContactReader::queryContacts(
         QContactGender gender;
         // Gender is an enum in qtpim
         QString genderText = contactQuery.value(13).toString();
-        if (genderText.startsWith(QChar::fromLatin1('f'), Qt::CaseInsensitive)) {
-            gender.setGender(QContactGender::GenderFemale);
-        } else if (genderText.startsWith(QChar::fromLatin1('m'), Qt::CaseInsensitive)) {
-            gender.setGender(QContactGender::GenderMale);
-        } else {
-            gender.setGender(QContactGender::GenderUnspecified);
-        }
-        if (!gender.isEmpty())
-            contact.saveDetail(&gender);
+        gender.setGender(static_cast<QContactGender::GenderField>(genderText.toInt()));
+        contact.saveDetail(&gender);
 
         QContactFavorite favorite;
         setValue(&favorite, QContactFavorite::FieldFavorite, contactQuery.value(14).toBool());

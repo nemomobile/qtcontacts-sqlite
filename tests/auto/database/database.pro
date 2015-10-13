@@ -25,6 +25,9 @@ SOURCES += ../../../src/engine/contactstransientstore.cpp
 HEADERS += ../../../src/engine/memorytable.h
 SOURCES += ../../../src/engine/memorytable.cpp
 
+HEADERS += ../../../src/engine/conversion_p.h
+SOURCES += ../../../src/engine/conversion.cpp
+
 SOURCES += stub_contactsengine.cpp
 
 SOURCES += tst_database.cpp

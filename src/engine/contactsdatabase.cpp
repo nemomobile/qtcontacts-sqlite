@@ -31,7 +31,10 @@
 
 #include "contactsdatabase.h"
 #include "contactsengine.h"
+#include "conversion_p.h"
 #include "trace_p.h"
+
+#include <QContactGender>
 
 #include <QDesktopServices>
 #include <QDir>
@@ -70,7 +73,7 @@ static const char *createContactsTable =
         "\n syncTarget TEXT NOT NULL,"
         "\n created DATETIME,"
         "\n modified DATETIME,"
-        "\n gender TEXT,"
+        "\n gender TEXT,"               // Contains an INTEGER represented as TEXT
         "\n isFavorite BOOL,"
         "\n hasPhoneNumber BOOL DEFAULT 0,"
         "\n hasEmailAddress BOOL DEFAULT 0,"
@@ -90,7 +93,7 @@ static const char *createAddressesTable =
         "\n locality TEXT,"
         "\n postCode TEXT,"
         "\n country TEXT,"
-        "\n subTypes TEXT);";
+        "\n subTypes TEXT);";               // Contains INTEGER values represented as TEXT, separated by ';'
 
 static const char *createAnniversariesTable =
         "\n CREATE TABLE Anniversaries ("
@@ -98,7 +101,7 @@ static const char *createAnniversariesTable =
         "\n contactId INTEGER KEY,"
         "\n originalDateTime DATETIME,"
         "\n calendarId TEXT,"
-        "\n subType TEXT,"
+        "\n subType TEXT,"                  // Contains an INTEGER represented as TEXT
         "\n event TEXT);";
 
 static const char *createAvatarsTable =
@@ -186,10 +189,10 @@ static const char *createOnlineAccountsTable =
         "\n contactId INTEGER KEY,"
         "\n accountUri TEXT,"
         "\n lowerAccountUri TEXT,"
-        "\n protocol TEXT,"
+        "\n protocol TEXT,"                     // Contains an INTEGER represented as TEXT
         "\n serviceProvider TEXT,"
         "\n capabilities TEXT,"
-        "\n subTypes TEXT,"
+        "\n subTypes TEXT,"                     // Contains INTEGER values represented as TEXT, separated by ';'
         "\n accountPath TEXT,"
         "\n accountIconPath TEXT,"
         "\n enabled BOOL,"
@@ -213,7 +216,7 @@ static const char *createPhoneNumbersTable =
         "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
         "\n contactId INTEGER KEY,"
         "\n phoneNumber TEXT,"
-        "\n subTypes TEXT,"
+        "\n subTypes TEXT,"                     // Contains INTEGER values represented as TEXT, separated by ';'
         "\n normalizedNumber TEXT);";
 
 static const char *createPresencesTable =
@@ -246,7 +249,7 @@ static const char *createUrlsTable =
         "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
         "\n contactId INTEGER KEY,"
         "\n url TEXT,"
-        "\n subTypes TEXT);";
+        "\n subTypes TEXT);";       // Contains a (singular) INTEGER represented as TEXT (and should be named 'subType')
 
 static const char *createOriginMetadataTable =
         "\n CREATE TABLE OriginMetadata ("
@@ -1278,6 +1281,10 @@ static const char *upgradeVersion15[] = {
     "PRAGMA user_version=16",
     0 // NULL-terminated
 };
+static const char *upgradeVersion16[] = {
+    "PRAGMA user_version=17",
+    0 // NULL-terminated
+};
 
 typedef bool (*UpgradeFunction)(QSqlDatabase &database);
 
@@ -1337,6 +1344,340 @@ static bool updateNormalizedNumbers(QSqlDatabase &database)
     return true;
 }
 
+struct UpdateAddressStorage
+{
+    quint32 detailId;
+    QString subTypes;
+};
+struct UpdateAnniversaryStorage
+{
+    quint32 detailId;
+    int subType;
+};
+struct UpdateGenderStorage
+{
+    quint32 contactId;
+    int gender;
+};
+struct UpdateOnlineAccountStorage
+{
+    quint32 detailId;
+    int protocol;
+    QString subTypes;
+};
+struct UpdatePhoneNumberStorage
+{
+    quint32 detailId;
+    QString subTypes;
+};
+struct UpdateUrlStorage
+{
+    quint32 detailId;
+    int subType;
+};
+static bool updateStorageTypes(QSqlDatabase &database)
+{
+    using namespace Conversion;
+
+    // Where data is stored in the type that corresponds to the representation
+    // used in QtMobility.Contacts, update to match the type used in qtpim
+    {
+        // QContactAddress::subTypes: string list -> int list
+        QList<UpdateAddressStorage> updates;
+
+        QString statement(QStringLiteral("SELECT detailId, subTypes FROM Addresses WHERE subTypes IS NOT NULL"));
+        QSqlQuery query(database);
+        if (!query.exec(statement)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Query failed: %1\n%2")
+                    .arg(query.lastError().text())
+                    .arg(statement));
+            return false;
+        }
+        while (query.next()) {
+            const quint32 detailId(query.value(0).value<quint32>());
+            const QString originalSubTypes(query.value(1).value<QString>());
+
+            QStringList subTypeNames(originalSubTypes.split(QLatin1Char(';'), QString::SkipEmptyParts));
+            QStringList subTypeValues;
+            foreach (int subTypeValue, Address::subTypeList(subTypeNames)) {
+                subTypeValues.append(QString::number(subTypeValue));
+            }
+
+            UpdateAddressStorage data = { detailId, subTypeValues.join(QLatin1Char(';')) };
+            updates.append(data);
+        }
+        query.finish();
+
+        if (!updates.isEmpty()) {
+            query = QSqlQuery(database);
+            statement = QStringLiteral("UPDATE Addresses SET subTypes = :subTypes WHERE detailId = :detailId");
+            if (!query.prepare(statement)) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare data upgrade query: %1\n%2")
+                        .arg(query.lastError().text())
+                        .arg(statement));
+                return false;
+            }
+
+            foreach (const UpdateAddressStorage &update, updates) {
+                query.bindValue(":subTypes", update.subTypes);
+                query.bindValue(":detailId", update.detailId);
+                if (!query.exec()) {
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to upgrade data: %1\n%2")
+                            .arg(query.lastError().text())
+                            .arg(statement));
+                    return false;
+                }
+                query.finish();
+            }
+        }
+    }
+    {
+        // QContactAnniversary::subType: string -> int
+        QList<UpdateAnniversaryStorage> updates;
+
+        QString statement(QStringLiteral("SELECT detailId, subType FROM Anniversaries WHERE subType IS NOT NULL"));
+        QSqlQuery query(database);
+        if (!query.exec(statement)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Query failed: %1\n%2")
+                    .arg(query.lastError().text())
+                    .arg(statement));
+            return false;
+        }
+        while (query.next()) {
+            const quint32 detailId(query.value(0).value<quint32>());
+            const QString originalSubType(query.value(1).value<QString>());
+
+            UpdateAnniversaryStorage data = { detailId, Anniversary::subType(originalSubType) };
+            updates.append(data);
+        }
+        query.finish();
+
+        if (!updates.isEmpty()) {
+            query = QSqlQuery(database);
+            statement = QStringLiteral("UPDATE Anniversaries SET subType = :subType WHERE detailId = :detailId");
+            if (!query.prepare(statement)) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare data upgrade query: %1\n%2")
+                        .arg(query.lastError().text())
+                        .arg(statement));
+                return false;
+            }
+
+            foreach (const UpdateAnniversaryStorage &update, updates) {
+                query.bindValue(":subType", QString::number(update.subType));
+                query.bindValue(":detailId", update.detailId);
+                if (!query.exec()) {
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to upgrade data: %1\n%2")
+                            .arg(query.lastError().text())
+                            .arg(statement));
+                    return false;
+                }
+                query.finish();
+            }
+        }
+    }
+    {
+        // QContactGender::gender: string -> int
+        QList<UpdateGenderStorage> updates;
+
+        QString statement(QStringLiteral("SELECT contactId, gender FROM Contacts WHERE gender IS NOT NULL"));
+        QSqlQuery query(database);
+        if (!query.exec(statement)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Query failed: %1\n%2")
+                    .arg(query.lastError().text())
+                    .arg(statement));
+            return false;
+        }
+        while (query.next()) {
+            const quint32 contactId(query.value(0).value<quint32>());
+            const QString originalGender(query.value(1).value<QString>());
+
+            // Logic from contactreader:
+            int gender = QContactGender::GenderUnspecified;
+            if (originalGender.startsWith(QChar::fromLatin1('f'), Qt::CaseInsensitive)) {
+                gender = QContactGender::GenderFemale;
+            } else if (originalGender.startsWith(QChar::fromLatin1('m'), Qt::CaseInsensitive)) {
+                gender = QContactGender::GenderMale;
+            }
+
+            UpdateGenderStorage data = { contactId, gender };
+            updates.append(data);
+        }
+        query.finish();
+
+        if (!updates.isEmpty()) {
+            query = QSqlQuery(database);
+            statement = QStringLiteral("UPDATE Contacts SET gender = :gender WHERE contactId = :contactId");
+            if (!query.prepare(statement)) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare data upgrade query: %1\n%2")
+                        .arg(query.lastError().text())
+                        .arg(statement));
+                return false;
+            }
+
+            foreach (const UpdateGenderStorage &update, updates) {
+                query.bindValue(":gender", QString::number(update.gender));
+                query.bindValue(":contactId", update.contactId);
+                if (!query.exec()) {
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to upgrade data: %1\n%2")
+                            .arg(query.lastError().text())
+                            .arg(statement));
+                    return false;
+                }
+                query.finish();
+            }
+        }
+    }
+    {
+        // QContactOnlineAccount::protocol: string -> int
+        // QContactOnlineAccount::subTypes: string list -> int list
+        QList<UpdateOnlineAccountStorage> updates;
+
+        QString statement(QStringLiteral("SELECT detailId, protocol, subTypes FROM OnlineAccounts WHERE (protocol IS NOT NULL OR subTypes IS NOT NULL)"));
+        QSqlQuery query(database);
+        if (!query.exec(statement)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Query failed: %1\n%2")
+                    .arg(query.lastError().text())
+                    .arg(statement));
+            return false;
+        }
+        while (query.next()) {
+            const quint32 detailId(query.value(0).value<quint32>());
+            const QString originalProtocol(query.value(1).value<QString>());
+            const QString originalSubTypes(query.value(2).value<QString>());
+
+            QStringList subTypeNames(originalSubTypes.split(QLatin1Char(';'), QString::SkipEmptyParts));
+            QStringList subTypeValues;
+            foreach (int subTypeValue, OnlineAccount::subTypeList(subTypeNames)) {
+                subTypeValues.append(QString::number(subTypeValue));
+            }
+
+            UpdateOnlineAccountStorage data = { detailId, OnlineAccount::protocol(originalProtocol), subTypeValues.join(QLatin1Char(';')) };
+            updates.append(data);
+        }
+        query.finish();
+
+        if (!updates.isEmpty()) {
+            query = QSqlQuery(database);
+            statement = QStringLiteral("UPDATE OnlineAccounts SET protocol = :protocol, subTypes = :subTypes WHERE detailId = :detailId");
+            if (!query.prepare(statement)) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare data upgrade query: %1\n%2")
+                        .arg(query.lastError().text())
+                        .arg(statement));
+                return false;
+            }
+
+            foreach (const UpdateOnlineAccountStorage &update, updates) {
+                query.bindValue(":protocol", QString::number(update.protocol));
+                query.bindValue(":subTypes", update.subTypes);
+                query.bindValue(":detailId", update.detailId);
+                if (!query.exec()) {
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to upgrade data: %1\n%2")
+                            .arg(query.lastError().text())
+                            .arg(statement));
+                    return false;
+                }
+                query.finish();
+            }
+        }
+    }
+    {
+        // QContactPhoneNumber::subTypes: string list -> int list
+        QList<UpdatePhoneNumberStorage> updates;
+
+        QString statement(QStringLiteral("SELECT detailId, subTypes FROM PhoneNumbers WHERE subTypes IS NOT NULL"));
+        QSqlQuery query(database);
+        if (!query.exec(statement)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Query failed: %1\n%2")
+                    .arg(query.lastError().text())
+                    .arg(statement));
+            return false;
+        }
+        while (query.next()) {
+            const quint32 detailId(query.value(0).value<quint32>());
+            const QString originalSubTypes(query.value(1).value<QString>());
+
+            QStringList subTypeNames(originalSubTypes.split(QLatin1Char(';'), QString::SkipEmptyParts));
+            QStringList subTypeValues;
+            foreach (int subTypeValue, PhoneNumber::subTypeList(subTypeNames)) {
+                subTypeValues.append(QString::number(subTypeValue));
+            }
+
+            UpdatePhoneNumberStorage data = { detailId, subTypeValues.join(QLatin1Char(';')) };
+            updates.append(data);
+        }
+        query.finish();
+
+        if (!updates.isEmpty()) {
+            query = QSqlQuery(database);
+            statement = QStringLiteral("UPDATE PhoneNumbers SET subTypes = :subTypes WHERE detailId = :detailId");
+            if (!query.prepare(statement)) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare data upgrade query: %1\n%2")
+                        .arg(query.lastError().text())
+                        .arg(statement));
+                return false;
+            }
+
+            foreach (const UpdatePhoneNumberStorage &update, updates) {
+                query.bindValue(":subTypes", update.subTypes);
+                query.bindValue(":detailId", update.detailId);
+                if (!query.exec()) {
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to upgrade data: %1\n%2")
+                            .arg(query.lastError().text())
+                            .arg(statement));
+                    return false;
+                }
+                query.finish();
+            }
+        }
+    }
+    {
+        // QContactUrl::subType: string -> int
+        QList<UpdateUrlStorage> updates;
+
+        QString statement(QStringLiteral("SELECT detailId, subTypes FROM Urls WHERE subTypes IS NOT NULL"));
+        QSqlQuery query(database);
+        if (!query.exec(statement)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Query failed: %1\n%2")
+                    .arg(query.lastError().text())
+                    .arg(statement));
+            return false;
+        }
+        while (query.next()) {
+            const quint32 detailId(query.value(0).value<quint32>());
+            const QString originalSubType(query.value(1).value<QString>());
+
+            UpdateUrlStorage data = { detailId, Url::subType(originalSubType) };
+            updates.append(data);
+        }
+        query.finish();
+
+        if (!updates.isEmpty()) {
+            query = QSqlQuery(database);
+            statement = QStringLiteral("UPDATE Urls SET subTypes = :subTypes WHERE detailId = :detailId");
+            if (!query.prepare(statement)) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare data upgrade query: %1\n%2")
+                        .arg(query.lastError().text())
+                        .arg(statement));
+                return false;
+            }
+
+            foreach (const UpdateUrlStorage &update, updates) {
+                query.bindValue(":subTypes", QString::number(update.subType));
+                query.bindValue(":detailId", update.detailId);
+                if (!query.exec()) {
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to upgrade data: %1\n%2")
+                            .arg(query.lastError().text())
+                            .arg(statement));
+                    return false;
+                }
+                query.finish();
+            }
+        }
+    }
+
+    return true;
+}
+
 struct UpgradeOperation {
     UpgradeFunction fn;
     const char **statements;
@@ -1359,9 +1700,10 @@ static UpgradeOperation upgradeVersions[] = {
     { 0,                        upgradeVersion13 },
     { 0,                        upgradeVersion14 },
     { 0,                        upgradeVersion15 },
+    { updateStorageTypes,       upgradeVersion16 },
 };
 
-static const int currentSchemaVersion = 16;
+static const int currentSchemaVersion = 17;
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {
