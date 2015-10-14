@@ -33,7 +33,6 @@
 
 #include "contactsengine.h"
 #include "contactreader.h"
-#include "conversion_p.h"
 #include "trace_p.h"
 
 #include "../extensions/qcontactdeactivated.h"
@@ -123,8 +122,6 @@ namespace {
         return entropy(data.constBegin(), data.constEnd(), data.size());
     }
 }
-
-using namespace Conversion;
 
 static const QString aggregateSyncTarget(QString::fromLatin1("aggregate"));
 static const QString localSyncTarget(QString::fromLatin1("local"));
@@ -1618,6 +1615,15 @@ static void adjustAggregateDetailProperties(QContactDetail &detail)
 
 namespace {
 
+QStringList subTypeList(const QList<int> &subTypes)
+{
+    QStringList rv;
+    foreach (int subType, subTypes) {
+        rv.append(QString::number(subType));
+    }
+    return rv;
+}
+
 ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quint32 detailId, const QContactAddress &detail)
 {
     const QString statement(QStringLiteral(
@@ -1654,7 +1660,7 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
     query.addBindValue(detail.value<QString>(T::FieldLocality).trimmed());
     query.addBindValue(detail.value<QString>(T::FieldPostcode).trimmed());
     query.addBindValue(detail.value<QString>(T::FieldCountry).trimmed());
-    query.addBindValue(Address::subTypeList(detail.subTypes()).join(QLatin1String(";")));
+    query.addBindValue(subTypeList(detail.subTypes()).join(QLatin1String(";")));
     return query;
 }
 
@@ -1684,7 +1690,7 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
     query.addBindValue(contactId);
     query.addBindValue(detailValue(detail, T::FieldOriginalDate));
     query.addBindValue(detailValue(detail, T::FieldCalendarId));
-    query.addBindValue(Anniversary::subType(detail.subType()));
+    query.addBindValue(QString::number(detail.subType()));
     query.addBindValue(detail.value<QString>(T::FieldEvent).trimmed());
     return query;
 }
@@ -2009,10 +2015,10 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
     query.addBindValue(contactId);
     query.addBindValue(uri);
     query.addBindValue(uri.toLower());
-    query.addBindValue(OnlineAccount::protocol(detail.protocol()));
+    query.addBindValue(QString::number(detail.protocol()));
     query.addBindValue(detailValue(detail, T::FieldServiceProvider));
     query.addBindValue(detailValue(detail, T::FieldCapabilities).value<QStringList>().join(QLatin1String(";")));
-    query.addBindValue(OnlineAccount::subTypeList(detail.subTypes()).join(QLatin1String(";")));
+    query.addBindValue(subTypeList(detail.subTypes()).join(QLatin1String(";")));
     query.addBindValue(detailValue(detail, QContactOnlineAccount__FieldAccountPath));
     query.addBindValue(detailValue(detail, QContactOnlineAccount__FieldAccountIconPath));
     query.addBindValue(detailValue(detail, QContactOnlineAccount__FieldEnabled));
@@ -2084,7 +2090,7 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
     query.addBindValue(detailId);
     query.addBindValue(contactId);
     query.addBindValue(detail.value<QString>(T::FieldNumber).trimmed());
-    query.addBindValue(PhoneNumber::subTypeList(detail.subTypes()).join(QLatin1String(";")));
+    query.addBindValue(subTypeList(detail.subTypes()).join(QLatin1String(";")));
     query.addBindValue(QVariant(ContactsEngine::normalizedPhoneNumber(detail.number())));
     return query;
 }
@@ -2197,7 +2203,7 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
     query.addBindValue(detailId);
     query.addBindValue(contactId);
     query.addBindValue(detail.value<QString>(T::FieldUrl).trimmed());
-    query.addBindValue(Url::subType(detail.subType()));
+    query.addBindValue(QString::number(detail.subType()));
     return query;
 }
 
@@ -3382,14 +3388,12 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
         }
 
         const QContactGender gender(contact->detail<QContactGender>());
-        const QString gv(gender.gender() == QContactGender::GenderFemale ? QString::fromLatin1("Female") :
-                         gender.gender() == QContactGender::GenderMale ? QString::fromLatin1("Male") : QString());
-        if (gv == QString::fromLatin1("Male")) {
-            excludeGender = QString::fromLatin1("Female");
-        } else if (gv == QString::fromLatin1("Female")) {
-            excludeGender = QString::fromLatin1("Male");
+        if (gender.gender() == QContactGender::GenderMale) {
+            excludeGender = QString::number(static_cast<int>(QContactGender::GenderFemale));
+        } else if (gender.gender() == QContactGender::GenderFemale) {
+            excludeGender = QString::number(static_cast<int>(QContactGender::GenderMale));
         } else {
-            excludeGender = QString::fromLatin1("none");
+            excludeGender = QStringLiteral("none");
         }
 
         /*
@@ -5629,9 +5633,7 @@ ContactsDatabase::Query ContactWriter::bindContactDetails(const QContact &contac
     query.bindValue(11, ContactsDatabase::dateTimeString(timestamp.value<QDateTime>(QContactTimestamp::FieldModificationTimestamp).toUTC()));
 
     const QContactGender gender = contact.detail<QContactGender>();
-    const QString gv(gender.gender() == QContactGender::GenderFemale ? QString::fromLatin1("Female") :
-                     gender.gender() == QContactGender::GenderMale ? QString::fromLatin1("Male") : QString());
-    query.bindValue(12, gv);
+    query.bindValue(12, QString::number(static_cast<int>(gender.gender())));
 
     const QContactFavorite favorite = contact.detail<QContactFavorite>();
     query.bindValue(13, favorite.isFavorite());
