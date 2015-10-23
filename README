@@ -1,2 +1,2 @@
-This repository contains a backend for the QtContacts API.
-It stores contact information to a local SQLite database.
+This project has migrated to https://git.merproject.org/mer-core/qtcontacts-sqlite
+as part of the Mer/Nemo merge work
